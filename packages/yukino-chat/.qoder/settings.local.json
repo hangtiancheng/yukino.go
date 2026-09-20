@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(find /Users/hangtiancheng/github/swifty.go/packages/swifty-chat -type f -not -path \"*/node_modules/*\" -not -path \"*/.git/*\" -not -path \"*/dist/*\" -not -path \"*/.codegraph/*\" | head -60)",
-      "Bash(cat ~/.npmrc 2>/dev/null; echo \"---root---\"; cat /Users/hangtiancheng/github/swifty.go/.npmrc 2>/dev/null || echo \"\\(no root .npmrc\\)\"; pnpm config get registry)"
-    ]
-  }
-}

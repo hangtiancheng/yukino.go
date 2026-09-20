@@ -21,7 +21,7 @@ description: >
   ErrorLevel/Disabled, or any import of the module. Also use for Knex-style
   query chaining over MongoDB in Go, for bson filter construction through this
   builder, and for questions about builder mutation versus Clone semantics. Do
-  NOT use for GORM, sqlx, ent, lark_orm, raw mongo-driver code without
+  NOT use for GORM, sqlx, ent, raw mongo-driver code without
   yukino_orm, or any non-MongoDB datastore.
 ---
 
