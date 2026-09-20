@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/hangtiancheng/github/swifty.go/packages/swifty-agent -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.css\" -o -name \"*.html\" -o -name \"*.json\" \\\\\\) -not -path \"*/node_modules/*\" -not -path \"*/dist/*\" -not -path \"*/.codegraph/*\" | head -60)",
+      "Bash(npx @tanstack/intent@latest load @swifty.js/lit-jsx#swifty-lit-jsx 2>&1 | head -100)"
+    ]
+  }
+}

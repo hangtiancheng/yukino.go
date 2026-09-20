@@ -1,0 +1,26 @@
+{
+  "name": "yukino.go",
+  "version": "0.0.5",
+  "description": "Yukino",
+  "keywords": [
+    "Yukino"
+  ],
+  "license": "MIT",
+  "author": "https://github.com/hangtiancheng",
+  "type": "module",
+  "scripts": {
+    "lint": "go list -f '{{.Dir}}/...' -m | xargs golangci-lint run",
+    "lint:fix": "go list -f '{{.Dir}}/...' -m | xargs golangci-lint run --fix",
+    "tag": "node tag.js",
+    "format:gofmt": "gofmt -w ./",
+    "format:yukino-chat": "pnpm --filter yukino-chat format",
+    "format:yukino-agent": "pnpm --filter yukino-agent format",
+    "format": "run-p format:*",
+    "add:licenses": "node scripts/add-licenses.js",
+    "git:commit": "git add -A && git commit -m \"feat: Introduce new features\"",
+    "git:push": "pnpm git:commit && git push origin main"
+  },
+  "devDependencies": {
+    "npm-run-all2": "^9.0.3"
+  }
+}

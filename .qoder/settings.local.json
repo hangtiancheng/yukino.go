@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /Users/hangtiancheng/github/swifty.go && cat go.work && echo \"=== go.mod files ===\" && find . -name go.mod -not -path \"./node_modules/*\" -maxdepth 3 | sort)",
+      "Bash(cd /Users/hangtiancheng/github/swifty.go && git status --short && echo \"---LOG---\" && git log --oneline -10)",
+      "Bash(cd /Users/hangtiancheng/github/swifty.go && for d in swifty_cache swifty_http swifty_orm swifty_rpc; do echo \"=== $d ===\"; find $d -name '*.go' | sort; echo \"--- go.mod ---\"; cat $d/go.mod; done)",
+      "Bash(pnpm lint 2>&1 | tail -200)",
+      "Bash(ls /Users/hangtiancheng/github/swifty.go/apps/ && ls /Users/hangtiancheng/github/swifty.go/apps/xtimer/ && which golangci-lint && go version)",
+      "Bash(find . -name \"go.mod\" -not -path \"*/node_modules/*\" | head -30)",
+      "Bash(find /Users/hangtiancheng/github/swifty.go/packages/swifty-agent -type f -not -path \"*/node_modules/*\" | head -50)",
+      "Bash(ls -R /Users/hangtiancheng/github/swifty.go/packages/swifty-chat | head -80)",
+      "Bash(find /Users/hangtiancheng/github/swifty.go/swifty_agent -type f -name \"*.go\" | head -50)",
+      "Bash(pnpm lint 2>&1 | head -100)",
+      "Bash(ls apps/ && head -20 go.mod)"
+    ]
+  }
+}

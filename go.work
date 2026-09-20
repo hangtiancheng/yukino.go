@@ -1,0 +1,20 @@
+go 1.26.4
+
+use (
+	./apps/consistent_cache
+	./apps/consistent_hash
+	./apps/lsm_tree
+	./apps/raft_demo
+	./apps/red_mq
+	./apps/redis_lock
+	./apps/tcc_demo
+	./apps/time_wheel
+	./apps/timer_demo
+	./yukino_agent
+	./yukino_cache
+	./yukino_chat
+	./yukino_chatbot
+	./yukino_http
+	./yukino_orm
+	./yukino_rpc
+)

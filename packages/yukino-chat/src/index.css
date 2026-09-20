@@ -1,0 +1,155 @@
+/**
+ * Copyright (c) 2026 hangtiancheng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: Sarasa Gothic SC, PingFang SC, Microsoft YaHei, sans-serif;
+  --font-mono:
+    Iosevka, Maple Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
+    Microsoft YaHei, monospace;
+
+  --color-primary-deep: var(--primary-deep);
+  --color-primary-deep-foreground: var(--primary-deep-foreground);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* Peach theme — identity color: rgb(236, 194, 179) ≈ oklch(0.847 0.0525 40.5) */
+  --background: oklch(0.972 0.014 55);
+  --foreground: oklch(0.28 0.03 40);
+
+  --card: oklch(0.993 0.007 55);
+  --card-foreground: oklch(0.28 0.03 40);
+
+  --popover: oklch(0.993 0.007 55);
+  --popover-foreground: oklch(0.28 0.03 40);
+
+  --primary: oklch(0.847 0.0525 40.5);
+  --primary-foreground: oklch(0.3 0.05 35);
+
+  --primary-deep: oklch(0.63 0.115 40);
+  --primary-deep-foreground: oklch(0.98 0.012 55);
+
+  --secondary: oklch(0.915 0.04 50);
+  --secondary-foreground: oklch(0.35 0.05 40);
+
+  --muted: oklch(0.945 0.02 55);
+  --muted-foreground: oklch(0.48 0.045 45);
+
+  --accent: oklch(0.905 0.045 50);
+  --accent-foreground: oklch(0.3 0.04 40);
+
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 25);
+
+  --success: oklch(0.6 0.15 145);
+  --success-foreground: oklch(0.98 0.01 145);
+
+  --warning: oklch(0.75 0.14 75);
+  --warning-foreground: oklch(0.28 0.05 75);
+
+  --info: oklch(0.6 0.12 235);
+  --info-foreground: oklch(0.98 0.01 235);
+
+  --border: oklch(0.9 0.03 50);
+  --input: oklch(0.87 0.035 50);
+  --ring: oklch(0.63 0.115 40);
+
+  --chart-1: oklch(0.63 0.115 40);
+  --chart-2: oklch(0.68 0.1 55);
+  --chart-3: oklch(0.72 0.09 70);
+  --chart-4: oklch(0.65 0.12 25);
+  --chart-5: oklch(0.7 0.08 15);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  /* Warm slim scrollbar shared across shadow roots via the adopted sheet. */
+  .nice-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) transparent;
+  }
+  .nice-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .nice-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nice-scroll::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--primary-deep) 35%, transparent);
+  }
+  .nice-scroll::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--primary-deep) 55%, transparent);
+  }
+}
