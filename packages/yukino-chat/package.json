@@ -16,7 +16,7 @@
   "dependencies": {
     "@lit-labs/router": "^0.1.4",
     "@lit-labs/signals": "^0.3.0",
-    "@yukino.js/lit-jsx": "file:../../../r/lit-jsx",
+    "@yukino.js/lit-jsx": "latest",
     "clsx": "^2.1.1",
     "lit": "^3.3.3",
     "lucide": "^1.43.0",

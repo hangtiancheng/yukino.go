@@ -12,8 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@yukino.js/lit-jsx": "file:../../../r/lit-jsx",
-    "@yukino.js/sentry": "^0.0.7",
+    "@yukino.js/lit-jsx": "latest",
+    "@yukino.js/sentry": "latest",
     "dompurify": "^3.4.15",
     "lit": "^3.3.3",
     "lucide": "^1.43.0",
