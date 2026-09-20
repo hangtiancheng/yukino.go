@@ -7,27 +7,25 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint --fix",
     "format": "prettier -w ./ --experimental-cli",
     "preview": "vite preview"
   },
   "dependencies": {
     "@yukino.js/lit-jsx": "latest",
-    "@yukino.js/sentry": "latest",
+    "@yukino.js/sentry": "file:../../../yukino-sentry/sentry",
     "dompurify": "^3.4.15",
     "lit": "^3.3.3",
-    "lucide": "^1.43.0",
-    "markdown-it": "^14.3.1",
+    "lucide": "^1.47.0",
+    "markdown-it": "^14.3.2",
     "tailwindcss": "^4.3.3",
-    "zod": "^4.6.1"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/markdown-it": "^14.2.0",
-    "oxlint": "^1.82.0",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.8",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "typescript": "~6.0.3",
-    "vite": "^8.2.2"
+    "vite": "^8.3.0"
   }
 }
