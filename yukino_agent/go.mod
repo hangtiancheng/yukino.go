@@ -15,7 +15,7 @@ require (
 	github.com/cloudwego/eino-ext/components/tool/mcp v0.0.8
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17
 	github.com/google/uuid v1.6.0
-	github.com/hangtiancheng/yukino.go/yukino_http v0.0.2
+	github.com/hangtiancheng/yukino.go/yukino_http v0.0.1
 	github.com/mark3labs/mcp-go v0.56.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/common v0.70.1

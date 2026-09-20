@@ -218,7 +218,7 @@ cd yukino_rpc && go test ./...
 
 ## Versioning
 
-Modules are released independently with per-module git tags (`yukino_http/v0.0.4`, `yukino_rpc/v0.0.5`, ...). `node tag.js` reads the version from `package.json` and tags every module in one shot; individual modules can be pinned with `node tag.js --cache=v0.1.0 --rpc=v0.2.0`.
+Modules are released independently with per-module git tags (`yukino_http/v0.0.1`, `yukino_rpc/v0.0.1`, ...). `node tag.js` reads the version from `package.json` and tags every module in one shot; individual modules can be pinned with `node tag.js --cache=v0.1.0 --rpc=v0.2.0`.
 
 ## License
 

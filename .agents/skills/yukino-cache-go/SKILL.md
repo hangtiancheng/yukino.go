@@ -1569,7 +1569,7 @@ cd yukino_cache && go test ./...
 
 Direct requires in `yukino_cache/go.mod` (`go 1.26.0`):
 
-- `github.com/hangtiancheng/yukino.go/yukino_http v0.0.2` — the dashboard's
+- `github.com/hangtiancheng/yukino.go/yukino_http v0.0.1` — the dashboard's
   HTTP application, routing, and WebSocket upgrade. Resolved through a
   `replace` to `../yukino_http`; sibling `replace` directives also point
   `yukino_orm` and `yukino_rpc` at local paths even though this module does

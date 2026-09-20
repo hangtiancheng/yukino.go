@@ -3,10 +3,10 @@ module github.com/hangtiancheng/yukino.go/yukino_chatbot
 go 1.26.0
 
 require (
-	github.com/hangtiancheng/yukino.go/yukino_cache v0.0.2
-	github.com/hangtiancheng/yukino.go/yukino_http v0.0.2
-	github.com/hangtiancheng/yukino.go/yukino_orm v0.0.2
-	github.com/hangtiancheng/yukino.go/yukino_rpc v0.0.2
+	github.com/hangtiancheng/yukino.go/yukino_cache v0.0.1
+	github.com/hangtiancheng/yukino.go/yukino_http v0.0.1
+	github.com/hangtiancheng/yukino.go/yukino_orm v0.0.1
+	github.com/hangtiancheng/yukino.go/yukino_rpc v0.0.1
 	github.com/tmc/langchaingo v0.1.14
 	go.mongodb.org/mongo-driver/v2 v2.9.1
 )

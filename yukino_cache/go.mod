@@ -3,7 +3,7 @@ module github.com/hangtiancheng/yukino.go/yukino_cache
 go 1.26.0
 
 require (
-	github.com/hangtiancheng/yukino.go/yukino_http v0.0.2
+	github.com/hangtiancheng/yukino.go/yukino_http v0.0.1
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 )
