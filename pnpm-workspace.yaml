@@ -21,4 +21,4 @@
 packages:
   - packages/*
 minimumReleaseAgeExclude:
-  - '@yukino.js/lit-jsx@0.0.1'
+  - '@yukino.js/lit-jsx@0.0.3'
