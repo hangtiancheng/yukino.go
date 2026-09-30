@@ -1,0 +1,18 @@
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+bin = "./tmp/main"
+cmd = "go build -o ./tmp/main ./cmd"
+delay = 1000
+exclude_dir = ["tmp", "vendor", "node_modules"]
+exclude_regex = ["_test\\.go"]
+full_bin = "./tmp/main"
+include_ext = ["go", "toml", "json"]
+
+[log]
+time = false
+
+[misc]
+clean_on_exit = true

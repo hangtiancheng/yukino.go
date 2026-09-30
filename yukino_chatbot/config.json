@@ -1,0 +1,16 @@
+{
+  "app_name": "yukino-chatbot",
+  "app_host": "0.0.0.0",
+  "app_port": "8088",
+  "rpc_addr": "127.0.0.1:19090",
+  "mongo_uri": "mongodb://localhost:27017/",
+  "mongo_database": "yukino_chatbot",
+  "jwt_expire_hours": 8760,
+  "jwt_issuer": "yukino-chatbot",
+  "jwt_subject": "yukino-chatbot",
+  "jwt_key": "yukino-chatbot",
+  "rag_docs_dir": "./docs",
+  "ai_model_name": "qwen3",
+  "ai_embed_model": "nomic-embed-text",
+  "ai_base_url": "http://localhost:11434"
+}
