@@ -44,6 +44,14 @@ bin/yukino-claude-proxy -> artifact for the current OS and architecture
 
 `build.mjs` uses `@ts-check` and JSDoc types, disables CGO, limits each Go build to two compiler processes by default, and uses the module's dependency graph with `GOWORK=off` unless `GOWORK` is explicitly set. Failed builds retain the previous artifact and do not update the native link. Windows uses a hard link when symbolic links require additional privileges. The Windows artifacts are PE executables with the exact filenames listed above; copy or rename the selected artifact to `yukino-claude-proxy.exe` before running it on Windows.
 
+To publish the six platform executables to GitHub, authenticate the GitHub CLI with `gh auth login`, commit and push the source, then run:
+
+```sh
+make release
+```
+
+The target rebuilds all six artifacts before publishing. The release title and tag are always `yukino-claude-proxy`, and asset filenames have no version or timestamp suffix. The first run creates the release at the current `HEAD`; later runs replace the same six assets, move the fixed remote tag to `HEAD`, and refresh the release metadata. The native `bin/yukino-claude-proxy` link is excluded. Failed builds stop before any GitHub release changes.
+
 ## CLI
 
 ```sh
@@ -120,7 +128,11 @@ providers:
 
 `name`, `protocol`, `base_url`, and `model` are required for a selected provider. `api_key` accepts environment expansion. An absent key falls back to `ANTHROPIC_API_KEY` for Anthropic or `OPENAI_API_KEY` for either OpenAI protocol.
 
-`max_output_tokens` caps requests handled by the local bridge. `thinking` accepts effort strings or YAML booleans. Explicit request settings take precedence over that default. Known OpenAI reasoning model families receive reasoning effort; the DeepSeek Chat endpoint receives `thinking`, and Qwen on Alibaba endpoints receives `enable_thinking`. Forced tool selection disables thinking for that request on those two Chat providers. `context_window` is accepted as shared metadata; it does not change Claude Code's context accounting. Direct mode lets Claude Code and the upstream control request parameters.
+`max_output_tokens` caps requests handled by the local bridge. `thinking` accepts effort strings or YAML booleans. Explicit request settings take precedence over that default. Known OpenAI reasoning model families receive reasoning effort; the DeepSeek Chat endpoint receives `thinking`, and Qwen on Alibaba endpoints receives `enable_thinking`. Forced tool selection disables thinking for that request on those two Chat providers. Direct mode lets Claude Code and the upstream control request parameters.
+
+When `context_window` is positive, the CLI writes its decimal value to `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in Claude settings. This declares the context window for custom model IDs such as `deepseek-flash`, so Claude Code keeps proactive compaction at the configured window instead of assuming 200K tokens. Set the value to the actual window supported by your endpoint; there is no hard-coded provider default. An omitted or zero value clears the previous provider's window override and uses Claude Code's defaults. See the official [Claude Code context-window documentation](https://code.claude.com/docs/en/model-config#correct-the-window-for-a-gateway-or-custom-model-id) for how the override applies to recognized Claude IDs and `[1m]` names.
+
+On Claude Code 2.1.288, declaring a custom model's window removes the long startup warning about an unknown window. A noninteractive `-p` invocation can still write `[claude-code:unrecognized_model]` to stderr; this is a catalog diagnostic and does not stop inference. The CLI does not add a `behavesAs` mapping or disable unknown-model window enforcement. Those settings change capability assumptions or compaction behavior, beyond declaring a provider's actual window.
 
 Provider behavior follows the official [DeepSeek thinking documentation](https://api-docs.deepseek.com/guides/thinking_mode/), [DeepSeek Chat API reference](https://api-docs.deepseek.com/api/create-chat-completion/), and [Qwen function calling documentation](https://www.alibabacloud.com/help/en/model-studio/qwen-function-calling).
 

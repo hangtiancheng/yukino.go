@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/hangtiancheng/yukino.go/yukino_claude_proxy/internal/config"
@@ -71,5 +72,57 @@ func TestInvalidSettingsAreNotOverwritten(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if !bytes.Equal(data, after) {
 		t.Fatal("invalid settings were overwritten")
+	}
+}
+
+func TestConfigureProviderContextWindow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	original := []byte(`{"env":{"DEBUG":"1","CLAUDE_CODE_MAX_CONTEXT_TOKENS":"200000"},"modelPicker":{"options":[{"model":"custom","label":"Keep me"}]}}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []config.Provider{
+		{Name: "deepseek", Protocol: config.OpenAICompat, Model: "deepseek-flash", ContextWindow: 1000000},
+		{Name: "responses", Protocol: config.OpenAI, Model: "custom-responses", ContextWindow: 128000},
+		{Name: "native", Protocol: config.Anthropic, Model: "native-model", ContextWindow: 1048576},
+		{Name: "undeclared", Protocol: config.OpenAICompat, Model: "custom-model"},
+	} {
+		t.Run(provider.Name, func(t *testing.T) {
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			backup, err := Configure(dir, provider, "http://127.0.0.1:17861")
+			if err != nil {
+				t.Fatal(err)
+			}
+			backedUp, err := os.ReadFile(backup)
+			if err != nil || !bytes.Equal(backedUp, before) {
+				t.Fatal("context-window update did not keep an exact backup")
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var settings map[string]any
+			if err := json.Unmarshal(data, &settings); err != nil {
+				t.Fatal(err)
+			}
+			env := settings["env"].(map[string]any)
+			if provider.ContextWindow > 0 {
+				if env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != strconv.FormatInt(provider.ContextWindow, 10) {
+					t.Fatal("provider context window was not declared as a decimal string")
+				}
+			} else if _, exists := env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]; exists {
+				t.Fatal("an undeclared provider inherited the previous context window")
+			}
+			if env["DEBUG"] != "1" || settings["modelPicker"] == nil {
+				t.Fatal("unrelated user settings were lost")
+			}
+			if _, exists := env["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"]; exists {
+				t.Fatal("provider configuration disabled proactive compaction")
+			}
+		})
 	}
 }

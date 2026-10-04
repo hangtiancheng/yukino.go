@@ -10,7 +10,7 @@ providers:
     api_key: sk-xyz # Optional; omitted falls back to the protocol's environment variable
     # Thinking level. Enum: off | minimal | low | medium | high | xhigh | max. Default: high.
     thinking: high
-    context_window: 1000000 # Context window in tokens. Default: 1000000
+    context_window: 1000000 # Declared Claude context window; omitted or 0 uses Claude defaults.
     # Output token ceiling. Default: 128000; clamped to context_window; the thinking
     # budget shares this ceiling instead of raising it.
     max_output_tokens: 128000

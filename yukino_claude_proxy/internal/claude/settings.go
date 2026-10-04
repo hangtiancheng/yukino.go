@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/yukino_claude_proxy/internal/config"
@@ -63,6 +64,12 @@ func Configure(dir string, p config.Provider, proxyURL string) (string, error) {
 	}
 	for _, key := range []string{"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"} {
 		env[key] = p.Model
+	}
+	// Declare the selected provider's context window for custom model IDs.
+	// Clear a previous provider's value when this provider has no declaration.
+	delete(env, "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+	if p.ContextWindow > 0 {
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.FormatInt(p.ContextWindow, 10)
 	}
 	settings["env"] = env
 	data, err := json.MarshalIndent(settings, "", "  ")

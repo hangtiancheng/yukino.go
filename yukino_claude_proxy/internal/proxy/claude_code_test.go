@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/hangtiancheng/yukino.go/yukino_claude_proxy/internal/bridge"
+	"github.com/hangtiancheng/yukino.go/yukino_claude_proxy/internal/claude"
 	"github.com/hangtiancheng/yukino.go/yukino_claude_proxy/internal/config"
 	"github.com/hangtiancheng/yukino.go/yukino_claude_proxy/internal/proxy"
 )
@@ -135,12 +138,18 @@ func TestLiveClaudeCode(t *testing.T) {
 	gateway := httptest.NewServer(proxy.New(p))
 	defer gateway.Close()
 	dir := t.TempDir()
+	// The CLI connects to the test gateway even for a native upstream. Use
+	// the production settings writer to exercise context-window projection.
+	settingsProvider := config.Provider{Protocol: config.OpenAICompat, Model: p.Model, ContextWindow: p.ContextWindow}
+	if _, err := claude.Configure(dir, settingsProvider, gateway.URL); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, executable, "-p", "Reply with the single word OK. Do not use tools.", "--model", p.Model, "--no-session-persistence", "--setting-sources", "")
+	cmd := exec.CommandContext(ctx, executable, "-p", "Reply with the single word OK. Do not use tools.", "--model", p.Model, "--no-session-persistence", "--setting-sources", "", "--settings", filepath.Join(dir, "settings.json"))
 	cmd.Dir = dir
 	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "CLAUDECODE=") && !strings.HasPrefix(entry, "CLAUDE_CODE_USE_") {
+		if !strings.HasPrefix(entry, "CLAUDECODE=") && !strings.HasPrefix(entry, "CLAUDE_CODE_USE_") && !strings.HasPrefix(entry, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=") {
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
@@ -151,12 +160,17 @@ func TestLiveClaudeCode(t *testing.T) {
 		"ANTHROPIC_API_KEY=",
 		"DISABLE_CLAUDE_CODE_NONESSENTIAL_TRAFFIC=1",
 	)
+	var diagnostics bytes.Buffer
+	cmd.Stderr = &diagnostics
 	output, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("Claude Code request failed: %v; response: %s", err, strings.ReplaceAll(string(output), p.APIKey, "[redacted]"))
+		t.Fatalf("Claude Code request failed: %v; response: %s", err, strings.ReplaceAll(string(output)+diagnostics.String(), p.APIKey, "[redacted]"))
 	}
 	if strings.TrimSpace(string(output)) != "OK" {
 		t.Fatalf("expected Claude Code to return OK, got: %s", strings.ReplaceAll(string(output), p.APIKey, "[redacted]"))
+	}
+	if p.ContextWindow > 0 && strings.Contains(diagnostics.String(), "isn't described by this version's model catalog") {
+		t.Fatal("Claude Code still warns about an unknown context window despite the provider declaration")
 	}
 	t.Logf("installed Claude Code returned OK through %s provider %s", p.Protocol, p.Name)
 }
