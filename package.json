@@ -12,7 +12,7 @@
     "lint": "go list -f '{{.Dir}}/...' -m | xargs golangci-lint run",
     "lint:fix": "go list -f '{{.Dir}}/...' -m | xargs golangci-lint run --fix",
     "tag": "node tag.js",
-    "format:gofmt": "gofmt -w ./",
+    "format:go": "gofmt -w ./",
     "format:yukino-chat": "pnpm --filter yukino-chat format",
     "format:yukino-agent": "pnpm --filter yukino-agent format",
     "format": "run-p format:*",

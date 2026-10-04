@@ -14,6 +14,7 @@ use (
 	./yukino_cache
 	./yukino_chat
 	./yukino_chatbot
+	./yukino_claude_proxy
 	./yukino_http
 	./yukino_orm
 	./yukino_rpc
