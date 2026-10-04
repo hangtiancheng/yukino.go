@@ -1,4 +1,3 @@
-
 package yukino_cache
 
 import (

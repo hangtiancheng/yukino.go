@@ -21,8 +21,10 @@ func Request(body Object, p config.Provider) (Object, error) {
 	}
 	for _, message := range List(body["messages"]) {
 		m := Obj(message)
-		if m["role"] != "user" && m["role"] != "assistant" {
-			return nil, fmt.Errorf("message role must be user or assistant")
+		// Claude Code also appends mid-conversation system instructions. Keep
+		// their role and position when converting to either OpenAI protocol.
+		if m["role"] != "user" && m["role"] != "assistant" && m["role"] != "system" {
+			return nil, fmt.Errorf("message role must be user, assistant, or system")
 		}
 		if _, ok := m["content"].(string); !ok && List(m["content"]) == nil {
 			return nil, fmt.Errorf("message content must be a string or block array")

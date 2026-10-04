@@ -192,7 +192,7 @@ flowchart LR
     P -->|Messages JSON or SSE| C
 ```
 
-The bridge handles system instructions, text, images, custom tool schemas, tool choice, parallel tool calls, tool results, output limits, token usage, stop reasons, and upstream errors. It supports streamed and nonstreamed responses, including gateways that return JSON for a streaming request or SSE for a nonstreaming request.
+The bridge handles system instructions, text, images, custom tool schemas, tool choice, parallel tool calls, tool results, output limits, token usage, stop reasons, and upstream errors. Mid-conversation `role: "system"` text messages, including those sent by Claude Code 2.1.288, retain their role and position in both OpenAI protocols. It supports streamed and nonstreamed responses, including gateways that return JSON for a streaming request or SSE for a nonstreaming request.
 
 Text streams immediately. Tool arguments are buffered per call and emitted as sequential Anthropic blocks to keep parallel calls separate. Responses reasoning items retain their encrypted state in a proxy signature or redacted thinking block and are replayed on subsequent turns. Responses reasoning summaries are emitted when their output item completes. DeepSeek/MiMo Chat reasoning is preserved in assistant history.
 
@@ -215,9 +215,14 @@ go vet ./...
 
 # Optional: small billable requests to real providers; never changes Claude settings.
 YUKINO_PROXY_LIVE_TEST=1 go test ./internal/proxy -run '^TestLiveProviders$' -v -count=1
+
+# Optional: run the installed Claude Code through an isolated proxy and
+# temporary Claude configuration, using the first provider named ds-openai.
+YUKINO_PROXY_CLAUDE_TEST=1 YUKINO_PROXY_LIVE_NAME=ds-openai \
+  go test ./internal/proxy -run '^TestLiveClaudeCode$' -v -count=1
 ```
 
-Tests cover all four selection modes, duplicate names, default indices, startup connection failures, retained settings and services on failure, backups, real SDK clients through mocked endpoints, parallel tool argument assembly, reasoning replay, truncated streams, cancellation, background process switching, shutdown, and MCP stdio. The opt-in live suite checks startup connectivity, text, SSE, and tool round trips against configured providers. Use `YUKINO_PROXY_LIVE_CONFIG` to choose another YAML file.
+Tests cover all four selection modes, duplicate names, default indices, startup connection failures, retained settings and services on failure, backups, real SDK clients through mocked endpoints, mid-conversation system messages in JSON and SSE, parallel tool argument assembly, reasoning replay, truncated streams, cancellation, background process switching, shutdown, and MCP stdio. The opt-in live suite checks startup connectivity, text, SSE, and tool round trips against configured providers. The separate Claude Code test sends a small billable request using the installed CLI; `YUKINO_PROXY_LIVE_NAME` selects the first provider with that name, or its omission uses `default_provider`. Use `YUKINO_PROXY_LIVE_CONFIG` to choose another YAML file.
 
 Implementation packages:
 
