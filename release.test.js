@@ -26,7 +26,7 @@ import { parseArgs, release } from "./release.js";
 
 const HEAD = "a".repeat(40);
 /** @type {readonly ProjectName[]} */
-const NAMES = ["yukino-claude-proxy", "yukino-codex-proxy"];
+const NAMES = ["yukino-agent-proxy"];
 const PLATFORMS = [
   "linux-x64",
   "linux-arm64",
@@ -126,20 +126,24 @@ function mutations(calls) {
   );
 }
 
-test("CLI defaults to both fixed releases and accepts individual projects", () => {
-  assert.deepEqual(parseArgs([]), { help: false, dryRun: false, names: NAMES });
-  assert.deepEqual(parseArgs(["yukino-codex-proxy", "--dry-run"]).names, [
-    "yukino-codex-proxy",
+test("CLI defaults to the fixed release and accepts an explicit project", () => {
+  assert.deepEqual(parseArgs([]), {
+    help: false,
+    dryRun: false,
+    names: NAMES,
+  });
+  assert.deepEqual(parseArgs(["yukino-agent-proxy", "--dry-run"]).names, [
+    "yukino-agent-proxy",
   ]);
   assert.equal(parseArgs(["--help"]).help, true);
   assert.deepEqual(
-    parseArgs(["yukino-codex-proxy", "yukino-codex-proxy"]).names,
-    ["yukino-codex-proxy"],
+    parseArgs(["yukino-agent-proxy", "yukino-agent-proxy"]).names,
+    ["yukino-agent-proxy"],
   );
   assert.throws(() => parseArgs(["v1.0.0"]), /Unknown argument/);
 });
 
-test("existing releases replace six fixed assets, update tags and refresh metadata", async (t) => {
+test("an existing release replaces six fixed assets, updates the tag and refreshes metadata", async (t) => {
   const f = await fixture(t);
   await release(NAMES, f);
   const writes = mutations(f.calls);
@@ -147,9 +151,9 @@ test("existing releases replace six fixed assets, update tags and refresh metada
   const builds = f.calls
     .map((call, i) => (call.command === process.execPath ? i : -1))
     .filter((i) => i >= 0);
-  assert.equal(builds.length, 2);
+  assert.equal(builds.length, 1);
   assert.ok(builds.every((i) => i < firstWrite));
-  assert.equal(writes.length, 6);
+  assert.equal(writes.length, 3);
   for (const name of NAMES) {
     const upload = writes.find(
       (call) => call.args[1] === "upload" && call.args[2] === name,
@@ -175,12 +179,12 @@ test("existing releases replace six fixed assets, update tags and refresh metada
   }
 });
 
-test("new releases create fixed tags and require those tags during release creation", async (t) => {
+test("a new release creates the fixed tag and requires it during release creation", async (t) => {
   const f = await fixture(t, { releaseExists: false, tagExists: false });
   await release(NAMES, f);
   const writes = mutations(f.calls);
-  assert.equal(writes.length, 4);
-  assert.equal(writes.filter((call) => call.args.includes("POST")).length, 2);
+  assert.equal(writes.length, 2);
+  assert.equal(writes.filter((call) => call.args.includes("POST")).length, 1);
   for (const name of NAMES) {
     const created = writes.find(
       (call) => call.args[1] === "create" && call.args[2] === name,
@@ -194,7 +198,7 @@ test("new releases create fixed tags and require those tags during release creat
 
 test("an existing tag without a release is moved before creating the release", async (t) => {
   const f = await fixture(t, { releaseExists: false });
-  await release(["yukino-codex-proxy"], f);
+  await release(["yukino-agent-proxy"], f);
   const writes = mutations(f.calls);
   assert.equal(writes.length, 2);
   assert.ok(writes[0]?.args.includes("PATCH"));
@@ -203,7 +207,7 @@ test("an existing tag without a release is moved before creating the release", a
 
 test("dry run builds selected artifacts without any remote writes", async (t) => {
   const f = await fixture(t);
-  await release(["yukino-codex-proxy"], { ...f, dryRun: true });
+  await release(["yukino-agent-proxy"], { ...f, dryRun: true });
   assert.equal(
     f.calls.filter((call) => call.command === process.execPath).length,
     1,
@@ -211,14 +215,14 @@ test("dry run builds selected artifacts without any remote writes", async (t) =>
   assert.equal(mutations(f.calls).length, 0);
 });
 
-test("a failure in the second build leaves both releases untouched", async (t) => {
-  const f = await fixture(t, { buildFailure: "yukino-codex-proxy" });
+test("a build failure leaves the release untouched", async (t) => {
+  const f = await fixture(t, { buildFailure: "yukino-agent-proxy" });
   await assert.rejects(release(NAMES, f), /go build failed/);
   assert.equal(mutations(f.calls).length, 0);
 });
 
 test("empty executables cannot be published", async (t) => {
-  const f = await fixture(t, { emptyAsset: "yukino-codex-proxy" });
+  const f = await fixture(t, { emptyAsset: "yukino-agent-proxy" });
   await assert.rejects(release(NAMES, f), /invalid release executable/);
   assert.equal(mutations(f.calls).length, 0);
 });

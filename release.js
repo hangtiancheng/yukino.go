@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * @typedef {'yukino-claude-proxy' | 'yukino-codex-proxy'} ProjectName
+ * @typedef {'yukino-agent-proxy'} ProjectName
  * @typedef {object} Project
  * @property {ProjectName} name Fixed release tag, title and artifact prefix.
  * @property {string} directory Go module directory relative to the repository.
@@ -40,8 +40,7 @@ const NOTES =
   "Standalone executables for Linux, macOS, and Windows on x64 and arm64.";
 /** @type {readonly Project[]} */
 const PROJECTS = [
-  { name: "yukino-claude-proxy", directory: "yukino_claude_proxy" },
-  { name: "yukino-codex-proxy", directory: "yukino_codex_proxy" },
+  { name: "yukino-agent-proxy", directory: "yukino_agent_proxy" },
 ];
 /** @type {readonly string[]} */
 const PLATFORMS = [
@@ -364,10 +363,10 @@ export async function main(args = process.argv.slice(2)) {
   const options = parseArgs(args);
   if (options.help) {
     console.log(
-      "Usage: node release.js [yukino-claude-proxy] [yukino-codex-proxy] [--dry-run]",
+      "Usage: node release.js [yukino-agent-proxy] [--dry-run]",
     );
     console.log(
-      "With no project names, release both proxies. Tags, titles and assets have no version or timestamp.",
+      "With no project name, release the proxy. Tags, titles and assets have no version or timestamp.",
     );
     console.log(
       "--dry-run builds and inspects GitHub, then prints writes without applying them.",

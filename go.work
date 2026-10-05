@@ -11,6 +11,7 @@ use (
 	./apps/time_wheel
 	./apps/timer_demo
 	./yukino_agent
+	./yukino_agent_proxy
 	./yukino_cache
 	./yukino_chat
 	./yukino_chatbot
