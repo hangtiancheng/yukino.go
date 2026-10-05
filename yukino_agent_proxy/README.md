@@ -5,19 +5,19 @@ binary proxies either Claude Code or Codex, chosen with `--agent`. The CLI
 starts a background service, backs up the agent's settings, and routes the
 agent either directly or through a local protocol bridge.
 
-| `--agent` | Agent       | Settings file | Default listen   | Default state dir      |
-| --------- | ----------- | ------------- | ---------------- | ---------------------- |
-| `claude`  | Claude Code | `settings.json` | `127.0.0.1:17861` | `claude-proxy`       |
-| `codex`   | Codex       | `config.toml`   | `127.0.0.1:17862` | `codex-proxy`        |
+| `--agent` | Agent       | Settings file   | Default listen    | Default state dir |
+| --------- | ----------- | --------------- | ----------------- | ----------------- |
+| `claude`  | Claude Code | `settings.json` | `127.0.0.1:17861` | `claude-proxy`    |
+| `codex`   | Codex       | `config.toml`   | `127.0.0.1:17862` | `codex-proxy`     |
 
 Claude Code exposes an Anthropic Messages surface. Codex exposes an OpenAI
 Responses surface. Each agent accepts the same three upstream wire protocols:
 
-| `--protocol`    | Upstream API            | Claude Code connection              | Codex connection                       |
-| --------------- | ----------------------- | ----------------------------------- | -------------------------------------- |
-| `anthropic`     | Anthropic Messages      | Directly to the configured provider | Through the local Responses bridge     |
-| `openai`        | OpenAI Responses        | Through the local Messages bridge   | Forwarded to the Responses endpoint    |
-| `openai-compat` | OpenAI Chat Completions | Through the local Messages bridge   | Through the local Responses bridge     |
+| `--protocol`    | Upstream API            | Claude Code connection              | Codex connection                    |
+| --------------- | ----------------------- | ----------------------------------- | ----------------------------------- |
+| `anthropic`     | Anthropic Messages      | Directly to the configured provider | Through the local Responses bridge  |
+| `openai`        | OpenAI Responses        | Through the local Messages bridge   | Forwarded to the Responses endpoint |
+| `openai-compat` | OpenAI Chat Completions | Through the local Messages bridge   | Through the local Responses bridge  |
 
 ## Build
 
@@ -157,17 +157,19 @@ agent after switching so that its process loads the updated environment.
 
 Optional flags:
 
-| Flag           | Default                                                            | Purpose                                            |
-| -------------- | ------------------------------------------------------------------ | -------------------------------------------------- |
-| `--agent`      | `claude`                                                           | Agent to proxy: `claude` or `codex`                |
-| `--config`     | `$HOME/.yukino/config.yaml`                                        | Provider configuration                             |
-| `--agent-dir`  | Claude: `$CLAUDE_CONFIG_DIR`/`$HOME/.claude`; Codex: `$CODEX_HOME`/`$HOME/.codex` | Agent settings directory       |
-| `--state-dir`  | `claude-proxy` or `codex-proxy` beside the selected config file    | Process state, lock, and log directory             |
-| `--listen`     | `127.0.0.1:17861` (claude), `127.0.0.1:17862` (codex)              | Loopback IP and port; port `0` chooses a free port |
-| `--foreground` | `false`                                                            | Run in the foreground; stop with Ctrl-C            |
+| Flag           | Default                                                                           | Purpose                                            |
+| -------------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `--agent`      | `claude`                                                                          | Agent to proxy: `claude` or `codex`                |
+| `--config`     | `$HOME/.yukino/config.yaml`                                                       | Provider configuration                             |
+| `--agent-dir`  | Claude: `$CLAUDE_CONFIG_DIR`/`$HOME/.claude`; Codex: `$CODEX_HOME`/`$HOME/.codex` | Agent settings directory                           |
+| `--state-dir`  | `$HOME/.yukino/claude-proxy` or `$HOME/.yukino/codex-proxy`                       | Process state, lock, and log directory             |
+| `--listen`     | `127.0.0.1:17861` (claude), `127.0.0.1:17862` (codex)                             | Loopback IP and port; port `0` chooses a free port |
+| `--foreground` | `false`                                                                           | Run in the foreground; stop with Ctrl-C            |
 
-Put flags after a subcommand when using `shutdown`, `status`, or `mcp`. Use the
-same `--agent` and `--state-dir` for commands controlling the same service.
+Flags may appear before or after a subcommand. Use the same `--agent` and
+`--state-dir` for commands controlling the same service. A state directory
+belonging to the other agent is rejected. `--config` does not change the default
+state directory.
 
 For Claude Code, even direct Anthropic mode starts the local service for status
 and shutdown control; Claude Code sends inference requests directly to the
@@ -204,8 +206,9 @@ provider. `api_key` accepts environment expansion. An absent key falls back to
 protocol.
 
 `max_output_tokens` caps requests handled by the local bridge. `thinking`
-accepts effort strings or YAML booleans. Explicit request settings take
-precedence over that default.
+accepts effort strings or YAML booleans. The legacy Claude defaults `enabled`
+and `adaptive` map to `high`; effort strings are case-insensitive. Explicit
+request settings take precedence over that default.
 
 For OpenAI protocols, a host-only base URL receives `/v1`; an existing path is
 preserved. A full `/responses` or `/chat/completions` endpoint is also
@@ -233,6 +236,12 @@ direct connection. Settings, backups, logs, and state files use mode `0600` on
 POSIX systems; Windows access is governed by the configuration directory's
 ACLs.
 
+The existing backup prefixes, Codex provider ID and catalog filename, and
+per-agent state directories are retained for compatibility with configurations
+created by the former standalone proxies. The executable for both agents is
+now `yukino-agent-proxy`; old `--claude-dir`/`--codex-dir` overrides become
+`--agent-dir`.
+
 **Shutdown leaves settings and backups unchanged.** The agent will keep pointing
 at the stopped local service until you start it again or restore a backup. The
 status output includes the backup path. A missing original settings file is
@@ -244,7 +253,7 @@ agent's settings file. Use the corresponding directory if `CLAUDE_CONFIG_DIR`
 
 ## MCP
 
-Run the stdio MCP server for one agent:
+Run the stdio MCP server with a default agent:
 
 ```sh
 yukino-agent-proxy --agent=claude mcp
@@ -266,17 +275,32 @@ Example MCP client configuration:
 
 The official Go MCP SDK exposes:
 
-| Tool             | Input                       | Behavior                                                                                                     |
-| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `start_proxy`    | Optional `protocol`, `name` | Apply the same four selection rules, check the connection, back up settings, and start or switch the service |
-| `shutdown_proxy` | `{}`                        | Stop the service and retain settings and backups                                                             |
-| `proxy_status`   | `{}`                        | Return agent, provider, model, PID, endpoint, and backup path                                                |
+| Tool             | Input                                | Behavior                                                                                                    |
+| ---------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `start_proxy`    | Optional `agent`, `protocol`, `name` | Apply the same four selection rules, check the connection, back up settings, and start or switch the service |
+| `shutdown_proxy` | Optional `agent`                    | Stop the selected agent's service and retain settings and backups                                           |
+| `proxy_status`   | Optional `agent`                    | Return agent, provider, model, PID, endpoint, and backup path                                                 |
 
-MCP selection comes from the tool arguments; the server's `--agent`,
-`--config`, `--agent-dir`, `--state-dir`, and `--listen` flags provide its
-runtime paths and address. The proxy survives the MCP session ending. Status
-and tool results exclude API keys. Standard output carries MCP messages only;
-diagnostics go to standard error or the daemon log.
+Each tool accepts `agent: "claude"` or `agent: "codex"`. Omitting `agent`
+uses the server's `--agent` (default `claude`); empty and unknown values are
+rejected. The selection applies only to that call and does not change the
+default for later calls. One MCP session can start, inspect, and stop both
+agents independently. For example, call `start_proxy` with:
+
+```json
+{"agent": "codex", "protocol": "openai-compat", "name": "ds-openai"}
+```
+
+Use `{"agent": "codex"}` with `proxy_status` or `shutdown_proxy` to control
+that daemon. Results identify the selected agent, including when it is stopped.
+
+The server's `--config` is shared. When a call selects another agent, default
+settings directories, state directories, and listen ports follow that agent.
+Custom `--agent-dir`, `--state-dir`, and `--listen` values are retained across
+calls; use the default state directories to run both agents concurrently.
+The proxy survives the MCP session ending. Status and tool results exclude API
+keys. Standard output carries MCP messages only; diagnostics go to standard
+error or the daemon log.
 
 ## Protocol bridges
 

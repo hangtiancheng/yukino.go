@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -248,7 +249,147 @@ func runAgentCLIAndMCP(t *testing.T, agentName string) {
 }
 
 func TestAgentFlagValidation(t *testing.T) {
-	if err := run([]string{"status", "--agent", "gemini"}); err == nil {
-		t.Fatal("unknown agent was accepted")
+	for _, args := range [][]string{
+		{"--agent", "gemini"},
+		{"--agent="},
+		{"--agent", "claude", "--agent", "gemini"},
+		{"--agent", "codex", "--agent="},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			command := append([]string{"status", "--state-dir", t.TempDir()}, args...)
+			if err := run(command); err == nil {
+				t.Fatal("invalid agent was accepted")
+			}
+		})
+	}
+}
+
+func TestFlagsBeforeSubcommand(t *testing.T) {
+	if err := run([]string{"--agent=codex", "--state-dir", t.TempDir(), "status"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentDefaultsFollowParsedFlags(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"status"}, agent.Claude},
+		{[]string{"status", "--agent=codex"}, agent.Codex},
+		{[]string{"status", "--agent=claude", "--agent=codex"}, agent.Codex},
+		{[]string{"--agent=codex", "status", "--agent=claude"}, agent.Claude},
+		{[]string{"status", "--name", "--agent=codex"}, agent.Claude},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			args := append(append([]string{}, tc.args...), "--config", configPath)
+			command, opts, _, err := parseOptions(args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, _ := agent.Get(tc.want)
+			defaults, err := daemon.Defaults(a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if command != "status" || opts.Agent != tc.want || opts.AgentDir != defaults.AgentDir || opts.Listen != defaults.Listen || opts.StateDir != defaults.StateDir {
+				t.Fatalf("wrong defaults for %s: %+v", tc.want, opts)
+			}
+		})
+	}
+	_, opts, foreground, err := parseOptions([]string{"--agent=codex", "--config", configPath, "start", "--agent-dir", "custom-settings", "--state-dir", "custom-state", "--listen", "127.0.0.1:0", "--foreground"})
+	settings, _ := filepath.Abs("custom-settings")
+	state, _ := filepath.Abs("custom-state")
+	if err != nil || !foreground || opts.AgentDir != settings || opts.StateDir != state || opts.Listen != "127.0.0.1:0" {
+		t.Fatalf("explicit overrides were lost: %+v, %v", opts, err)
+	}
+}
+
+func TestMCPSelectsAgentPerCall(t *testing.T) {
+	root := t.TempDir()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}`)
+	}))
+	defer upstream.Close()
+	configPath := filepath.Join(root, "config.yaml")
+	text := fmt.Sprintf("providers:\n  - name: mock\n    protocol: openai-compat\n    base_url: %s\n    model: test-model\n    api_key: mock-key\n", upstream.URL)
+	if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable, "mcp", "--config", configPath, "--listen", "127.0.0.1:0")
+	// Isolate the child process's standard configuration locations for both agents.
+	cmd.Env = append(os.Environ(), "HOME="+root, "CLAUDE_CONFIG_DIR="+filepath.Join(root, "claude"), "CODEX_HOME="+filepath.Join(root, "codex"))
+	client := mcp.NewClient(&mcp.Implementation{Name: "agent-selection-test", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	defer func() {
+		for _, name := range agent.Names() {
+			_, _ = session.CallTool(ctx, &mcp.CallToolParams{Name: "shutdown_proxy", Arguments: map[string]any{"agent": name}})
+		}
+	}()
+	call := func(tool string, args map[string]any) daemon.Status {
+		t.Helper()
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+		if err != nil || result.IsError {
+			t.Fatalf("%s(%v) failed: %v, %+v", tool, args, err, result)
+		}
+		data, _ := json.Marshal(result.StructuredContent)
+		var status daemon.Status
+		if err := json.Unmarshal(data, &status); err != nil {
+			t.Fatal(err)
+		}
+		return status
+	}
+	started := make(map[string]daemon.Status)
+	for _, name := range agent.Names() {
+		status := call("start_proxy", map[string]any{"agent": name})
+		if !status.Running || status.Agent != name {
+			t.Fatalf("wrong agent started: %+v", status)
+		}
+		started[name] = status
+		settings := "settings.json"
+		if name == agent.Codex {
+			settings = "config.toml"
+		}
+		if _, err := os.Stat(filepath.Join(root, name, settings)); err != nil {
+			t.Fatalf("%s settings were not written to the selected directory: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, ".yukino", name+"-proxy", "state.json")); err != nil {
+			t.Fatalf("%s state was not isolated: %v", name, err)
+		}
+	}
+	if started[agent.Claude].PID == started[agent.Codex].PID || started[agent.Claude].GatewayURL == started[agent.Codex].GatewayURL {
+		t.Fatal("agents reused the same daemon")
+	}
+	if status := call("start_proxy", map[string]any{}); status.Agent != agent.Claude || status.PID != started[agent.Claude].PID {
+		t.Fatalf("a previous call changed the server's default agent: %+v", status)
+	}
+	for _, name := range agent.Names() {
+		if status := call("proxy_status", map[string]any{"agent": name}); !status.Running || status.PID != started[name].PID || status.Agent != name {
+			t.Fatalf("status selected the wrong daemon: %+v", status)
+		}
+	}
+	if status := call("shutdown_proxy", map[string]any{}); status.Agent != agent.Claude || status.Running {
+		t.Fatalf("shutdown did not use the default agent: %+v", status)
+	}
+	if status := call("proxy_status", map[string]any{"agent": agent.Claude}); status.Running || status.Agent != agent.Claude {
+		t.Fatalf("Claude did not stop: %+v", status)
+	}
+	if status := call("proxy_status", map[string]any{"agent": agent.Codex}); !status.Running || status.PID != started[agent.Codex].PID {
+		t.Fatalf("stopping Claude affected Codex: %+v", status)
+	}
+	if status := call("shutdown_proxy", map[string]any{"agent": agent.Codex}); status.Running || status.Agent != agent.Codex {
+		t.Fatalf("Codex did not stop: %+v", status)
 	}
 }

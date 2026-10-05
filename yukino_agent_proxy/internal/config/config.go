@@ -116,7 +116,10 @@ func (p Provider) Validate() (Provider, error) {
 	if p.MaxOutputTokens < 0 || p.ContextWindow < 0 {
 		return Provider{}, fmt.Errorf("selected provider token limits cannot be negative")
 	}
+	p.Thinking = strings.ToLower(p.Thinking)
 	switch p.Thinking {
+	case "enabled", "adaptive":
+		p.Thinking = "high"
 	case "", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "true", "false":
 	default:
 		return Provider{}, fmt.Errorf("selected provider has an invalid thinking level")

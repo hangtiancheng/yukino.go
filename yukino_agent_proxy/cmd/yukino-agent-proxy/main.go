@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,40 +25,15 @@ func main() {
 	}
 }
 
-// scanAgent reads the requested agent before flag parsing so per-agent
-// defaults (directory, state dir, listen port) can be resolved first.
-func scanAgent(args []string) string {
-	for i := 0; i < len(args); i++ {
-		switch arg := args[i]; {
-		case arg == "--agent" || arg == "-agent":
-			if i+1 < len(args) {
-				return args[i+1]
-			}
-			return ""
-		case strings.HasPrefix(arg, "--agent="):
-			return strings.TrimPrefix(arg, "--agent=")
-		case strings.HasPrefix(arg, "-agent="):
-			return strings.TrimPrefix(arg, "-agent=")
-		}
-	}
-	return ""
-}
-
-func run(args []string) error {
-	agentName := scanAgent(args)
-	if agentName == "" {
-		agentName = agent.Claude
-	}
-	selected, err := agent.Get(agentName)
-	if err != nil {
-		return err
-	}
+func parseOptions(args []string) (string, daemon.Options, bool, error) {
+	selected, _ := agent.Get(agent.Claude)
 	opts, err := daemon.Defaults(selected)
 	if err != nil {
-		return err
+		return "", opts, false, err
 	}
 	command := "start"
-	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
+	hasCommand := len(args) > 0 && args[0] != "" && args[0][0] != '-'
+	if hasCommand {
 		command = args[0]
 		args = args[1:]
 	}
@@ -76,42 +50,86 @@ func run(args []string) error {
 		flags.StringVar(&opts.ExpectedProvider, "expected-provider", "", "Validated provider fingerprint")
 	}
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: yukino-agent-proxy [start|shutdown|status|mcp] --agent=claude|codex [options]")
+		if a, err := agent.Get(opts.Agent); err == nil {
+			if defaults, err := daemon.Defaults(a); err == nil {
+				flags.Lookup("agent-dir").DefValue = defaults.AgentDir
+				flags.Lookup("state-dir").DefValue = defaults.StateDir
+				flags.Lookup("listen").DefValue = defaults.Listen
+			}
+		}
+		fmt.Fprintln(flags.Output(), "Usage: yukino-agent-proxy [start|shutdown|status|mcp] [--agent=claude|codex] [options]")
 		flags.PrintDefaults()
 	}
-	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
-		return err
+	if err := flags.Parse(args); err != nil {
+		return "", opts, false, err
+	}
+	// Also accept flags before the command, as in --agent=codex status.
+	if !hasCommand && flags.NArg() > 0 {
+		command = flags.Arg(0)
+		if err := flags.Parse(flags.Args()[1:]); err != nil {
+			return "", opts, false, err
+		}
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected positional argument %q", flags.Arg(0))
+		return "", opts, false, fmt.Errorf("unexpected positional argument %q", flags.Arg(0))
 	}
 	var emptyFilter string
+	explicit := make(map[string]bool)
 	flags.Visit(func(f *flag.Flag) {
+		explicit[f.Name] = true
 		if (f.Name == "protocol" || f.Name == "name") && f.Value.String() == "" {
 			emptyFilter = f.Name
 		}
 	})
 	if emptyFilter != "" {
-		return fmt.Errorf("--%s must not be empty; omit both filters to use default_provider", emptyFilter)
+		return "", opts, false, fmt.Errorf("--%s must not be empty; omit both filters to use default_provider", emptyFilter)
+	}
+	selected, err = agent.Get(opts.Agent)
+	if err != nil {
+		return "", opts, false, err
+	}
+	defaults, err := daemon.Defaults(selected)
+	if err != nil {
+		return "", opts, false, err
+	}
+	// Resolve defaults from the final parsed agent, preserving explicit overrides.
+	if !explicit["agent-dir"] {
+		opts.AgentDir = defaults.AgentDir
+	}
+	if !explicit["listen"] {
+		opts.Listen = defaults.Listen
+	}
+	if !explicit["state-dir"] {
+		opts.StateDir = defaults.StateDir
 	}
 	for _, value := range []*string{&opts.ConfigPath, &opts.AgentDir, &opts.StateDir} {
 		if *value == "" {
-			return fmt.Errorf("configuration and state paths must not be empty")
+			return "", opts, false, fmt.Errorf("configuration and state paths must not be empty")
 		}
 		path, err := filepath.Abs(*value)
 		if err != nil {
-			return err
+			return "", opts, false, err
 		}
 		*value = path
 	}
+	return command, opts, *foreground, nil
+}
+
+func run(args []string) error {
+	command, opts, foreground, err := parseOptions(args)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	selected, _ := agent.Get(opts.Agent)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	manager := daemon.Manager{Options: opts}
 	switch command {
 	case "start":
-		if *foreground {
+		if foreground {
 			return manager.Serve(ctx, true)
 		}
 		status, err := manager.Start(ctx)

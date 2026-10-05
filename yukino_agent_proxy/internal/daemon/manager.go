@@ -103,6 +103,9 @@ func (m *Manager) readState() (*state, error) {
 	if json.Unmarshal(data, &value) != nil || value.Token == "" || value.GatewayURL == "" {
 		return nil, fmt.Errorf("invalid proxy state file: %s", m.statePath())
 	}
+	if value.Agent != "" && value.Agent != m.Options.Agent {
+		return nil, fmt.Errorf("proxy state belongs to agent %q; use --agent=%s or a different --state-dir", value.Agent, value.Agent)
+	}
 	return &value, nil
 }
 func (m *Manager) writeState(value *state) error {

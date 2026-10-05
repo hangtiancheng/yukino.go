@@ -77,6 +77,18 @@ func TestThinkingScalarFormats(t *testing.T) {
 	}
 }
 
+func TestLegacyClaudeThinkingDefaults(t *testing.T) {
+	for _, thinking := range []string{"enabled", "adaptive", "HIGH"} {
+		t.Run(thinking, func(t *testing.T) {
+			p := Provider{Name: "provider", Protocol: OpenAI, BaseURL: "https://example.com", Model: "gpt-5", APIKey: "key", Thinking: thinking}
+			validated, err := p.Validate()
+			if err != nil || validated.Thinking != "high" {
+				t.Fatalf("legacy thinking default %q = %q, %v; want high", thinking, validated.Thinking, err)
+			}
+		})
+	}
+}
+
 func TestSelectionModesAndDefaultIndex(t *testing.T) {
 	cfg := Config{DefaultProvider: 3, Providers: []Provider{
 		{Name: "shared", Protocol: OpenAICompat, BaseURL: "https://example.com", Model: "first-name", APIKey: "key"},

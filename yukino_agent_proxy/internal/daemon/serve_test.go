@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,5 +238,73 @@ func TestFailedConnectionDoesNotChangeSettings(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestConcurrentAgentsAndStateIsolation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	managers := make(map[string]*Manager)
+	for _, name := range agent.Names() {
+		m := testManager(t, name, config.OpenAICompat)
+		managers[name] = m
+		finished := make(chan error, 1)
+		go func() { finished <- m.Serve(ctx, true) }()
+		defer func() {
+			cancel()
+			select {
+			case err := <-finished:
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(3 * time.Second):
+				t.Error("server leaked")
+			}
+		}()
+		for {
+			status, err := m.Status(ctx)
+			if err == nil && status.Running {
+				if status.Agent != name {
+					t.Fatalf("wrong running agent: %+v", status)
+				}
+				break
+			}
+			select {
+			case err := <-finished:
+				t.Fatalf("server exited: %v", err)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}
+	for _, name := range agent.Names() {
+		other := agent.Claude
+		if name == agent.Claude {
+			other = agent.Codex
+		}
+		opts := managers[name].Options
+		opts.StateDir = managers[other].Options.StateDir
+		wrong := &Manager{Options: opts}
+		checks := []func() error{
+			func() error { _, err := wrong.Status(ctx); return err },
+			func() error { return wrong.Shutdown(ctx) },
+			func() error { _, err := wrong.Start(ctx); return err },
+			func() error { return wrong.Serve(ctx, true) },
+		}
+		for _, check := range checks {
+			if err := check(); err == nil || !strings.Contains(err.Error(), "belongs to agent") {
+				t.Fatalf("cross-agent state access was accepted: %v", err)
+			}
+		}
+	}
+	if err := managers[agent.Claude].Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := managers[agent.Codex].Status(ctx); err != nil || !status.Running || status.Agent != agent.Codex {
+		t.Fatalf("stopping Claude affected Codex: %+v, %v", status, err)
+	}
+	if err := managers[agent.Codex].Shutdown(ctx); err != nil {
+		t.Fatal(err)
 	}
 }
