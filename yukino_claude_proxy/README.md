@@ -44,13 +44,29 @@ bin/yukino-claude-proxy -> artifact for the current OS and architecture
 
 `build.mjs` uses `@ts-check` and JSDoc types, disables CGO, limits each Go build to two compiler processes by default, and uses the module's dependency graph with `GOWORK=off` unless `GOWORK` is explicitly set. Failed builds retain the previous artifact and do not update the native link. Windows uses a hard link when symbolic links require additional privileges. The Windows artifacts are PE executables with the exact filenames listed above; copy or rename the selected artifact to `yukino-claude-proxy.exe` before running it on Windows.
 
-To publish the six platform executables to GitHub, authenticate the GitHub CLI with `gh auth login`, commit and push the source, then run:
+To publish this proxy, authenticate with `gh auth login`, commit and push the source, then run:
 
 ```sh
 make release
 ```
 
-The target rebuilds all six artifacts before publishing. The release title and tag are always `yukino-claude-proxy`, and asset filenames have no version or timestamp suffix. The first run creates the release at the current `HEAD`; later runs replace the same six assets, move the fixed remote tag to `HEAD`, and refresh the release metadata. The native `bin/yukino-claude-proxy` link is excluded. Failed builds stop before any GitHub release changes.
+The repository-root [release.js](../release.js) owns publishing for both proxies. It builds every selected project before changing GitHub. Release tags and titles are fixed at the binary names, and all six asset names have no version or timestamp suffix. Existing releases replace same-name assets, update the remote tag to the current HEAD, and refresh their metadata. New releases use the same fixed names. Native executable links are excluded. Push HEAD before publishing.
+
+From the repository root:
+
+```sh
+# Build and publish both proxies.
+node release.js
+# Publish just one proxy.
+node release.js yukino-claude-proxy
+node release.js yukino-codex-proxy
+# Build and inspect GitHub, then print planned writes without applying them.
+node release.js --dry-run
+# Test publishing behavior without accessing GitHub.
+node --test release.test.js
+```
+
+The root package also provides `pnpm release` and `pnpm test:release`. The script uses `@ts-check` and JSDoc types, works from any current directory, and requires Node.js 20 or newer, Go, and an authenticated GitHub CLI. GitHub lookup errors abort instead of being treated as missing releases. Remote publishing uses multiple API calls; an interrupted publish can be rerun to replace the same fixed assets.
 
 ## CLI
 

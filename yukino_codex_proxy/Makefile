@@ -1,14 +1,13 @@
 .PHONY: build build-all install test race vet release
 
-
 build:
-	go build -o bin/yukino-claude-proxy ./cmd/yukino-claude-proxy
+	go build -trimpath -o bin/yukino-codex-proxy ./cmd/yukino-codex-proxy
 
 build-all:
 	node build.mjs
 
 install:
-	go install ./cmd/yukino-claude-proxy
+	go install ./cmd/yukino-codex-proxy
 
 test:
 	go test ./...
@@ -20,4 +19,4 @@ vet:
 	go vet ./...
 
 release:
-	node ../release.js yukino-claude-proxy
+	node ../release.js yukino-codex-proxy

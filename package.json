@@ -17,7 +17,9 @@
     "format:yukino-agent": "pnpm --filter yukino-agent format",
     "format": "run-p format:*",
     "git:commit": "git add -A && git commit -m \"feat: Introduce new features\"",
-    "git:push": "pnpm git:commit && git push origin main"
+    "git:push": "pnpm git:commit && git push origin main",
+    "release": "node release.js",
+    "test:release": "node --test release.test.js"
   },
   "devDependencies": {
     "npm-run-all2": "^9.0.3"
