@@ -1,0 +1,32 @@
+{
+  "name": "yukino-agent",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier -w ./ --experimental-cli",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@yukino.js/lit-jsx": "latest",
+    "@yukino.js/sentry": "latest",
+    "dompurify": "^3.4.16",
+    "highlight.js": "^11.12.0",
+    "lit": "^3.3.3",
+    "lucide": "^1.52.0",
+    "markdown-it": "^14.3.2",
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/markdown-it": "^14.2.0",
+    "prettier": "^3.9.9",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.2"
+  }
+}

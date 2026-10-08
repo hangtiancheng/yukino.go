@@ -1,0 +1,93 @@
+# taskflow service config. Secrets (mysql password, llm key, sentry dsn) are
+# read from the process environment through the *_env field names below; ${VAR}
+# expansion inside values is also supported. This yaml is the single config
+# source - there is no .env file.
+
+server:
+  host: 127.0.0.1
+  port: 8090
+  cors_allow_all: true
+  api_token_env: TASKFLOW_API_TOKEN
+  internal_token_env: TASKFLOW_INTERNAL_TOKEN
+  read_timeout_seconds: 30
+  write_timeout_seconds: 600
+
+node:
+  id: "" # empty = hostname-pid
+
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password_env: MYSQL_PASSWORD
+  database: taskflow
+  max_open_conns: 20
+  max_idle_conns: 5
+
+redis:
+  address: 127.0.0.1:6379
+  password: ""
+  db: 0
+
+llm:
+  base_url_env: OPENAI_BASE_URL
+  api_key_env: OPENAI_API_KEY
+  model_env: OPENAI_MODEL
+  default_model: gpt-4o-mini
+  max_tool_rounds: 8
+  request_timeout_seconds: 180
+  max_output_tokens: 8192
+  max_result_rows: 100
+  allow_sql_writes: false
+  redis_key_prefix: "taskflow:tools:"
+
+scheduler:
+  migrate_step_minutes: 60 # pre-materialization window
+  migrate_tick_seconds: 30 # materialization tick
+  claim_ttl_hours: 72 # redis TTL of idempotency claims
+  stuck_running_minutes: 30 # running-too-long failure threshold
+  overdue_recover_minutes: 2 # overdue pending re-dispatch threshold
+  recover_workers: 8 # timer worker pool size for recovery sweeps
+
+mq:
+  exec_topic: taskflow.exec.commands
+  cond_topic: taskflow.cond.events
+  exec_group: taskflow-exec
+  cond_group: taskflow-cond
+  msg_queue_len: 5000
+  max_retry: 3
+
+executor:
+  workers: 4
+  timeout_seconds: 600
+  receive_timeout_ms: 1000
+  handle_timeout_seconds: 900
+
+cache:
+  report_group: taskflow.reports
+  report_cache_bytes_mib: 64
+  report_expire_seconds: 600
+  def_cache_expire_seconds: 60
+  etcd_endpoints: "" # e.g. 127.0.0.1:2379; empty = single-node mode
+  cache_server_addr: "" # e.g. :9001; empty = no peer server
+
+reports:
+  dir: ./reports
+
+journal:
+  dir: ./data/journal # lsm_tree audit ledger; empty disables journaling
+
+consensus:
+  id: 1 # raft node id of the embedded single-member consensus group
+
+sentry:
+  dsn_env: SENTRY_DSN
+  environment: development
+  release: taskflow@dev
+
+telemetry:
+  enabled: true
+  exporter: file # none | stdout | file
+  file_path: ./logs/traces.jsonl
+  client_log_path: ./logs/client-events.jsonl
+  sample_rate: 1.0

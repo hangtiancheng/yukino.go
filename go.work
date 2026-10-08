@@ -1,0 +1,20 @@
+go 1.26.4
+
+use (
+	./apps/agent/server
+	./apps/agent_proxy
+	./apps/taskflow/server
+	./components/consistent_cache
+	./components/consistent_hash
+	./components/lsm_tree
+	./components/raft
+	./components/red_mq
+	./components/redis_lock
+	./components/tcc
+	./components/time_wheel
+	./components/timer
+	./libs/yukino_cache
+	./libs/yukino_http
+	./libs/yukino_orm
+	./libs/yukino_rpc
+)

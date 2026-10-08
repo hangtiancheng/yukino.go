@@ -1,0 +1,33 @@
+# Prometheus scrape configuration.
+#
+# Alert rules live in prometheus.rules.yml, mounted next to this config.
+#
+# Milvus standalone is scraped via the compose service name below; when
+# running Prometheus on the host instead (brew), change the target to
+# localhost:9091.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/prometheus.rules.yml
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The agent server runs on the host (go run ./cmd/agent) rather than in
+  # compose; host.docker.internal lets the dockerized Prometheus reach it. It
+  # serves the yukino-sentry bridge metrics fed by the browser SDK via
+  # POST /api/log, plus the Go runtime metrics.
+  - job_name: "yukino-agent"
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ["host.docker.internal:8123"]
+
+  # Milvus standalone serves its own Prometheus metrics next to the health
+  # endpoint (:9091). Reachable by service name inside the compose network.
+  - job_name: "milvus"
+    static_configs:
+      - targets: ["standalone:9091"]
