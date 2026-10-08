@@ -4,12 +4,12 @@
 
 @theme {
   --font-sans:
-    ui-rounded, system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Segoe UI", sans-serif;
+    "Yukino", "Maple Mono", Menlo, "Cascadia Code", "Sarasa Gothic SC",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono:
-    Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
-    Microsoft YaHei;
-
+    "Yukino", "Maple Mono", Menlo, "Cascadia Code", "Sarasa Gothic SC",
+    "PingFang SC", "Microsoft YaHei", monospace;
+  
   /* Warm blush palette anchored on rgb(236 194 179) = --color-blush-300 */
   --color-blush-50: #fbf5f1;
   --color-blush-100: #f7e9e1;
