@@ -17,6 +17,7 @@
     "format:yukino-agent": "pnpm --filter yukino-agent format",
     "format:taskflow": "pnpm --filter taskflow-web format",
     "format": "run-p format:*",
+    "git:config": "git config user.name hangtiancheng && git config user.email '161043261@qq.com'",
     "git:commit": "git add -A && git commit -m \"feat: Introduce new features\"",
     "git:push": "pnpm git:commit && git push origin main",
     "release": "node scripts/release.js",
@@ -28,6 +29,8 @@
     "npm-run-all2": "^9.0.3"
   },
   "lint-staged": {
-    "*.go": "gofmt -w"
+    "*.{go,json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
+      "sh -c 'pnpm format'"
+    ]
   }
 }
