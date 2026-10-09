@@ -2,5 +2,4 @@ packages:
   - packages/*
   - services/taskflow/client
 
-minimumReleaseAgeExclude:
-  - "@yukino.js/lit-jsx@0.0.3"
+minimumReleaseAge: 0
