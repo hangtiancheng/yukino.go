@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-// ReadSSE handles CRLF, multiline data, arbitrary byte boundaries and a final
-// event without a trailing blank line. A false callback stops the stream.
 func ReadSSE(r io.Reader, handle func(string, string) (bool, error)) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -49,7 +47,6 @@ func ReadSSE(r io.Reader, handle func(string, string) (bool, error)) error {
 	return err
 }
 
-// Collector retains the terminal Responses object, including the full output.
 type Collector struct{ Response Object }
 
 func (c *Collector) Sink(event string, data Object) error {

@@ -227,7 +227,6 @@ func TestTCPClientCloseUnblocksPending(t *testing.T) {
 		if err != nil {
 			return
 		}
-		// Never respond; just hold the connection open.
 		buf := make([]byte, 1024)
 		for {
 			if _, err := conn.Read(buf); err != nil {
@@ -261,11 +260,9 @@ func TestTCPClientCloseUnblocksPending(t *testing.T) {
 
 func TestClientStreamTerminalNonBlocking(t *testing.T) {
 	s := NewClientStreamConn(context.Background(), testCodec{})
-	// Fill the data buffer completely.
 	for range 64 {
 		s.Push([]byte("frame"))
 	}
-	// End must not block even though the buffer is full.
 	terminated := make(chan struct{})
 	go func() {
 		s.End()
@@ -276,7 +273,6 @@ func TestClientStreamTerminalNonBlocking(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("End blocked on a full stream buffer")
 	}
-	// All buffered frames must still be delivered before EOF.
 	for i := range 64 {
 		var out string
 		if err := s.Recv(&out); err != nil {

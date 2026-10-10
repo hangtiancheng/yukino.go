@@ -8,9 +8,6 @@ import (
 	"net/http"
 )
 
-// promoteStatus mirrors Koa's body setter: assigning a body upgrades the
-// default 404 to 200 immediately, so middleware running after next() observes
-// the final status instead of the pre-render default.
 func (ctx *Context) promoteStatus() {
 	if !ctx.statusSet && ctx.Status == http.StatusNotFound {
 		ctx.Status = http.StatusOK
@@ -45,7 +42,6 @@ func (ctx *Context) Redirect(url string) {
 	case http.StatusMultipleChoices, http.StatusMovedPermanently, http.StatusFound,
 		http.StatusSeeOther, http.StatusUseProxy, http.StatusTemporaryRedirect,
 		http.StatusPermanentRedirect:
-		// keep the redirect status chosen by the caller (Koa behavior)
 	default:
 		ctx.Status = http.StatusFound
 	}
@@ -62,8 +58,6 @@ type htmlPayload struct {
 	data any
 }
 
-// emptyStatus reports whether the status code forbids a response body
-// (Koa strips the body for these codes in respond()).
 func emptyStatus(code int) bool {
 	return code == http.StatusNoContent ||
 		code == http.StatusResetContent ||
@@ -109,8 +103,6 @@ func (ctx *Context) respond() {
 	}
 }
 
-// setContentType applies the inferred Content-Type unless the user already
-// buffered an explicit one via ctx.Set (which was flushed by respond()).
 func (ctx *Context) setContentType(value string) {
 	if value == "" {
 		return

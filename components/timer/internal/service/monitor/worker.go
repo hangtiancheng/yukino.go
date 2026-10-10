@@ -29,7 +29,6 @@ func NewWorker(taskDAO *task_dao.TaskDAO, timerDAO *timer_dao.TimerDAO, lockServ
 	}
 }
 
-// Start reports the count of unexecuted timers every minute.
 func (w *Worker) Start(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -47,7 +46,6 @@ func (w *Worker) Start(ctx context.Context) {
 			continue
 		}
 
-		// Query timers from the previous minute
 		minute := utils.GetMinute(now)
 		go w.reportNoExceedTasksCnt(ctx, minute)
 		go w.reportEnabledTimersCnt(ctx)

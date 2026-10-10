@@ -30,8 +30,6 @@ func originalSettings(agentName string) []byte {
 	return []byte("{\"env\":{\"ORIGINAL\":\"value\"}}\n")
 }
 
-// checkResponse returns a minimal upstream reply that each agent's connection
-// check accepts for the given wire protocol.
 func checkResponse(agentName, protocol string) string {
 	switch protocol {
 	case config.Anthropic:
@@ -42,7 +40,7 @@ func checkResponse(agentName, protocol string) string {
 		return `{"type":"message","content":` + content + `,"id":"msg_check","role":"assistant","model":"selected-model","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
 	case config.OpenAICompat:
 		return `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}`
-	default: // config.OpenAI
+	default:
 		if agentName == agent.Codex {
 			return `{"object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}]}`
 		}

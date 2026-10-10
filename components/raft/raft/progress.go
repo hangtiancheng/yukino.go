@@ -8,7 +8,6 @@ const (
 )
 
 type Progress struct {
-	// Tracks a follower's replication state: confirmed match index and next index to send
 	Match, Next uint64
 	State       ProgressStateType
 }

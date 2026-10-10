@@ -33,9 +33,6 @@ func parsePattern(pattern string) []string {
 
 func (r *router) addRoute(method string, pattern string, handler Middleware) {
 	parts := parsePattern(pattern)
-	// Canonicalize so "/users" and "/users/" (or "//users") share one pattern
-	// and handler key; otherwise the earlier registration's handler becomes
-	// silently unreachable after the trie leaf's pattern is overwritten.
 	pattern = "/" + strings.Join(parts, "/")
 	key := method + "-" + pattern
 	if _, ok := r.roots[method]; !ok {

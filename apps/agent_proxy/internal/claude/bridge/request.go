@@ -21,8 +21,6 @@ func Request(body Object, p config.Provider) (Object, error) {
 	}
 	for _, message := range List(body["messages"]) {
 		m := Obj(message)
-		// Claude Code also appends mid-conversation system instructions. Keep
-		// their role and position when converting to either OpenAI protocol.
 		if m["role"] != "user" && m["role"] != "assistant" && m["role"] != "system" {
 			return nil, fmt.Errorf("message role must be user, assistant, or system")
 		}
@@ -45,7 +43,6 @@ func Request(body Object, p config.Provider) (Object, error) {
 
 func systemText(system any) string {
 	text := Text(system)
-	// Claude Code's changing billing header is not an instruction for the model.
 	if strings.HasPrefix(text, "x-anthropic-billing-header:") {
 		if index := strings.IndexByte(text, '\n'); index >= 0 {
 			text = text[index+1:]
@@ -309,8 +306,6 @@ func chatThinking(body, result Object, p config.Provider) {
 		return
 	}
 	enabled, specified := thinkingMode(body, p)
-	// These providers reject forced tool choices while thinking is enabled.
-	// Preserve the caller's tool selection by disabling thinking for this request.
 	if result["tool_choice"] == "required" || Obj(result["tool_choice"]) != nil {
 		enabled, specified = false, true
 	}
@@ -432,7 +427,6 @@ func responsesRequest(body Object, p config.Provider) (Object, error) {
 			}
 		}
 		flush()
-		// A reasoning item must have a following assistant message or function call.
 		if m["role"] == "assistant" {
 			follower := false
 			for i := len(input) - 1; i >= start; i-- {

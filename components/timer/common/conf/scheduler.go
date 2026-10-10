@@ -1,9 +1,8 @@
 package conf
 
 type SchedulerAppConf struct {
-	SchedulersNum int `yaml:"schedulersNum"`
-	WorkersNum    int `yaml:"workersNum"`
-	// Adds one bucket for every 200 additional tasks beyond the default bucket count
+	SchedulersNum          int `yaml:"schedulersNum"`
+	WorkersNum             int `yaml:"workersNum"`
 	BucketsNum             int `yaml:"bucketsNum"`
 	TryLockSeconds         int `yaml:"tryLockSeconds"`
 	TryLockGapMilliSeconds int `yaml:"tryLockGapMilliSeconds"`

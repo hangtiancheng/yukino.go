@@ -22,9 +22,6 @@ func TestFnvHasher(t *testing.T) {
 	}
 }
 
-// stubEncryptor maps fixed keys to fixed scores so ring arcs are known
-// upfront and migration outcomes are deterministic. Unknown keys fall back
-// to FNV-1a.
 type stubEncryptor struct {
 	scores map[string]int32
 }
@@ -42,8 +39,6 @@ func (s *stubEncryptor) Encrypt(origin string) int32 {
 	return int32(hasher.Sum32() % math.MaxInt32)
 }
 
-// recordingMigrator collects migration calls; migration tasks run in
-// goroutines, so access must be guarded.
 type recordingMigrator struct {
 	mu    sync.Mutex
 	calls []migrationCall
@@ -74,21 +69,13 @@ func (r *recordingMigrator) total() int {
 	return len(r.calls)
 }
 
-// TestConsistentHash_lifecycle drives AddNode / GetNode / RemoveNode over a
-// stub hash: node_a owns scores {100,300,500,700,900}, node_b owns
-// {200,400,600,800,1000}, and the data keys are spread so that adding or
-// removing node_b must move exactly one key per affected arc — including the
-// wrap-around arc at score 1000.
 func TestConsistentHash_lifecycle(t *testing.T) {
 	scores := map[string]int32{
-		// Virtual node keys: <nodeID>_<index>.
 		"node_a_0": 100, "node_a_1": 300, "node_a_2": 500, "node_a_3": 700, "node_a_4": 900,
 		"node_b_0": 200, "node_b_1": 400, "node_b_2": 600, "node_b_3": 800, "node_b_4": 1000,
-		// Data keys and their hash positions.
 		"d00": 150, "d01": 250, "d02": 350, "d03": 450, "d04": 550,
 		"d05": 650, "d06": 750, "d07": 850, "d08": 50, "d09": 950,
 	}
-	// Only d00, d02, d04, d06, d09 fall into node_b's arcs.
 	nodeBKeys := map[string]bool{"d00": true, "d02": true, "d04": true, "d06": true, "d09": true}
 
 	ring := local.NewSkiplistHashRing()
@@ -96,25 +83,21 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 	ch := NewConsistentHash(ring, newStubEncryptor(scores), rec.migrate, WithReplicas(5))
 	ctx := context.Background()
 
-	// An empty ring cannot serve any node.
 	if _, err := ch.GetNode(ctx, "d00"); err == nil {
 		t.Fatal("GetNode on an empty ring should fail")
 	}
 
-	// A weight of 0 is clamped to 1, giving node_a its 5 virtual scores.
 	if err := ch.AddNode(ctx, "node_a", 0); err != nil {
 		t.Fatal(err)
 	}
 
-	// Duplicate nodes are rejected.
 	if err := ch.AddNode(ctx, "node_a", 1); err == nil || err.Error() != "repeat node" {
 		t.Fatalf("duplicate AddNode error = %v, want repeat node", err)
 	}
 
-	// With node_a alone, every data key resolves to node_a.
 	for key := range scores {
 		if len(key) != 3 {
-			continue // skip the virtual node keys
+			continue
 		}
 		node, err := ch.GetNode(ctx, key)
 		if err != nil {
@@ -130,7 +113,6 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Every AddNode migration must move exactly node_b's keys from node_a.
 	addCalls := rec.callsSince(before)
 	migrated := map[string]bool{}
 	for _, call := range addCalls {
@@ -153,7 +135,6 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 		t.Fatalf("unexpected keys migrated: %v", migrated)
 	}
 
-	// Ownership after the add: each key lands on the first score >= its hash.
 	for dataKey, want := range map[string]string{
 		"d00": "node_b", "d01": "node_a", "d02": "node_b", "d03": "node_a",
 		"d04": "node_b", "d05": "node_a", "d06": "node_b", "d07": "node_a",
@@ -166,7 +147,6 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 		}
 	}
 
-	// Removing an unknown node is rejected.
 	if err := ch.RemoveNode(ctx, "node_x"); err == nil || err.Error() != "invalid node id" {
 		t.Fatalf("RemoveNode of unknown node error = %v, want invalid node id", err)
 	}
@@ -176,7 +156,6 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Every RemoveNode migration must move node_b's keys back to node_a.
 	removeCalls := rec.callsSince(before)
 	migrated = map[string]bool{}
 	for _, call := range removeCalls {
@@ -194,7 +173,6 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 		t.Fatalf("RemoveNode migrated %v, want exactly node_b's keys", migrated)
 	}
 
-	// All keys are back on the only remaining node.
 	for dataKey := range scores {
 		if len(dataKey) != 3 {
 			continue
@@ -209,13 +187,11 @@ func TestConsistentHash_lifecycle(t *testing.T) {
 
 func TestConsistentHash_concurrent(t *testing.T) {
 	ring := local.NewSkiplistHashRing()
-	// A non-nil migrator keeps the migrateIn/migrateOut paths in play.
 	ch := NewConsistentHash(ring, NewFnvHasher(), func(_ context.Context, _ map[string]struct{}, _, _ string) error {
 		return nil
 	}, WithReplicas(5))
 	ctx := context.Background()
 
-	// A seed node keeps the ring non-empty for GetNode while workers churn.
 	if err := ch.AddNode(ctx, "seed", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +231,6 @@ func TestConsistentHash_concurrent(t *testing.T) {
 		t.Fatal("concurrent AddNode/GetNode/RemoveNode deadlocked")
 	}
 
-	// Every worker node was removed again; only the seed remains.
 	nodes, err := ring.Nodes(ctx)
 	if err != nil {
 		t.Fatal(err)

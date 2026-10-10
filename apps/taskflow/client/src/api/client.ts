@@ -161,9 +161,6 @@ export class ApiError extends Error {
   }
 }
 
-// Server base URL comes from the environment. Empty means same-origin: the
-// vite dev proxy and the nginx image both forward /api to the server, so the
-// SPA never hardcodes a host.
 const SERVER = import.meta.env.VITE_SERVER_BASE_URL ?? "";
 const BASE = `${SERVER}/api/v1`;
 
@@ -281,9 +278,7 @@ export const api = {
       let message = resp.statusText;
       try {
         message = JSON.parse(text)?.message ?? message;
-      } catch {
-        /* keep statusText */
-      }
+      } catch {}
       throw new ApiError(resp.status, message);
     }
     return resp.text();

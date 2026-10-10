@@ -21,8 +21,6 @@ var DefaultRegisterConfig = &RegisterConfig{
 	DialTimeout: 5 * time.Second,
 }
 
-// Register registers svcName/addr into etcd using DefaultRegisterConfig and
-// keeps the lease alive until stopCh is closed.
 func Register(svcName, addr string, stopCh <-chan error) error {
 	return registerWithConfig(svcName, addr, stopCh, DefaultRegisterConfig)
 }
@@ -66,8 +64,6 @@ func registerWithConfig(svcName, addr string, stopCh <-chan error, cfg *Register
 				return
 			case _, ok := <-keepAliveCh:
 				if !ok {
-					// Lease renewal broke (etcd hiccup, network partition).
-					// Re-register with backoff so the node rejoins the cluster.
 					log.Print("[YukinoCache] keep alive channel closed; re-registering")
 					var err error
 					keepAliveCh, leaseID, err = reRegister(cli, svcName, addr, stopCh)

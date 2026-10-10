@@ -2,8 +2,6 @@ package main
 
 import "testing"
 
-// TestKVStoreReadCommitSkipsMalformed verifies that the commit-apply loop
-// skips nil and non-JSON payloads instead of applying zero-valued entries.
 func TestKVStoreReadCommitSkipsMalformed(t *testing.T) {
 	k := &kvStore{core: make(map[string]string)}
 
@@ -21,7 +19,7 @@ func TestKVStoreReadCommitSkipsMalformed(t *testing.T) {
 	commitC <- &bad
 	commitC <- nil
 	close(commitC)
-	<-done // readCommit returned, so all entries were processed
+	<-done
 
 	k.RLock()
 	defer k.RUnlock()

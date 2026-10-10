@@ -1,33 +1,24 @@
 package raft
 
 type Ready struct {
-	// Soft state (leader ID, node role)
 	SoftState *SoftState
 
-	// Hard state (term, vote, commit index)
 	HardState HardState
 
-	// Linearizable read states
 	ReadStates []ReadState
 
-	// Unstable entries to persist before sending messages
 	Entries []Entry
 
-	// Committed entries to apply to the state machine
 	CommittedEntries []Entry
 
-	// Messages to send
 	Message []Message
 }
 
 func newReady(r *raft, preSoft *SoftState, preHard HardState) Ready {
 	rd := Ready{
-		// Unstable entries requiring persistence
-		Entries: r.raftLog.unstableEntries(),
-		// Committed entries ready for application
+		Entries:          r.raftLog.unstableEntries(),
 		CommittedEntries: r.raftLog.nextEntries(),
-		// Pending messages
-		Message: r.msgs,
+		Message:          r.msgs,
 	}
 	if soft := r.softState(); !soft.equal(preSoft) {
 		rd.SoftState = soft

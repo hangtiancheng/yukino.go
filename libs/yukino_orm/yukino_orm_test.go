@@ -825,7 +825,6 @@ func TestTransactionAutoSessionBinding(t *testing.T) {
 	}
 	sentinel := errors.New("rollback")
 	err := engine.Transaction(ctx, func(sc context.Context, tx *Engine) error {
-		// Intentionally pass the plain outer ctx: execCtx must bind the session.
 		if _, err := tx.Collection("users").Where("_id", int64(1)).Update(ctx, bson.M{"age": 99}); err != nil {
 			return err
 		}

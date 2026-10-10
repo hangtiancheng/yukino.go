@@ -16,7 +16,6 @@ import (
 	grpc_health "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-// Server exposes cache groups over gRPC.
 type Server struct {
 	pb.UnimplementedYukinoCacheServer
 	addr         string
@@ -29,38 +28,32 @@ type Server struct {
 	opts         *ServerOptions
 }
 
-// ServerOptions configures a cache server.
 type ServerOptions struct {
 	EtcdEndpoints []string
 	DialTimeout   time.Duration
 	MaxMsgSize    int
 }
 
-// DefaultServerOptions contains default server settings.
 var DefaultServerOptions = &ServerOptions{
 	EtcdEndpoints: []string{"localhost:2379"},
 	DialTimeout:   5 * time.Second,
 	MaxMsgSize:    4 << 20,
 }
 
-// ServerOption mutates server options.
 type ServerOption func(*ServerOptions)
 
-// WithEtcdEndpoints sets the etcd endpoints used for registration.
 func WithEtcdEndpoints(endpoints []string) ServerOption {
 	return func(o *ServerOptions) {
 		o.EtcdEndpoints = endpoints
 	}
 }
 
-// WithDialTimeout sets the etcd dial timeout.
 func WithDialTimeout(timeout time.Duration) ServerOption {
 	return func(o *ServerOptions) {
 		o.DialTimeout = timeout
 	}
 }
 
-// NewServer creates a gRPC cache server.
 func NewServer(addr, svcName string, opts ...ServerOption) (*Server, error) {
 	options := *DefaultServerOptions
 	for _, opt := range opts {
@@ -96,7 +89,6 @@ func NewServer(addr, svcName string, opts ...ServerOption) (*Server, error) {
 	return srv, nil
 }
 
-// Start registers the server and starts serving gRPC requests.
 func (s *Server) Start() error {
 	lis, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -117,7 +109,6 @@ func (s *Server) Start() error {
 	return s.grpcServer.Serve(lis)
 }
 
-// Stop gracefully stops the server and closes external resources.
 func (s *Server) Stop() {
 	s.stopOnce.Do(func() {
 		if s.healthServer != nil {
@@ -131,7 +122,6 @@ func (s *Server) Stop() {
 	})
 }
 
-// Get implements the gRPC Get method.
 func (s *Server) Get(ctx context.Context, req *pb.Request) (*pb.ResponseForGet, error) {
 	group := GetGroup(req.Group)
 	if group == nil {
@@ -146,7 +136,6 @@ func (s *Server) Get(ctx context.Context, req *pb.Request) (*pb.ResponseForGet, 
 	return &pb.ResponseForGet{Value: view.ByteSlice()}, nil
 }
 
-// Set implements the gRPC Set method.
 func (s *Server) Set(ctx context.Context, req *pb.Request) (*pb.ResponseForGet, error) {
 	group := GetGroup(req.Group)
 	if group == nil {
@@ -162,7 +151,6 @@ func (s *Server) Set(ctx context.Context, req *pb.Request) (*pb.ResponseForGet, 
 	return &pb.ResponseForGet{Value: req.Value}, nil
 }
 
-// Delete implements the gRPC Delete method.
 func (s *Server) Delete(ctx context.Context, req *pb.Request) (*pb.ResponseForDelete, error) {
 	group := GetGroup(req.Group)
 	if group == nil {

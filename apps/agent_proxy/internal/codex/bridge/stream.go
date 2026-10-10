@@ -255,7 +255,6 @@ func (e *emitter) finish(reason string) error {
 	return e.send(event, Object{"response": response})
 }
 
-// Stream converts incrementally; errors never become successful empty turns.
 func Stream(r io.Reader, protocol, model string, tools *Tools, sink Sink) error {
 	if protocol == config.OpenAI {
 		return streamNative(r, tools, sink)

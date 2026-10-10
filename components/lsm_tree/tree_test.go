@@ -9,15 +9,13 @@ import (
 )
 
 func Test_LSM_UseCase(t *testing.T) {
-	// 1. Build the config.
-	conf, _ := NewConfig(t.TempDir(), // directory for sst files
-		WithMaxLevel(7),               // 7-level lsm tree
-		WithSSTSize(1024*1024),        // level-0 sstable size: 1MB
-		WithSSTDataBlockSize(16*1024), // sstable block size: 16KB
-		WithSSTNumPerLevel(10),        // 10 sstables per level
+	conf, _ := NewConfig(t.TempDir(),
+		WithMaxLevel(7),
+		WithSSTSize(1024*1024),
+		WithSSTDataBlockSize(16*1024),
+		WithSSTNumPerLevel(10),
 	)
 
-	// 2. Create the lsm tree.
 	lsmTree, err := NewTree(conf)
 	if err != nil {
 		t.Error(err)
@@ -25,29 +23,25 @@ func Test_LSM_UseCase(t *testing.T) {
 	}
 	defer lsmTree.Close()
 
-	// 3. Write data.
 	_ = lsmTree.Put([]byte{1}, []byte{2})
 
-	// 4. Read data.
 	v, _, _ := lsmTree.Get([]byte{1})
 
 	t.Log(v)
 }
 
 func Test_LSM(t *testing.T) {
-	// Build the config.
-	conf, err := NewConfig(t.TempDir(), // directory for sst files
-		WithMaxLevel(7),              // 7-level lsm tree
-		WithSSTSize(32*1024),         // level-0 sstable size: 32KB
-		WithSSTDataBlockSize(2*1024), // sstable block size: 2KB
-		WithSSTNumPerLevel(4),        // 4 sstables per level
+	conf, err := NewConfig(t.TempDir(),
+		WithMaxLevel(7),
+		WithSSTSize(32*1024),
+		WithSSTDataBlockSize(2*1024),
+		WithSSTNumPerLevel(4),
 	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	// Create the lsm tree.
 	lsmTree, err := NewTree(conf)
 	if err != nil {
 		t.Error(err)

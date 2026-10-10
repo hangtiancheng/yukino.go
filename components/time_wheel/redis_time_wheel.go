@@ -70,22 +70,16 @@ func (r *RTimeWheel) AddTask(ctx context.Context, key string, task *RTaskElement
 		return fmt.Errorf("marshal task %s: %w", key, err)
 	}
 	_, err = r.redisClient.Eval(ctx, LuaAddTasks, 2, []any{
-		// Minute-level zset time slice.
 		r.getMinuteSlice(executeAt),
-		// Set marking tasks for deletion.
 		r.getDeleteSetKey(executeAt),
-		// The execution-time second-level unix timestamp serves as the zset score.
 		executeAt.Unix(),
-		// Task body.
 		string(taskBody),
-		// Task key, stored in the delete set.
 		key,
 	})
 	return err
 }
 
 func (r *RTimeWheel) RemoveTask(ctx context.Context, key string, executeAt time.Time) error {
-	// Mark the task as deleted.
 	_, err := r.redisClient.Eval(ctx, LuaDeleteTask, 1, []any{
 		r.getDeleteSetKey(executeAt),
 		key,
@@ -100,7 +94,6 @@ func (r *RTimeWheel) run() {
 		case <-r.stopChan:
 			return
 		case <-r.ticker.C:
-			// Fetch tasks on each tick.
 			r.executeTasks()
 		}
 	}
@@ -113,16 +106,13 @@ func (r *RTimeWheel) executeTasks() {
 		}
 	}()
 
-	// Concurrency control: 30s timeout.
 	ctxWithTimeout, cancel := context.WithTimeout(r.ctx, time.Second*30)
 	defer cancel()
 	tasks, err := r.getExecutableTasks(ctxWithTimeout)
 	if err != nil {
-		// log
 		return
 	}
 
-	// Bounded callback workers preserve backpressure under a large due batch.
 	var wg sync.WaitGroup
 	jobs := make(chan *RTaskElement)
 	for worker := 0; worker < 16; worker++ {
@@ -200,7 +190,6 @@ func (r *RTimeWheel) getExecutableTasks(ctx context.Context) ([]*RTaskElement, e
 	for i := 1; i < len(replies); i++ {
 		var task RTaskElement
 		if err := json.Unmarshal([]byte(toString(replies[i])), &task); err != nil {
-			// log
 			continue
 		}
 

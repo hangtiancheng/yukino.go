@@ -147,7 +147,7 @@ func TestPromotedStatusVisibleToMiddlewareAfterNext(t *testing.T) {
 		observed = ctx.Status
 	})
 	app.Get("/auto", func(ctx *Context, next func()) {
-		ctx.JSON(H{"ok": true}) // no explicit status
+		ctx.JSON(H{"ok": true})
 	})
 
 	rec := httptest.NewRecorder()

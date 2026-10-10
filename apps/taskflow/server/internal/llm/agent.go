@@ -1,6 +1,3 @@
-// Package llm wraps openai-go into a tool-calling agent: the model receives a
-// task prompt, may invoke mysql_tool / redis_tool across several rounds, and
-// finally emits a structured markdown report.
 package llm
 
 import (

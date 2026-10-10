@@ -61,7 +61,6 @@ func (t *TimeWheel) Stop() {
 func (t *TimeWheel) AddTask(key string, task func(), executeAt time.Time) {
 	select {
 	case <-t.stopChan:
-		// The wheel is stopped: drop the task instead of blocking forever.
 		return
 	case t.addTaskCh <- &taskElement{
 		task:      task,
@@ -107,7 +106,6 @@ func (t *TimeWheel) tick() {
 }
 
 func (t *TimeWheel) execute(l *list.List) {
-	// Iterate each list.
 	for e := l.Front(); e != nil; {
 		taskElement, _ := e.Value.(*taskElement)
 		if taskElement.cycle > 0 {
@@ -116,7 +114,6 @@ func (t *TimeWheel) execute(l *list.List) {
 			continue
 		}
 
-		// Execute the task.
 		go func() {
 			defer func() {
 				if err := recover(); err != nil {
@@ -126,7 +123,6 @@ func (t *TimeWheel) execute(l *list.List) {
 			taskElement.task()
 		}()
 
-		// After execution, remove the task from the wheel.
 		next := e.Next()
 		l.Remove(e)
 		delete(t.keyToETask, taskElement.key)
@@ -136,7 +132,6 @@ func (t *TimeWheel) execute(l *list.List) {
 
 func (t *TimeWheel) getPosAndCircle(executeAt time.Time) (int, int) {
 	delay := int(time.Until(executeAt))
-	// A past-due deadline must not produce a negative slot index.
 	if delay < 0 {
 		delay = 0
 	}
@@ -146,8 +141,6 @@ func (t *TimeWheel) getPosAndCircle(executeAt time.Time) (int, int) {
 }
 
 func (t *TimeWheel) addTask(task *taskElement) {
-	// Compute the slot here, inside the run goroutine, so curSlot is never
-	// read concurrently with circularIncr advancing it.
 	task.pos, task.cycle = t.getPosAndCircle(task.executeAt)
 	list := t.slots[task.pos]
 	if _, ok := t.keyToETask[task.key]; ok {

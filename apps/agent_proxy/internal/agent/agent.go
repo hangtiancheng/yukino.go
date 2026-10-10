@@ -1,4 +1,3 @@
-// Package agent selects between the supported coding-agent proxies.
 package agent
 
 import (
@@ -20,7 +19,6 @@ const (
 	Codex  = "codex"
 )
 
-// Agent binds one coding agent to its settings, gateway, and route checks.
 type Agent interface {
 	Name() string
 	SettingsLabel() string
@@ -34,10 +32,8 @@ type Agent interface {
 	BaseURL(p config.Provider, url string) string
 }
 
-// Names lists the supported agents in deterministic order.
 func Names() []string { return []string{Claude, Codex} }
 
-// Get resolves an agent by name; the empty name reports every supported agent.
 func Get(name string) (Agent, error) {
 	switch name {
 	case Claude:

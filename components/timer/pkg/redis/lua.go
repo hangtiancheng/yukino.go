@@ -1,6 +1,5 @@
 package redis
 
-// LuaCheckAndDeleteDistributionLock checks ownership of the distributed lock and deletes it if owned.
 const LuaCheckAndDeleteDistributionLock = `
   local lockerKey = KEYS[1]
   local targetToken = ARGV[1]

@@ -2,7 +2,6 @@ import { LitElement, customElement, property, state } from "@yukino.js/lit-jsx";
 import { Layers } from "lucide";
 import { icon } from "./icons.js";
 
-// Pointer movement below this many pixels counts as a click, not a drag.
 const DRAG_THRESHOLD = 4;
 
 interface DragState {
@@ -24,14 +23,12 @@ export class AIOpsBtn extends LitElement {
   @property({ type: Boolean })
   disabled = false;
 
-  // null = never dragged: keep the default centered spot in the chat header.
   @state()
   private _pos: { x: number; y: number } | null = null;
 
   #drag: DragState | null = null;
   #suppressClick = false;
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }
@@ -84,7 +81,6 @@ export class AIOpsBtn extends LitElement {
   #handlePointerEnd = (e: PointerEvent) => {
     const drag = this.#drag;
     if (!drag || drag.pointerId !== e.pointerId) return;
-    // The click event fires after pointerup; swallow it if this was a drag.
     this.#suppressClick = drag.dragged;
     this.#drag = null;
   };

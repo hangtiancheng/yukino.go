@@ -1,6 +1,3 @@
-// Command recall tests the Milvus vector retriever by running a sample
-// query against the knowledge base and printing the retrieved documents.
-// It is useful for verifying that document indexing and retrieval work correctly.
 package main
 
 import (

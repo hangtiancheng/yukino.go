@@ -1,8 +1,3 @@
-// Package journal is the node-local audit ledger for idempotency keys. It is
-// backed by the lsm_tree storage engine (components//lsm_tree): every entry
-// is appended to a write-ahead log before the memtable, flushed to leveled
-// SSTables with bloom filters, and compacted in the background, so the
-// fire-key -> execution mapping survives crashes and restarts on each node.
 package journal
 
 import (
@@ -15,7 +10,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/lsm_tree"
 )
 
-// Entry is one audit record keyed by fire key.
 type Entry struct {
 	FireKey      string `json:"fire_key"`
 	ExecutionID  uint   `json:"execution_id"`
@@ -29,22 +23,14 @@ type Entry struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
-// Store wraps an lsm_tree instance. The zero value is not usable; Open
-// returns a ready store. A nil *Store is a valid no-op store so callers can
-// run with journaling disabled.
 type Store struct {
 	tree *lsm_tree.Tree
 	node string
 
-	// mu serializes read-modify-write cycles on one fire key; lsm_tree
-	// itself is safe for concurrent Put/Get.
 	mu     sync.Mutex
 	closed bool
 }
 
-// Open creates (or restores) the LSM journal rooted at dir. NewConfig
-// materializes the directory tree and NewTree replays the WAL of a previous
-// run.
 func Open(dir, nodeID string) (*Store, error) {
 	if dir == "" {
 		return nil, nil
@@ -67,8 +53,6 @@ func Open(dir, nodeID string) (*Store, error) {
 
 func entryKey(fireKey string) []byte { return []byte("fk:" + fireKey) }
 
-// RecordDispatch upserts the entry for a freshly dispatched fire key. Errors
-// are returned but never fail the dispatch itself; callers log them.
 func (s *Store) RecordDispatch(fireKey string, executionID uint, taskType, taskName string) error {
 	if s == nil || s.tree == nil {
 		return nil
@@ -93,9 +77,6 @@ func (s *Store) RecordDispatch(fireKey string, executionID uint, taskType, taskN
 	return s.put(entry)
 }
 
-// RecordOutcome folds a terminal status into the entry for fireKey. Missing
-// entries (node restarted before dispatch, or dispatch happened elsewhere)
-// are created on the fly so the ledger stays queryable.
 func (s *Store) RecordOutcome(fireKey string, executionID uint, status, runErr string) error {
 	if s == nil || s.tree == nil || fireKey == "" {
 		return nil
@@ -124,7 +105,6 @@ func (s *Store) RecordOutcome(fireKey string, executionID uint, status, runErr s
 	return s.put(entry)
 }
 
-// Lookup returns the stored entry for a fire key.
 func (s *Store) Lookup(fireKey string) (*Entry, bool, error) {
 	if s == nil || s.tree == nil {
 		return nil, false, nil
@@ -161,7 +141,6 @@ func (s *Store) put(entry Entry) error {
 	return s.tree.Put(entryKey(entry.FireKey), body)
 }
 
-// Close flushes and closes the underlying LSM tree.
 func (s *Store) Close() {
 	if s == nil || s.tree == nil {
 		return

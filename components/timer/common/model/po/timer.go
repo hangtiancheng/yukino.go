@@ -8,14 +8,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// Timer is a timer definition.
 type Timer struct {
 	gorm.Model
-	App             string `gorm:"column:app;NOT NULL" json:"app,omitempty"`                             // App name
-	Name            string `gorm:"column:name;NOT NULL" json:"name,omitempty"`                           // Timer name
-	Status          int    `gorm:"column:status;NOT NULL" json:"status,omitempty"`                       // Timer status: 1=disabled, 2=enabled
-	Cron            string `gorm:"column:cron;NOT NULL" json:"cron,omitempty"`                           // Cron expression
-	NotifyHTTPParam string `gorm:"column:notify_http_param;NOT NULL" json:"notify_http_param,omitempty"` // HTTP callback parameters
+	App             string `gorm:"column:app;NOT NULL" json:"app,omitempty"`
+	Name            string `gorm:"column:name;NOT NULL" json:"name,omitempty"`
+	Status          int    `gorm:"column:status;NOT NULL" json:"status,omitempty"`
+	Cron            string `gorm:"column:cron;NOT NULL" json:"cron,omitempty"`
+	NotifyHTTPParam string `gorm:"column:notify_http_param;NOT NULL" json:"notify_http_param,omitempty"`
 }
 
 func (t *Timer) TableName() string {

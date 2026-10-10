@@ -63,7 +63,6 @@ func parseOptions(args []string) (string, daemon.Options, bool, error) {
 	if err := flags.Parse(args); err != nil {
 		return "", opts, false, err
 	}
-	// Also accept flags before the command, as in --agent=codex status.
 	if !hasCommand && flags.NArg() > 0 {
 		command = flags.Arg(0)
 		if err := flags.Parse(flags.Args()[1:]); err != nil {
@@ -92,7 +91,6 @@ func parseOptions(args []string) (string, daemon.Options, bool, error) {
 	if err != nil {
 		return "", opts, false, err
 	}
-	// Resolve defaults from the final parsed agent, preserving explicit overrides.
 	if !explicit["agent-dir"] {
 		opts.AgentDir = defaults.AgentDir
 	}

@@ -10,9 +10,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/red_mq/redis"
 )
 
-// newManualConsumer builds a Consumer the same way NewConsumer does but
-// without starting the run loop, so tests can wrap run in a goroutine and
-// observe its exit.
 func newManualConsumer(t *testing.T, client *redis.Client, cb MsgCallback, opts ...ConsumerOption) *Consumer {
 	t.Helper()
 	ctx, stop := context.WithCancel(context.Background())
@@ -86,7 +83,6 @@ func TestConsumerRunAcksProcessedMessages(t *testing.T) {
 		c.run()
 		close(done)
 	}()
-	// Safety net: Stop even when the test fails before reaching its own Stop.
 	defer c.Stop()
 
 	select {
@@ -115,7 +111,6 @@ func TestConsumerRunAcksProcessedMessages(t *testing.T) {
 func TestConsumerRunDeadLettersAfterMaxRetries(t *testing.T) {
 	f := newFakeRedis(t)
 	msg := &redis.MsgEntity{MsgID: "2-1", Key: "k", Val: "poison"}
-	// Keep handing the message out, like a message stuck in the PEL.
 	f.setNewMsg(msg, false)
 
 	mb := newRecordMailbox(nil)
@@ -130,7 +125,6 @@ func TestConsumerRunDeadLettersAfterMaxRetries(t *testing.T) {
 		c.run()
 		close(done)
 	}()
-	// Safety net: Stop even when the test fails before reaching its own Stop.
 	defer c.Stop()
 
 	select {
@@ -139,7 +133,6 @@ func TestConsumerRunDeadLettersAfterMaxRetries(t *testing.T) {
 		t.Fatal("dead letter was never delivered")
 	}
 
-	// A successfully delivered dead letter must also be acked.
 	waitForAck(t, f, msg.MsgID)
 
 	c.Stop()
@@ -172,7 +165,6 @@ func TestConsumerDeliverFailureSkipsAck(t *testing.T) {
 		c.run()
 		close(done)
 	}()
-	// Safety net: Stop even when the test fails before reaching its own Stop.
 	defer c.Stop()
 
 	select {
@@ -188,7 +180,6 @@ func TestConsumerDeliverFailureSkipsAck(t *testing.T) {
 		t.Fatal("run did not exit after Stop")
 	}
 
-	// A failed delivery must not ack the message, otherwise it is lost.
 	if ids := f.ackedIDs(); len(ids) != 0 {
 		t.Fatalf("acked ids = %v, want none after failed dead letter delivery", ids)
 	}
@@ -198,7 +189,7 @@ func TestConsumerDeliverFailureSkipsAck(t *testing.T) {
 }
 
 func TestConsumerStopConcurrent(t *testing.T) {
-	f := newFakeRedis(t) // answers ErrNoMsg, the loop just polls
+	f := newFakeRedis(t)
 	c := newManualConsumer(t, f.client(),
 		func(ctx context.Context, m *redis.MsgEntity) error { return nil })
 
@@ -207,7 +198,6 @@ func TestConsumerStopConcurrent(t *testing.T) {
 		c.run()
 		close(done)
 	}()
-	// Safety net: Stop even when the test fails before reaching its own Stop.
 	defer c.Stop()
 
 	time.Sleep(100 * time.Millisecond)
@@ -237,7 +227,6 @@ func TestNewConsumerRunsAndStops(t *testing.T) {
 		t.Fatalf("NewConsumer: %v", err)
 	}
 
-	// Let the run loop cycle a few times, then stop it.
 	time.Sleep(150 * time.Millisecond)
 	c.Stop()
 	time.Sleep(250 * time.Millisecond)

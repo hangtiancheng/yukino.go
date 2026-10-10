@@ -19,12 +19,10 @@ type TimerService struct {
 	confProvider *conf.MigratorAppConfProvider
 	ctx          context.Context
 	stop         func()
-	// mu guards timers: the refresh goroutine replaces the map while
-	// GetTimer reads it concurrently from request goroutines.
-	mu       sync.RWMutex
-	timers   map[uint]*vo.Timer
-	timerDAO timerDAO
-	taskDAO  *task_dao.TaskDAO
+	mu           sync.RWMutex
+	timers       map[uint]*vo.Timer
+	timerDAO     timerDAO
+	taskDAO      *task_dao.TaskDAO
 }
 
 func NewTimerService(timerDAO *timer_dao.TimerDAO, taskDAO *task_dao.TaskDAO, confProvider *conf.MigratorAppConfProvider) *TimerService {
@@ -38,8 +36,6 @@ func NewTimerService(timerDAO *timer_dao.TimerDAO, taskDAO *task_dao.TaskDAO, co
 
 func (t *TimerService) Start(ctx context.Context) {
 	t.Do(func() {
-		// Assign synchronously so Stop() never races the assignment or calls
-		// a nil stop func when Stop happens right after Start.
 		t.ctx, t.stop = context.WithCancel(ctx)
 
 		go func() {
@@ -123,7 +119,6 @@ func (t *TimerService) GetTimer(ctx context.Context, id uint) (*vo.Timer, error)
 	vTimer, ok := t.timers[id]
 	t.mu.RUnlock()
 	if ok {
-		// log.InfoContextf(ctx, "get timer from local cache success, timer: %+v", vTimer)
 		return vTimer, nil
 	}
 

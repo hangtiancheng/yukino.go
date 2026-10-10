@@ -12,7 +12,6 @@ func TestSkiplistHashRing_ceiling_floor(t *testing.T) {
 	ring := NewSkiplistHashRing()
 	ctx := context.Background()
 
-	// Empty ring: both queries report the -1 sentinel.
 	if score, _ := ring.Ceiling(ctx, 0); score != -1 {
 		t.Fatalf("empty ring Ceiling = %d, want -1", score)
 	}
@@ -26,7 +25,6 @@ func TestSkiplistHashRing_ceiling_floor(t *testing.T) {
 		}
 	}
 
-	// Ceiling: exact hit, in-between, and wrap-around past the largest score.
 	for _, tc := range []struct{ query, want int32 }{
 		{100, 100}, {200, 300}, {500, 500}, {501, 100},
 	} {
@@ -35,7 +33,6 @@ func TestSkiplistHashRing_ceiling_floor(t *testing.T) {
 		}
 	}
 
-	// Floor: exact hit, in-between, and wrap-around below the smallest score.
 	for _, tc := range []struct{ query, want int32 }{
 		{100, 100}, {200, 100}, {400, 300}, {500, 500}, {50, 500},
 	} {
@@ -51,7 +48,6 @@ func TestSkiplistHashRing_ceiling_floor(t *testing.T) {
 		t.Fatal("Node on a missing score should fail")
 	}
 
-	// Two node ids may share one score.
 	if err := ring.Add(ctx, 300, "b2"); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +61,6 @@ func TestSkiplistHashRing_ceiling_floor(t *testing.T) {
 		t.Fatalf("Node(300) = %v, want [b2]", nodes)
 	}
 
-	// Removing the last node id unlinks the node itself.
 	if err := ring.Rem(ctx, 300, "b2"); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +71,6 @@ func TestSkiplistHashRing_ceiling_floor(t *testing.T) {
 		t.Fatalf("Ceiling(300) = %d, want 500", score)
 	}
 
-	// Rem errors on missing scores / node ids.
 	if err := ring.Rem(ctx, 300, "b2"); err == nil {
 		t.Fatal("Rem on a missing score should fail")
 	}
@@ -103,7 +97,6 @@ func TestSkiplistHashRing_bookkeeping(t *testing.T) {
 		t.Fatalf("Nodes = %v", nodes)
 	}
 
-	// The returned map must be a copy: mutating it must not touch the ring.
 	nodes["a"] = 999
 	nodes["ghost"] = 1
 	fresh, _ := ring.Nodes(ctx)
@@ -124,7 +117,6 @@ func TestSkiplistHashRing_bookkeeping(t *testing.T) {
 	if err := ring.AddNodeToDataKeys(ctx, "a", map[string]struct{}{"k1": {}, "k2": {}}); err != nil {
 		t.Fatal(err)
 	}
-	// Merging with existing keys must keep them.
 	if err := ring.AddNodeToDataKeys(ctx, "a", map[string]struct{}{"k2": {}, "k3": {}}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +127,6 @@ func TestSkiplistHashRing_bookkeeping(t *testing.T) {
 	if len(keys) != 3 {
 		t.Fatalf("DataKeys = %v, want 3 keys", keys)
 	}
-	// The returned map must be a copy too.
 	delete(keys, "k1")
 	if keys, _ = ring.DataKeys(ctx, "a"); len(keys) != 3 {
 		t.Fatalf("DataKeys returned the internal map: %v", keys)
@@ -147,14 +138,12 @@ func TestSkiplistHashRing_bookkeeping(t *testing.T) {
 	if keys, _ = ring.DataKeys(ctx, "a"); len(keys) != 1 {
 		t.Fatalf("DataKeys after delete = %v, want 1 key", keys)
 	}
-	// Deleting the last key drops the entry entirely.
 	if err := ring.DeleteNodeToDataKeys(ctx, "a", map[string]struct{}{"k3": {}}); err != nil {
 		t.Fatal(err)
 	}
 	if keys, _ = ring.DataKeys(ctx, "a"); keys != nil {
 		t.Fatalf("DataKeys = %v, want nil", keys)
 	}
-	// Deleting from an unknown node is a no-op, not an error.
 	if err := ring.DeleteNodeToDataKeys(ctx, "ghost", map[string]struct{}{"k9": {}}); err != nil {
 		t.Fatalf("DeleteNodeToDataKeys on unknown node: %v", err)
 	}
@@ -182,15 +171,10 @@ func TestSkiplistHashRing_concurrentAccess(t *testing.T) {
 			for i := 0; i < iterations; i++ {
 				score := int32(100*(i%scores) + 50)
 				dataKey := fmt.Sprintf("k%d_%d", w, i)
-				// Writers and readers on shared scores; errors are ignored on
-				// purpose: the goal is race/deadlock freedom, and interleaved
-				// workers may legitimately remove each other's entries.
 				_ = ring.Add(ctx, score, nodeID)
 				_, _ = ring.Ceiling(ctx, score)
 				_, _ = ring.Floor(ctx, score)
 				_, _ = ring.Node(ctx, score)
-				// Iterate the result like ConsistentHash does, so a ring that
-				// hands out its internal map is caught by -race.
 				if nodes, err := ring.Nodes(ctx); err == nil {
 					for node := range nodes {
 						if node == "" {
@@ -277,7 +261,6 @@ func TestSkiplistHashRing_lockTTLAutoRelease(t *testing.T) {
 			return
 		}
 		acquired <- nil
-		// Release the second lease from its own goroutine: the token is per goroutine.
 		if err := ring.Unlock(ctx); err != nil {
 			acquired <- err
 		}
@@ -292,7 +275,6 @@ func TestSkiplistHashRing_lockTTLAutoRelease(t *testing.T) {
 		t.Fatal("lock TTL did not auto-release")
 	}
 
-	// The first lease expired, so unlocking it again must be rejected.
 	if err := ring.Unlock(ctx); err == nil {
 		t.Fatal("unlock of an expired lease should fail")
 	}

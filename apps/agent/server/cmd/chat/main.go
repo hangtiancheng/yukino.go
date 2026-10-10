@@ -1,6 +1,3 @@
-// Command chat runs an interactive test of the RAG-enhanced chat agent pipeline.
-// It demonstrates multi-turn conversation with memory by sending two sequential
-// queries and printing the agent's responses.
 package main
 
 import (
@@ -30,21 +27,17 @@ func main() {
 		log.Fatalf("build chat agent: %v", err)
 	}
 
-	// First turn.
 	firstQuestion := "Hello, what can you help me with?"
 	if err := ask(ctx, runner, sessionID, firstQuestion); err != nil {
 		log.Fatalf("first turn: %v", err)
 	}
 
-	// Second turn (uses conversation memory from the first).
 	secondQuestion := "What time is it now?"
 	if err := ask(ctx, runner, sessionID, secondQuestion); err != nil {
 		log.Fatalf("second turn: %v", err)
 	}
 }
 
-// ask sends a single question to the chat agent, prints the response,
-// and stores the exchange in conversation memory.
 func ask(ctx context.Context, runner compose.Runnable[*chat_pipeline.UserMessage, *schema.Message], sessionID, question string) error {
 	userMsg := &chat_pipeline.UserMessage{
 		ID:      sessionID,

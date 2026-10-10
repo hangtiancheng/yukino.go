@@ -8,7 +8,6 @@ import (
 	"os"
 )
 
-// Logger is the logging surface used by red_mq.
 type Logger interface {
 	Error(v ...any)
 	Warn(v ...any)
@@ -26,7 +25,6 @@ func init() {
 	defaultLogger = NewLogger(NewOptions())
 }
 
-// Options holds logger configuration.
 type Options struct {
 	LogName  string
 	LogLevel string
@@ -34,10 +32,8 @@ type Options struct {
 	Writer   io.Writer
 }
 
-// Option mutates Options.
 type Option func(*Options)
 
-// NewOptions builds default Options and applies the given Option list.
 func NewOptions(opts ...Option) Options {
 	options := Options{
 		LogName:  "app",
@@ -51,28 +47,24 @@ func NewOptions(opts ...Option) Options {
 	return options
 }
 
-// WithLogLevel sets the log level (debug, info, warn, error, fatal).
 func WithLogLevel(level string) Option {
 	return func(o *Options) {
 		o.LogLevel = level
 	}
 }
 
-// WithFileName redirects log output to the given file.
 func WithFileName(filename string) Option {
 	return func(o *Options) {
 		o.FileName = filename
 	}
 }
 
-// WithWriter overrides the underlying writer.
 func WithWriter(w io.Writer) Option {
 	return func(o *Options) {
 		o.Writer = w
 	}
 }
 
-// Level represents log severity.
 type Level int
 
 const (
@@ -83,7 +75,6 @@ const (
 	FatalLevel
 )
 
-// Levels maps string level names to Level values.
 var Levels = map[string]Level{
 	"":      DebugLevel,
 	"debug": DebugLevel,
@@ -93,13 +84,11 @@ var Levels = map[string]Level{
 	"fatal": FatalLevel,
 }
 
-// stdLogger wraps the standard library log.Logger with leveled filtering.
 type stdLogger struct {
 	logger *log.Logger
 	level  Level
 }
 
-// NewLogger constructs a Logger from Options.
 func NewLogger(options Options) Logger {
 	writer := options.Writer
 	if writer == nil {
@@ -172,7 +161,6 @@ func (l *stdLogger) Errorf(format string, v ...any) {
 	}
 }
 
-// GetDefaultLogger returns the package-level default Logger.
 func GetDefaultLogger() Logger {
 	return defaultLogger
 }

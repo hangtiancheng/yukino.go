@@ -10,10 +10,6 @@ import (
 	"time"
 )
 
-// TestConcurrentProposals drives a three-node cluster with concurrent
-// proposals issued through every member (followers forward them to the
-// leader) plus background ReadIndex traffic. Run under -race it exercises
-// the Node channel plumbing and the single state-machine goroutine.
 func TestConcurrentProposals(t *testing.T) {
 	c := newTestCluster(1, 2, 3)
 	defer c.stop()
@@ -33,9 +29,6 @@ func TestConcurrentProposals(t *testing.T) {
 		done    = make(chan struct{})
 	)
 
-	// Background ReadIndex traffic with unique contexts. Tracked separately
-	// from the proposing workers: it only exits once stop is closed, which
-	// happens after the workers are joined.
 	go func() {
 		defer close(done)
 		for i := 0; ; i++ {
@@ -56,8 +49,6 @@ func TestConcurrentProposals(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := 0; i < perWorker; i++ {
-				// Proposals go through different nodes; followers forward
-				// them to the leader.
 				target := c.peers[uint64(w%3)+1]
 				v := fmt.Sprintf("v-%03d", counter.Add(1)-1)
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -103,16 +94,12 @@ func TestConcurrentProposals(t *testing.T) {
 		}
 	}
 
-	// At least one linearizable read must have completed on the leader
 	waitCond(t, 5*time.Second, func() bool {
 		_, _, _, readStates := leader.snapshot()
 		return len(readStates) > 0
 	}, "no ReadIndex request completed in time")
 }
 
-// TestCampaignAfterRemovingSelf guards against a nil-Progress panic: after a
-// node removes itself from the cluster, a user-triggered Campaign used to
-// reach becomeLeader with an empty progress map and crash on r.prs[r.id].
 func TestCampaignAfterRemovingSelf(t *testing.T) {
 	c := newTestCluster(1)
 	defer c.stop()
@@ -132,14 +119,10 @@ func TestCampaignAfterRemovingSelf(t *testing.T) {
 		return confs == 1
 	}, "conf change not applied in time")
 
-	// Must not panic. A panicked state-machine goroutine would crash the
-	// whole test process; the ticker keeps running below to surface it.
 	_ = leader.node.Campaign(context.Background())
 	time.Sleep(200 * time.Millisecond)
 }
 
-// TestStartNodeWithZeroElectionTick: an unset (zero) ElectionTick used to
-// panic at startup via rand.Intn(0) in resetRandomizedElectionTimeout.
 func TestStartNodeWithZeroElectionTick(t *testing.T) {
 	n := StartNode(&Config{
 		ID:      1,
@@ -152,8 +135,6 @@ func TestStartNodeWithZeroElectionTick(t *testing.T) {
 	}
 }
 
-// TestHandleHeartbeatClampsCommitIndex: a heartbeat announcing a commit index
-// beyond the local log must be clamped instead of panicking in commitTo.
 func TestHandleHeartbeatClampsCommitIndex(t *testing.T) {
 	r := newRaft(&Config{
 		ID:            1,
@@ -163,7 +144,6 @@ func TestHandleHeartbeatClampsCommitIndex(t *testing.T) {
 	})
 	r.becomeFollower(1, 2)
 
-	// Leader claims commit index 100 while our log is empty.
 	r.handleHeartbeat(Message{From: 2, Term: 1, CommitIndex: 100})
 
 	if r.raftLog.commitIndex != 0 {
@@ -171,9 +151,6 @@ func TestHandleHeartbeatClampsCommitIndex(t *testing.T) {
 	}
 }
 
-// TestMemoryStorageConcurrentAccess hammers MemoryStorage from several
-// goroutines, including InitialState racing with SetHardState; under -race it
-// validates the internal locking.
 func TestMemoryStorageConcurrentAccess(t *testing.T) {
 	ms := NewMemoryStorage()
 

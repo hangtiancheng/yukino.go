@@ -10,8 +10,6 @@ type historyEntry struct {
 	bytes         int
 }
 
-// History holds bounded, process-local Responses continuations for protocols
-// without previous_response_id. It is reset when the daemon is restarted.
 type History struct {
 	mu      sync.Mutex
 	entries map[string]historyEntry
@@ -34,8 +32,6 @@ func (h *History) Enrich(body Object) error {
 		delete(body, "previous_response_id")
 		return nil
 	}
-	// Codex may omit previous_response_id but send only a tool result. Restore
-	// a uniquely cached call, retaining signed reasoning and parallel call order.
 	items := InputItems(body["input"])
 	existing := map[string]bool{}
 	reasoning := map[string]bool{}

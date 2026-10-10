@@ -18,9 +18,9 @@ type Client struct {
 	timeout   time.Duration
 	codec     codec.Codec
 	codecType codec.Type
-	breaker   sync.Map // map[string]*CircuitBreaker
+	breaker   sync.Map
 
-	pools sync.Map // map[string]*transport.ConnectionPool
+	pools sync.Map
 }
 
 func NewClient(reg *registry.Registry, opts ...ClientOption) (*Client, error) {

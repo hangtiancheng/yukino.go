@@ -1,4 +1,3 @@
-// Package proxy exposes a Codex-compatible Responses gateway using yukino_http.
 package proxy
 
 import (
@@ -139,7 +138,6 @@ func handleResponses(c *httpapp.Context, client *upstream.Client, history *bridg
 	first, _ := reader.Peek(1)
 	isJSON := first[0] == '{'
 	if stream {
-		// Decode a gateway's JSON fallback before committing SSE headers.
 		var converted bridge.Object
 		if isJSON {
 			data, err := readBody(reader)

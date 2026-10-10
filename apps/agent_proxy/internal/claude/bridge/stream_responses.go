@@ -103,7 +103,6 @@ func ResponsesStream(r io.Reader, model string, sink Sink) error {
 			return true, e.tool(key, Str(value["call_id"]), Str(value["name"]), Str(value["delta"]), false)
 		case "response.function_call_arguments.done":
 			key := keyFor(value, nil)
-			// Some providers supply the name and call_id only in output_item.done.
 			if t := e.tools[key]; t != nil && t.id != "" && t.name != "" {
 				return true, e.tool(key, "", "", Str(value["arguments"]), true)
 			}
@@ -178,7 +177,6 @@ func ResponsesStream(r io.Reader, model string, sink Sink) error {
 	return nil
 }
 
-// Stream also accepts gateways that return one JSON document for stream:true.
 func Stream(r io.Reader, protocol, model string, sink Sink) error {
 	reader := bufio.NewReader(r)
 	for {

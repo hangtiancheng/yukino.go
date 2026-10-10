@@ -11,12 +11,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/pkg"
 )
 
-// TestTCCExample runs the full TCC transaction flow against real MySQL and
-// Redis. It is skipped unless the following environment variables are set:
-//
-//	TCC_TEST_MYSQL_DSN:      MySQL DSN
-//	TCC_TEST_REDIS_ADDR:     Redis address, e.g. "127.0.0.1:6379"
-//	TCC_TEST_REDIS_PASSWORD: Redis password (optional)
 func TestTCCExample(t *testing.T) {
 	dsn := os.Getenv("TCC_TEST_MYSQL_DSN")
 	redisAddr := os.Getenv("TCC_TEST_REDIS_ADDR")
@@ -34,19 +28,16 @@ func TestTCCExample(t *testing.T) {
 	componentBID := "componentB"
 	componentCID := "componentC"
 
-	// Construct TCC components
 	componentA := NewMockComponent(componentAID, redisClient)
 	componentB := NewMockComponent(componentBID, redisClient)
 	componentC := NewMockComponent(componentCID, redisClient)
 
-	// Construct the transaction log storage module
 	txRecordDAO := dao.NewTXRecordDAO(mysqlDB)
 	txStore := NewMockTXStore(txRecordDAO, redisClient)
 
 	txManager := tcc.NewTXManager(txStore, tcc.WithMonitorTick(time.Second))
 	defer txManager.Stop()
 
-	// Register all components
 	for _, component := range []tcc.TCCComponent{componentA, componentB, componentC} {
 		if err := txManager.Register(component); err != nil {
 			t.Fatalf("register component %s: %v", component.ID(), err)
@@ -79,6 +70,5 @@ func TestTCCExample(t *testing.T) {
 		t.Fatal("tx failed")
 	}
 
-	// Leave the monitor one tick to observe the completed transaction.
 	<-time.After(2 * time.Second)
 }

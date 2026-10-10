@@ -8,7 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/consistent_cache"
 )
 
-// Client abstracts the redis commands used by Cache.
 type Client interface {
 	Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error)
 	Get(ctx context.Context, key string) (string, error)
@@ -17,31 +16,24 @@ type Client interface {
 	PExpire(ctx context.Context, key string, expireMillis int64) error
 }
 
-// Cache implements consistent_cache.Cache backed by redis.
 type Cache struct {
 	client Client
 }
 
-// NewRedisCache builds a redis-backed Cache.
 func NewRedisCache(config *Config) *Cache {
 	return &Cache{client: NewRClient(config)}
 }
 
-// NewCache shares a caller-owned client.
 func NewCache(client Client) *Cache { return &Cache{client: client} }
 
-// Enable re-enables the read-path write cache for a key by expiring the disable marker shortly.
-// The disable marker is considered absent once it expires, which means the read path is enabled.
 func (c *Cache) Enable(ctx context.Context, key string, delayMillis int64) error {
 	return c.client.PExpire(ctx, c.disableKey(key), delayMillis)
 }
 
-// Disable turns off the read-path write cache for a key by setting a short-lived disable marker.
 func (c *Cache) Disable(ctx context.Context, key string, expireSeconds int64) error {
 	return c.client.SetEx(ctx, c.disableKey(key), "1", expireSeconds)
 }
 
-// Get reads the cached value for the key.
 func (c *Cache) Get(ctx context.Context, key string) (string, error) {
 	reply, err := c.client.Get(ctx, key)
 	if err != nil && !errors.Is(err, ErrorCacheMiss) {
@@ -53,7 +45,6 @@ func (c *Cache) Get(ctx context.Context, key string) (string, error) {
 	return reply, nil
 }
 
-// PutWhenEnable writes the cache only if the read-path write cache is enabled (i.e. disable marker absent).
 func (c *Cache) PutWhenEnable(ctx context.Context, key, value string, expireSeconds int64) (bool, error) {
 	reply, err := c.client.Eval(ctx, LuaCheckEnableAndWriteCache, 2, []any{
 		c.disableKey(key),
@@ -71,13 +62,10 @@ func (c *Cache) PutWhenEnable(ctx context.Context, key, value string, expireSeco
 	return n == 1, nil
 }
 
-// Del removes the cached value for the key.
 func (c *Cache) Del(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key)
 }
 
-// disableKey derives the disable-marker key. The {%s} hash tag keeps key and disable key
-// on the same slot in redis cluster mode.
 func (c *Cache) disableKey(key string) string {
 	return fmt.Sprintf("Enable_Lock_Key_{%s}", key)
 }

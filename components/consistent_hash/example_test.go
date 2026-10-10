@@ -20,9 +20,7 @@ func Test_local_consistent_hash(t *testing.T) {
 		localHashRing,
 		hasher,
 		localMigrator,
-		// Virtual nodes per node = weight * replicas.
 		WithReplicas(5),
-		// The hash-ring lock auto-releases after 5 seconds.
 		WithLockExpireSeconds(5),
 	)
 	test(t, consistentHash)

@@ -41,8 +41,6 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// The node id is the path without the leading slash; reject requests
-		// without one instead of slicing out of range
 		if len(url) < 2 {
 			http.Error(w, "missing node id", http.StatusBadRequest)
 			return

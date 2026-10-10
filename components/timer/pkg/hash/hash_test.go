@@ -40,8 +40,6 @@ func TestMurmur3AltEncryptorDistinct(t *testing.T) {
 	e := NewMurmur3Encryptor()
 	alt := NewMurmur3AltEncryptor()
 
-	// The two halves of murmur3_x64_128 must differ so the bloom filter gets
-	// two independent bit positions.
 	for _, s := range []string{"timer", "taskflow", "a"} {
 		if e.Encrypt(s) == alt.Encrypt(s) {
 			t.Fatalf("primary and alt hashes collide for %q", s)

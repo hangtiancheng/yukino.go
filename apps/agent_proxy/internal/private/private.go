@@ -1,4 +1,3 @@
-// Package private atomically replaces private files without exposing partial content.
 package private
 
 import (
@@ -6,7 +5,6 @@ import (
 	"path/filepath"
 )
 
-// Write atomically replaces a 0600 file, including on initial creation.
 func Write(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".yukino-*")
 	if err != nil {

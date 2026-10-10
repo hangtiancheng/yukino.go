@@ -13,7 +13,6 @@ type Registry = registry.Registry
 type Instance = registry.Instance
 type LoadBalancer = load_balance.LoadBalancer
 
-// Future is the asynchronous invocation handle returned by ClientConn.InvokeAsync.
 type Future = transport.Future
 
 var (

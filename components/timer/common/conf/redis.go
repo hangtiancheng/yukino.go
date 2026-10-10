@@ -1,16 +1,13 @@
 package conf
 
-// RedisConfig holds cache configuration.
 type RedisConfig struct {
 	Network            string `yaml:"network"`
 	Address            string `yaml:"address"`
 	Password           string `yaml:"password"`
 	MaxIdle            int    `yaml:"maxIdle"`
 	IdleTimeoutSeconds int    `yaml:"idleTimeout"`
-	// Maximum number of active connections in the pool.
-	MaxActive int `yaml:"maxActive"`
-	// Whether new requests wait or fail immediately when the pool is full.
-	Wait bool `yaml:"wait"`
+	MaxActive          int    `yaml:"maxActive"`
+	Wait               bool   `yaml:"wait"`
 }
 
 type RedisConfigProvider struct {

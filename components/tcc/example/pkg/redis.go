@@ -29,7 +29,6 @@ func GetRedisClient() *redis_lock.Client {
 	return redisClient
 }
 
-// BuildTXKey constructs the transaction ID key for idempotency deduplication
 func BuildTXKey(componentID, txID string) string {
 	return fmt.Sprintf("txKey:%s:%s", componentID, txID)
 }
@@ -38,12 +37,10 @@ func BuildTXDetailKey(componentID, txID string) string {
 	return fmt.Sprintf("txDetailKey:%s:%s", componentID, txID)
 }
 
-// BuildDataKey constructs the request ID key for state machine tracking
 func BuildDataKey(componentID, txID, bizID string) string {
 	return fmt.Sprintf("txKey:%s:%s:%s", componentID, txID, bizID)
 }
 
-// BuildTXLockKey constructs the transaction lock key
 func BuildTXLockKey(componentID, txID string) string {
 	return fmt.Sprintf("txLockKey:%s:%s", componentID, txID)
 }

@@ -1,11 +1,4 @@
 # syntax=docker/dockerfile:1
-#
-# taskflow client image: builds the lit + tailwind SPA and serves it with
-# nginx, proxying /api to the server service. Build from services/taskflow/client:
-#
-#   docker build -t taskflow-client .
-#
-# or simply: docker compose up --build   (see services/taskflow/docker-compose.yml)
 
 FROM node:24-alpine AS build
 WORKDIR /app

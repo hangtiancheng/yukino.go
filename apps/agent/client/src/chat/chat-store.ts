@@ -11,9 +11,7 @@ export type Mode = "quick" | "stream";
 export interface ChatMessage {
   type: "user" | "assistant";
   content: string;
-  /** Optional step details for AI Ops results. */
   detail?: string[];
-  /** Transient: reply not yet arrived — render a thinking placeholder. */
   pending?: boolean;
 }
 
@@ -46,8 +44,6 @@ export interface OverlayState {
 const MAX_HISTORIES = 50;
 const STORAGE_KEY = "yukino-agent-chat-histories";
 
-// Zod schemas for validating the localStorage-persisted chat history shape,
-// so JSON.parse results are checked instead of type-asserted.
 const chatMessageSchema = z.object({
   type: z.enum(["user", "assistant"]),
   content: z.string(),
@@ -86,9 +82,6 @@ function deriveTitle(messages: ChatMessage[]): string {
   return c.slice(0, 30) + (c.length > 30 ? "..." : "");
 }
 
-// Lit port of the React useChat hook: a ReactiveController owning all chat
-// state. Every mutation goes through #update() which persists histories and
-// asks the host to re-render.
 export class ChatStore implements ReactiveController {
   mode: Mode = "quick";
   sessionId: string = generateSessionId();
@@ -122,9 +115,7 @@ export class ChatStore implements ReactiveController {
   #persistHistories() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.histories));
-    } catch {
-      // ignore quota errors
-    }
+    } catch {}
   }
 
   setMode = (mode: Mode) => {
@@ -135,7 +126,6 @@ export class ChatStore implements ReactiveController {
   showNotification = (message: string, type: NotificationType = "info") => {
     this.notification = { message, type };
     if (this.#notificationTimer) window.clearTimeout(this.#notificationTimer);
-    // Auto-dismiss after 3s.
     this.#notificationTimer = window.setTimeout(() => {
       this.notification = null;
       this.#notificationTimer = undefined;
@@ -220,7 +210,6 @@ export class ChatStore implements ReactiveController {
 
     try {
       if (this.mode === "quick") {
-        // Show a thinking placeholder until the reply arrives.
         currentMsgs = [
           ...currentMsgs,
           { type: "assistant", content: "", pending: true },
@@ -265,9 +254,6 @@ export class ChatStore implements ReactiveController {
         ];
         setMessages(currentMsgs);
 
-        // Dispatch one complete SSE event: per spec, multiple `data:` lines
-        // belong to the same event and are joined with "\n" — this is how
-        // newlines inside streamed chunks survive the transport.
         const dispatchEvent = () => {
           if (dataLines.length === 0) {
             currentEvent = "";
@@ -288,15 +274,11 @@ export class ChatStore implements ReactiveController {
             ];
             setMessages(currentMsgs);
           } else if (event === "error") {
-            // Surface server-side error events instead of silently ignoring.
             throw new Error(payload || "Stream error");
           }
-          // "done" event: clean termination — the reader will return
-          // done=true on the next read and the loop will break.
         };
 
         while (true) {
-          // Check abort before each read so teardown cancels promptly.
           if (controller.signal.aborted) break;
           const { done, value } = await reader.read();
           if (done) break;
@@ -304,11 +286,9 @@ export class ChatStore implements ReactiveController {
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
           for (const rawLine of lines) {
-            // Strip trailing \r for SSE spec compliance (\r\n line endings).
             const line = rawLine.endsWith("\r")
               ? rawLine.slice(0, -1)
               : rawLine;
-            // Blank line terminates the current event.
             if (line === "") {
               dispatchEvent();
               continue;
@@ -327,14 +307,12 @@ export class ChatStore implements ReactiveController {
         }
       }
     } catch (e) {
-      // AbortError: user navigated away — suppress the error message.
       if (e instanceof DOMException && e.name === "AbortError") return;
       const msg = e instanceof Error ? e.message : String(e);
       const errorMsg: ChatMessage = {
         type: "assistant",
         content: "Error: " + msg,
       };
-      // Replace a trailing thinking placeholder instead of appending after it.
       currentMsgs = currentMsgs.at(-1)?.pending
         ? [...currentMsgs.slice(0, -1), errorMsg]
         : [...currentMsgs, errorMsg];
@@ -342,7 +320,6 @@ export class ChatStore implements ReactiveController {
     } finally {
       this.#streamController = null;
       this.isStreaming = false;
-      // Clear a leftover thinking placeholder (e.g. stream ended empty).
       if (currentMsgs.at(-1)?.pending) {
         currentMsgs = currentMsgs.slice(0, -1);
         setMessages(currentMsgs);

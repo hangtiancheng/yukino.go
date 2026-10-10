@@ -3,9 +3,7 @@ package tcc
 import "time"
 
 type Options struct {
-	// Transaction execution timeout
-	Timeout time.Duration
-	// Polling interval for the monitor task
+	Timeout     time.Duration
 	MonitorTick time.Duration
 }
 

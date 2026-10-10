@@ -8,21 +8,14 @@ import (
 )
 
 type raftProxy struct {
-	// Channel for user-submitted write proposals
-	proposeC <-chan string
-	// Channel for user-submitted configuration change proposals
+	proposeC    <-chan string
 	confChangeC <-chan raft.ConfChange
-	// Channel for committed log entries
-	commitC chan<- *string
-	// Client node ID
-	id uint64
-	// Peer node list
-	peers []string
+	commitC     chan<- *string
+	id          uint64
+	peers       []string
 
-	// Raft node instance
 	node raft.Node
 
-	// Log persistence storage
 	storage raft.Storage
 }
 
@@ -56,9 +49,6 @@ func (r *raftProxy) run() {
 
 	r.node = raft.StartNode(&c, peers)
 
-	// Start transport module
-
-	// Start listener module
 	go r.listen()
 }
 
@@ -66,9 +56,7 @@ func (r *raftProxy) listen() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	// Listen for client proposal channels
 	go r.listenRequest()
-	// Main loop: listen for ready state
 
 	for {
 		select {
@@ -76,15 +64,7 @@ func (r *raftProxy) listen() {
 			r.node.Tick()
 
 		case <-r.node.Ready():
-			// Persist hard state and configuration
 
-			// Persist log entries
-
-			// Send messages to peers
-
-			// Apply committed log entries to state machine
-
-			// advance
 			r.node.Advance()
 		}
 	}

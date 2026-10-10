@@ -31,9 +31,6 @@ if old then
 end
 return redis.call('HSET',KEYS[1],ARGV[1],ARGV[3])`
 
-// SyncExecutionMirror repeatedly scans a fixed ID window with a durable cursor.
-// New inserts cannot starve an older status change. A failed batch never advances
-// its cursor; replay is safe. This mirror is diagnostic, not an execution lock.
 func SyncExecutionMirror(ctx context.Context, db *gorm.DB, client redis.UniversalClient, mirrorKey, cursorKey string, limit int) (int, error) {
 	if limit <= 0 || limit > 2000 {
 		limit = 500
@@ -83,7 +80,6 @@ func SyncExecutionMirror(ctx context.Context, db *gorm.DB, client redis.Universa
 		}
 		updated, _ := time.Parse(time.RFC3339Nano, value.UpdatedAt)
 		if terminal(value.Status) && updated.Before(cutoff) {
-			// Only remove the version that was inspected.
 			if err := client.Eval(ctx, `if redis.call('HGET',KEYS[1],ARGV[1]) == ARGV[2] then return redis.call('HDEL',KEYS[1],ARGV[1]) end return 0`, []string{mirrorKey}, fields[i], fields[i+1]).Err(); err != nil {
 				return len(rows), err
 			}

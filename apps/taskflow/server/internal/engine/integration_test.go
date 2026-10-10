@@ -158,7 +158,6 @@ func TestTransactionalCaptureAndConcurrentRelay(t *testing.T) {
 	if !strings.Contains(exec.TriggerInfo, "onerror") || exec.PromptSnapshot != task.Prompt {
 		t.Fatalf("captured record or prompt missing: %+v", exec)
 	}
-	// A duplicate fire key always resolves the canonical MySQL row ID.
 	for i := 0; i < 10; i++ {
 		candidate := &po.Execution{FireKey: exec.FireKey, Status: po.StatusPending, FireAt: time.Now(), TaskType: po.TaskTypeCondition}
 		_, id, err := dao.New(db).InsertPending(ctx, candidate)
@@ -166,8 +165,6 @@ func TestTransactionalCaptureAndConcurrentRelay(t *testing.T) {
 			t.Fatalf("duplicate resolved ID %d instead of %d: %v", id, exec.ID, err)
 		}
 	}
-	// Database-wide capture also handles spatial columns and tables without a
-	// primary key. UUID identity must not depend on an auto-increment ID.
 	if err := db.Exec("CREATE TABLE audit_notes (content TEXT, location POINT)").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -270,13 +267,11 @@ func TestDuplicateCommandsRunToolsOnceAndPersistMarkdown(t *testing.T) {
 	if completions.Load() != 2 {
 		t.Fatalf("provider called %d times; want one tool round and one completion", completions.Load())
 	}
-	// Late finalization must never replace the durable terminal report.
 	executor.finalize(ctx, fresh, nil, time.Now(), fmt.Errorf("stale worker"), nil)
 	after, err := d.GetExecution(ctx, id)
 	if err != nil || after.Status != po.StatusSucceeded || after.ReportBody != fresh.ReportBody {
 		t.Fatalf("stale finalization overwrote terminal result: %+v %v", after, err)
 	}
-	// Canceled execution contexts must still persist a terminal failure.
 	failed := &po.Execution{TaskType: po.TaskTypeManual, FireKey: cfg.Node.ID + ":timeout", Status: po.StatusRunning, FireAt: time.Now()}
 	d.InsertPending(ctx, failed)
 	canceled, cancel := context.WithCancel(ctx)

@@ -8,7 +8,6 @@ import (
 	go_redis "github.com/redis/go-redis/v9"
 )
 
-// Client wraps a github.com/redis/go-redis/v9 client.
 type Client struct {
 	opts   *ClientOptions
 	client go_redis.UniversalClient
@@ -47,7 +46,6 @@ func (c *Client) SAdd(ctx context.Context, key, val string) (int, error) {
 	return int(n), err
 }
 
-// Eval runs the given Lua script. The first keyCount entries of keysAndArgs are KEYS, the rest are ARGV.
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
 	keys := make([]string, 0, keyCount)
 	argsLen := len(keysAndArgs) - keyCount
@@ -65,8 +63,6 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	return c.client.Eval(ctx, src, keys, args...).Result()
 }
 
-// NewUniversalClient shares the caller-owned connection pool, including Sentinel
-// and Cluster routing. The caller is responsible for closing the pool.
 func NewUniversalClient(client go_redis.UniversalClient) *Client {
 	if client == nil {
 		panic("nil redis client")

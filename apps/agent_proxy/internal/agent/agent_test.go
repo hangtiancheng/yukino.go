@@ -82,7 +82,6 @@ func TestModeAndBaseURL(t *testing.T) {
 }
 
 func TestAgentImplementsInterface(t *testing.T) {
-	// Compile-time assurance that both adapters satisfy Agent, including Check.
 	var _ Agent = claudeAgent{}
 	var _ Agent = codexAgent{}
 }

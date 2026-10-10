@@ -82,7 +82,5 @@ func getCompleteURL(origin string, params map[string]string) string {
 		values.Add(k, v)
 	}
 
-	// values.Encode() is already a valid query string; unescaping it would
-	// corrupt values (e.g. "+"-encoded spaces).
 	return fmt.Sprintf("%s?%s", origin, values.Encode())
 }

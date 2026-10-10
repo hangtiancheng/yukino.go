@@ -33,7 +33,7 @@ func processAlive(pid int) bool {
 	}
 	defer windows.CloseHandle(handle)
 	var code uint32
-	return windows.GetExitCodeProcess(handle, &code) == nil && code == 259 // STILL_ACTIVE
+	return windows.GetExitCodeProcess(handle, &code) == nil && code == 259
 }
 
 func (m *Manager) lock(ctx context.Context) (func(), error) {

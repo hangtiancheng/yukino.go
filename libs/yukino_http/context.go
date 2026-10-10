@@ -14,23 +14,18 @@ type Context struct {
 	Request *http.Request
 	Writer  http.ResponseWriter
 
-	// request info (Koa-style fields)
 	Path   string
 	Method string
 
-	// deferred response (Koa-style)
 	Status int
 	Body   any
 	Type   string
 
-	// middleware data sharing
 	State  map[string]any
 	Params map[string]string
 
-	// response headers (deferred)
 	headers map[string]string
 
-	// internal
 	app       *Application
 	flushed   bool
 	statusSet bool
@@ -51,14 +46,9 @@ func newContext(w http.ResponseWriter, req *http.Request) *Context {
 func (ctx *Context) Throw(status int, msg string) {
 	ctx.Status = status
 	ctx.statusSet = true
-	// Include "data": nil so error responses match the unified {message, data}
-	// shape returned by Next.js and by the success-path ctx.JSON calls.
 	ctx.Body = H{"message": msg, "data": nil}
 }
 
-// SetStatus records an explicitly chosen status, like Koa's ctx.status setter.
-// Unlike assigning the Status field directly, a status set here is never
-// overridden by the automatic 404->200 promotion when a body is present.
 func (ctx *Context) SetStatus(status int) {
 	ctx.Status = status
 	ctx.statusSet = true

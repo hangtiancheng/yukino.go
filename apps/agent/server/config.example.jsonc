@@ -1,83 +1,39 @@
-// Yukino Agent Configuration Reference
-// The Go version loads configuration from config.json (not environment variables).
-// This file lists every config.json field and its default to quickly identify
-// which fields need to be configured. The values below are illustrative only —
-// edit config.json for actual configuration.
 {
-  // ---- Server ----
   "server_addr": ":8123",
-  // ---- LLM Provider ----
-  "model_provider": "openai", // "openai" | "anthropic"
-  // ---- Think Model (planning/replan) ----
+  "model_provider": "openai",
   "think_chat_model": {
     "api_key": "your-api-key",
-    // Anthropic: SDK auto-appends /v1/messages, so base_url should NOT include /v1
-    // OpenAI: base_url is used as-is, typically includes /v1
     "base_url": "https://api.deepseek.com",
     "model": "deepseek-flash",
     "max_tokens": 4096,
-    // Anthropic extended thinking (only effective when model_provider=anthropic)
     "thinking": false,
   },
-  // ---- Quick Model (chat/tool execution) ----
   "quick_chat_model": {
     "api_key": "your-api-key",
-    // Anthropic: SDK auto-appends /v1/messages, so base_url should NOT include /v1
-    // OpenAI: base_url is used as-is, typically includes /v1
     "base_url": "https://api.deepseek.com",
     "model": "deepseek-flash",
     "max_tokens": 4096,
-    // Anthropic extended thinking (only effective when model_provider=anthropic)
     "thinking": false,
   },
-  // ---- Embedding ----
-  // Any OpenAI-compatible /v1/embeddings endpoint works; point base_url at it.
-  // The vector dimension is probed from the embedding provider at startup,
-  // so no dimension configuration is needed.
   "embedding_model": {
     "provider": "openai",
     "api_key": "your-api-key",
-    // Alibaba DashScope compatible-mode, which serves text-embedding-v4:
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "model": "text-embedding-v4"
   },
-  // ---- File Upload Directory ----
   "file_dir": "./data/docs",
-  // ---- MCP (Log Tool) ----
-  // transport: "streamable_http" (default) | "sse" | "stdio"
   "mcp": {
     "transport": "streamable_http",
-    // url is used by streamable_http / sse transports
     "url": "http://localhost:3000/mcp",
-    // command / args / env are used by the stdio transport, e.g.:
-    // "transport": "stdio",
-    // "command": "npx",
-    // "args": ["-y", "@modelcontextprotocol/server-everything"],
-    // "env": { "SOME_KEY": "some-value" }
   },
-  // ---- Prometheus ----
-  // Leave empty (or omit) to disable the query_prometheus_alerts tool; there is
-  // no implicit default, so an empty value really does disable it.
   "prometheus_url": "http://127.0.0.1:9090",
-  // injected into chat system prompt; takes effect only when both are non-empty
   "log_topic_region": "",
   "log_topic_id": "",
-  // ---- Milvus (vector knowledge base) ----
-  // The database and collection are auto-provisioned on first connect
-  // (database "agent", collection "biz" by default).
   "milvus": {
     "addr": "localhost:19530",
-    // username/password are optional; set both only when Milvus authorization is enabled
     "username": "",
     "password": "",
     "db_name": "agent",
     "collection_name": "biz",
   },
 }
-// The following are constants; to change them, edit internal/consts/consts.go
-// MILVUS_ID_FIELD=id
-// MILVUS_VECTOR_FIELD=vector
-// MILVUS_CONTENT_FIELD=content
-// MILVUS_METADATA_FIELD=metadata
-// MILVUS_SOURCE_KEY=_source
-// MAX_CONTENT_LENGTH=8192

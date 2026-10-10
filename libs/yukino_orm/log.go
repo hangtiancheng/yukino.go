@@ -14,7 +14,6 @@ var (
 	mu          sync.Mutex
 )
 
-// log methods
 var (
 	Error  = errorLogger.Println
 	Errorf = errorLogger.Printf
@@ -22,14 +21,12 @@ var (
 	Infof  = infoLogger.Printf
 )
 
-// log levels
 const (
 	InfoLevel = iota
 	ErrorLevel
 	Disabled
 )
 
-// SetLevel controls log level
 func SetLevel(level int) {
 	mu.Lock()
 	defer mu.Unlock()

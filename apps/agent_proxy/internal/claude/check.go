@@ -16,9 +16,6 @@ import (
 
 const CheckTimeout = 10 * time.Second
 
-// Check verifies the selected inference route, credentials, and model before
-// settings or an existing service are changed. Abort after the first valid
-// stream event; the request has a small output budget and no tools.
 func Check(ctx context.Context, c *upstream.Client) error {
 	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
 	defer cancel()

@@ -38,11 +38,9 @@ var (
 type UpgradeOptions struct {
 	ReadBufferSize  int
 	WriteBufferSize int
-	// MaxMessageSize caps a single frame and the reassembled fragmented
-	// message total on the read side. Zero means the default (65536 bytes).
-	MaxMessageSize int
-	CheckOrigin    func(r *http.Request) bool
-	Subprotocols   []string
+	MaxMessageSize  int
+	CheckOrigin     func(r *http.Request) bool
+	Subprotocols    []string
 }
 
 type WSConn struct {
@@ -157,8 +155,6 @@ func (ctx *Context) Upgrade(opts *UpgradeOptions) (*WSConn, error) {
 	return ws, nil
 }
 
-// --- event handlers (Node.js ws style) ---
-
 func (ws *WSConn) OnMessage(fn func(messageType int, data []byte)) {
 	ws.onMessage = fn
 }
@@ -179,8 +175,6 @@ func (ws *WSConn) OnPong(fn func(data []byte)) {
 	ws.onPong = fn
 }
 
-// Listen runs a blocking read loop, dispatching to registered event handlers.
-// It handles ping/pong automatically and calls OnMessage/OnClose/OnError.
 func (ws *WSConn) Listen() {
 	for {
 		opcode, payload, err := ws.readMessage()
@@ -214,8 +208,6 @@ func (ws *WSConn) Listen() {
 		}
 	}
 }
-
-// --- read/write API ---
 
 func (ws *WSConn) ReadMessage() (messageType int, data []byte, err error) {
 	ws.readMu.Lock()
@@ -351,8 +343,6 @@ func (ws *WSConn) NetConn() net.Conn {
 	return ws.conn
 }
 
-// --- frame I/O (write directly to conn, read via bufio.Reader) ---
-
 const continuationFrame = 0
 
 func (ws *WSConn) readFrame() (opcode int, fin bool, payload []byte, err error) {
@@ -363,7 +353,6 @@ func (ws *WSConn) readFrame() (opcode int, fin bool, payload []byte, err error) 
 
 	fin = header[0]&0x80 != 0
 	if header[0]&0x70 != 0 {
-		// RSV1-3 must be zero: no extensions are negotiated (RFC 6455 5.2)
 		return 0, false, nil, ErrWSInvalidFrame
 	}
 	opcode = int(header[0] & 0x0F)
@@ -373,7 +362,6 @@ func (ws *WSConn) readFrame() (opcode int, fin bool, payload []byte, err error) 
 	switch opcode {
 	case continuationFrame, TextMessage, BinaryMessage:
 	case CloseMessage, PingMessage, PongMessage:
-		// control frames must not be fragmented and carry at most 125 bytes
 		if !fin || length > 125 {
 			return 0, false, nil, ErrWSInvalidFrame
 		}
@@ -381,7 +369,6 @@ func (ws *WSConn) readFrame() (opcode int, fin bool, payload []byte, err error) 
 		return 0, false, nil, ErrWSInvalidFrame
 	}
 
-	// client-to-server frames must be masked (RFC 6455 5.1)
 	if !masked {
 		return 0, false, nil, ErrWSInvalidFrame
 	}
@@ -422,9 +409,6 @@ func (ws *WSConn) readFrame() (opcode int, fin bool, payload []byte, err error) 
 	return opcode, fin, payload, nil
 }
 
-// readMessage returns the next complete message, reassembling fragmented
-// data frames. Control frames interleaved between fragments are returned
-// immediately, as permitted by RFC 6455 5.4.
 func (ws *WSConn) readMessage() (opcode int, payload []byte, err error) {
 	var (
 		msgType int
@@ -441,7 +425,6 @@ func (ws *WSConn) readMessage() (opcode int, payload []byte, err error) {
 			return opcode, data, nil
 		case continuationFrame:
 			if msgType == 0 {
-				// continuation without a preceding data frame
 				return 0, nil, ErrWSInvalidFrame
 			}
 			if len(buf)+len(data) > ws.messageLimit() {
@@ -451,9 +434,8 @@ func (ws *WSConn) readMessage() (opcode int, payload []byte, err error) {
 			if fin {
 				return msgType, buf, nil
 			}
-		default: // TextMessage, BinaryMessage
+		default:
 			if msgType != 0 {
-				// new data frame while a fragmented message is in progress
 				return 0, nil, ErrWSInvalidFrame
 			}
 			if fin {
@@ -506,8 +488,6 @@ func (ws *WSConn) writeCloseFrame(code int) error {
 func (ws *WSConn) handleError(err error) {
 	select {
 	case <-ws.closed:
-		// already closed locally or by peer; the trailing read error
-		// ("use of closed network connection") is not an application error
 	default:
 		if ws.onError != nil {
 			ws.onError(err)
@@ -515,8 +495,6 @@ func (ws *WSConn) handleError(err error) {
 	}
 	ws.once.Do(func() { close(ws.closed) })
 }
-
-// --- helpers ---
 
 func computeAcceptKey(key string) string {
 	h := sha1.New()

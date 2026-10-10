@@ -1,12 +1,9 @@
 package redis
 
 const (
-	// DefaultIdleTimeoutSeconds is the default idle-connection timeout (10s).
 	DefaultIdleTimeoutSeconds = 10
-	// DefaultMaxActive is the default max active connections.
-	DefaultMaxActive = 100
-	// DefaultMaxIdle is the default max idle connections.
-	DefaultMaxIdle = 20
+	DefaultMaxActive          = 100
+	DefaultMaxIdle            = 20
 )
 
 type ClientOptions struct {
@@ -14,10 +11,9 @@ type ClientOptions struct {
 	idleTimeoutSeconds int
 	maxActive          int
 	wait               bool
-	// Required fields.
-	network  string
-	address  string
-	password string
+	network            string
+	address            string
+	password           string
 }
 
 type ClientOption func(c *ClientOptions)

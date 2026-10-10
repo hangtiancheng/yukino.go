@@ -25,17 +25,11 @@ const (
 	defaultTaskTimezone = "Asia/Shanghai"
 )
 
-// FireCallback is the JSON body the distributed time wheel posts back to
-// /internal/v1/fire when a materialized fire becomes due.
 type FireCallback struct {
 	ExecutionID uint   `json:"execution_id"`
 	FireKey     string `json:"fire_key"`
 }
 
-// Migrator expands enabled cron definitions into concrete execution rows
-// ahead of time and registers each pending fire on the distributed time
-// wheel. Re-running the expansion is safe: executions dedupe on fire_key and
-// wheel entries on identical task bodies.
 type Migrator struct {
 	cfg      *conf.Config
 	dao      *dao.DAO
@@ -152,7 +146,6 @@ func (m *Migrator) materializeTask(ctx context.Context, task *po.ScheduledTask, 
 		return
 	}
 
-	// A newly created definition must not backfill times before it existed.
 	if task.CreatedAt.After(recoverStart) {
 		recoverStart = task.CreatedAt
 	}
@@ -173,7 +166,6 @@ func (m *Migrator) materializeTask(ctx context.Context, task *po.ScheduledTask, 
 		nextUTC := next.UTC()
 		if task.NextFireAt == nil || !task.NextFireAt.Equal(nextUTC) {
 			task.NextFireAt = &nextUTC
-			// Bookkeeping never writes a stale copy of operator-controlled fields.
 			if err := m.dao.DB().WithContext(ctx).Model(&po.ScheduledTask{}).Where("id = ? AND cron_expr = ? AND timezone = ?", task.ID, task.CronExpr, task.Timezone).Update("next_fire_at", nextUTC).Error; err != nil {
 				slog.Warn("persist next_fire_at", "task_id", task.ID, "err", err)
 			}
@@ -217,8 +209,6 @@ func (m *Migrator) registerFire(ctx context.Context, task *po.ScheduledTask, fir
 
 	executeAt := fireAt
 	if !executeAt.After(now.Add(time.Second)) {
-		// Overdue fires (e.g. after downtime) are delivered 5s from now; the
-		// original fire time stays on the execution row for auditing.
 		executeAt = now.Add(5 * time.Second)
 	}
 

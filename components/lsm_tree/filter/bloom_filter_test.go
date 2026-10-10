@@ -51,17 +51,14 @@ func Test_BloomFilter_Hash(t *testing.T) {
 	bf.Add([]byte("b"))
 
 	bitmap := bf.Hash()
-	// bitmap length = ceil(m/8) + 1 = 2 (one data byte + one byte for k)
 	if len(bitmap) != 2 {
 		t.Errorf("bitmap len, expect: 2, got: %d", len(bitmap))
 	}
 
-	// Optimal k = ln2 * m / n = 69 * 8 / 100 / 2 = 2
 	if k := bitmap[len(bitmap)-1]; k != 2 {
 		t.Errorf("k, expect: 2, got: %d", k)
 	}
 
-	// Added keys must be reported as existing.
 	for _, key := range [][]byte{[]byte("a"), []byte("b")} {
 		if !bf.Exist(bitmap, key) {
 			t.Errorf("key: %s, expect: true, got: false", key)

@@ -1,6 +1,5 @@
 package util
 
-// cSpell: words abce
 import (
 	"bytes"
 	"testing"
@@ -28,7 +27,6 @@ func Test_GetSeparatorBetween(t *testing.T) {
 	if got := GetSeparatorBetween([]byte("abcd"), []byte("abce")); !bytes.Equal(got, []byte("abcd")) {
 		t.Errorf("GetSeparatorBetween(abcd, abce), expect: abcd, got: %s", got)
 	}
-	// An empty b must not panic with a negative slice bound.
 	if got := GetSeparatorBetween(nil, nil); len(got) != 0 {
 		t.Errorf("GetSeparatorBetween(nil, nil), expect empty, got: %s", got)
 	}

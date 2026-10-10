@@ -13,7 +13,6 @@ import (
 
 const BufferSize = 4096
 
-// PacketBuffer stores partial reads and extracts complete frames.
 type PacketBuffer struct {
 	buf  []byte
 	lock sync.Mutex
@@ -29,7 +28,6 @@ func (pb *PacketBuffer) Read() []byte {
 	pb.lock.Lock()
 	defer pb.lock.Unlock()
 
-	// Resync: skip garbage until the buffer starts with the magic number.
 	for len(pb.buf) >= 2 && binary.BigEndian.Uint16(pb.buf[0:2]) != protocol.Magic {
 		pb.buf = pb.buf[1:]
 	}
@@ -120,7 +118,6 @@ func (tc *TCPConnection) Close() error {
 	return tc.conn.Close()
 }
 
-// SetReadDeadline interrupts a blocked Read; used for graceful shutdown.
 func (tc *TCPConnection) SetReadDeadline(t time.Time) error {
 	return tc.conn.SetReadDeadline(t)
 }

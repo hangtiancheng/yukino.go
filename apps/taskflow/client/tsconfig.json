@@ -9,18 +9,15 @@
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
-    /* JSX via @yukino.js/lit-jsx */
     "jsx": "react-jsx",
     "jsxImportSource": "@yukino.js/lit-jsx",
 
-    /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
 
-    /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

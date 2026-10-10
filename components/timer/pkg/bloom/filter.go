@@ -8,9 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/timer/pkg/redis"
 )
 
-// Filter stores two Murmur3 bit positions in a bounded 2 MiB Redis bitmap.
-// At one million entries the approximate false-positive probability is 1.26%.
-// A positive result is only a hint; callers must check durable idempotency.
 type Filter struct {
 	client     *redis.Client
 	encryptor1 *hash.Murmur3Encryptor
@@ -26,7 +23,6 @@ func NewFilter(client *redis.Client, encryptor1 *hash.Murmur3Encryptor, encrypto
 }
 
 func (f *Filter) Exist(ctx context.Context, key, val string) (bool, error) {
-	// Check if the value exists in the bloom filter
 	rawVal1 := f.encryptor1.Encrypt(val)
 	if exist, err := f.client.GetBit(ctx, key, int32(rawVal1%bitmapBits)); err != nil || !exist {
 		return exist, err
@@ -48,5 +44,4 @@ return 1`, 1, []any{key, rawVal1 % bitmapBits, rawVal2 % bitmapBits, expireSecon
 	return err
 }
 
-// 2 MiB per daily bitmap. False positives are resolved by durable idempotency.
 const bitmapBits = 1 << 24

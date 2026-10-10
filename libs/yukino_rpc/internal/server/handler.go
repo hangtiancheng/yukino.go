@@ -39,8 +39,6 @@ func NewHandler(s any, opts ...HandleOption) (*Handler, error) {
 }
 
 func (h *Handler) Process(conn *transport.TCPConnection, msg *protocol.Message, server any, streamWg *sync.WaitGroup) {
-	// Honour the codec announced by the client; fall back to the server
-	// codec for peers that do not set Header.CodecType.
 	reqCodec := h.codec
 	if ct := msg.Header.CodecType; ct != 0 {
 		cc, err := codec.New(codec.Type(ct))
@@ -104,8 +102,6 @@ func (h *Handler) writeError(conn *transport.TCPConnection, requestID uint64, er
 	_ = conn.Write(resp)
 }
 
-// safeCall invokes a service method and converts panics into errors so a
-// misbehaving handler cannot crash the whole server process.
 func safeCall(method reflect.Value, args []reflect.Value) (results []reflect.Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -130,7 +126,6 @@ func (h *Handler) invoke(ctx context.Context, conn *transport.TCPConnection, req
 	numIn := methodType.NumIn()
 	numOut := methodType.NumOut()
 
-	// grpc-go style: (ctx context.Context, req *T) (*R, error)
 	if numIn == 2 && numOut == 2 &&
 		methodType.In(0).Implements(contextType) &&
 		methodType.In(1).Kind() == reflect.Pointer &&
@@ -156,7 +151,6 @@ func (h *Handler) invoke(ctx context.Context, conn *transport.TCPConnection, req
 		return results[0].Elem().Interface(), false, nil
 	}
 
-	// net/rpc style: (req *T, reply *R) error  OR  (req *T, stream ServerStream) error
 	if numIn == 2 && numOut == 1 && methodType.Out(0).Implements(errorType) {
 		reqType := methodType.In(0)
 
@@ -194,10 +188,6 @@ func (h *Handler) invoke(ctx context.Context, conn *transport.TCPConnection, req
 					_ = ss.end()
 				}
 			}
-			// Run the streaming handler asynchronously so a long-lived
-			// stream does not block every other request multiplexed on
-			// this connection. streamWg keeps the connection open until
-			// all streams complete.
 			if streamWg != nil {
 				streamWg.Go(func() {
 					run()

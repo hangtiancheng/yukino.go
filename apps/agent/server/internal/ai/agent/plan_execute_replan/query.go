@@ -1,9 +1,5 @@
 package plan_execute_replan
 
-// AIOpsQuery is the predefined prompt for the AI operations analysis agent.
-// It instructs the agent to query alerts, find handling procedures, and generate
-// a structured alert operations report. Shared by the HTTP /api/ai_ops handler
-// and the cmd/ai_ops CLI to avoid duplication.
 const AIOpsQuery = `1. You are an intelligent service alert analysis assistant. First, call the tool query_prometheus_alerts to retrieve all active alerts.
 2. For each alert, call the tool query_internal_docs by alert name to retrieve the corresponding handling procedure.
 3. Strictly follow the internal documentation for queries and analysis; do not use any information outside the documentation.

@@ -13,8 +13,6 @@ import (
 
 var ErrCollectionRequired = errors.New("collection is required before query execution")
 
-// ErrNotFound is returned by First when no document matches the filter.
-// It aliases mongo.ErrNoDocuments so callers need not import the driver.
 var ErrNotFound = mongo.ErrNoDocuments
 
 type InsertResult struct {
@@ -55,9 +53,6 @@ func (q *Query) Insert(ctx context.Context, documents ...any) (InsertResult, err
 	return InsertResult{InsertedIDs: result.InsertedIDs, InsertedCount: int64(len(result.InsertedIDs))}, nil
 }
 
-// expandInsertDocs allows Insert(ctx, sliceOfDocs) by flattening a single
-// slice/array argument into individual documents. bson.D (a single document
-// that happens to be a slice) and byte slices are left untouched.
 func expandInsertDocs(documents []any) []any {
 	if len(documents) != 1 {
 		return documents
@@ -126,9 +121,6 @@ func (q *Query) findOptions() *options.FindOptionsBuilder {
 	return opts
 }
 
-// Update applies the update to all matching documents and returns the number
-// of matched documents (knex-style affected rows). Plain documents without
-// "$" operators are wrapped in $set.
 func (q *Query) Update(ctx context.Context, update any) (int64, error) {
 	if err := q.preflight(); err != nil {
 		return 0, err
@@ -140,8 +132,6 @@ func (q *Query) Update(ctx context.Context, update any) (int64, error) {
 	return result.MatchedCount, nil
 }
 
-// Upsert updates all matching documents, inserting a new document from the
-// filter equalities and the update when nothing matches.
 func (q *Query) Upsert(ctx context.Context, update any) (UpsertResult, error) {
 	if err := q.preflight(); err != nil {
 		return UpsertResult{}, err
@@ -159,8 +149,6 @@ func (q *Query) Upsert(ctx context.Context, update any) (UpsertResult, error) {
 	}, nil
 }
 
-// Increment atomically adds amount (default 1) to the field on all matching
-// documents and returns the number of matched documents.
 func (q *Query) Increment(ctx context.Context, field string, amount ...int64) (int64, error) {
 	n := int64(1)
 	if len(amount) > 0 {
@@ -169,8 +157,6 @@ func (q *Query) Increment(ctx context.Context, field string, amount ...int64) (i
 	return q.Update(ctx, bson.M{"$inc": bson.M{field: n}})
 }
 
-// Decrement atomically subtracts amount (default 1) from the field on all
-// matching documents and returns the number of matched documents.
 func (q *Query) Decrement(ctx context.Context, field string, amount ...int64) (int64, error) {
 	n := int64(1)
 	if len(amount) > 0 {
@@ -219,9 +205,6 @@ func (q *Query) DropCollection(ctx context.Context) error {
 	return q.collection.Drop(q.execCtx(ctx))
 }
 
-// preflight validates the Query before hitting the driver: a collection must
-// be bound, no builder error may be pending, and pending GroupBy/Having state
-// must not be silently ignored (it is only consumed by Aggregate).
 func (q *Query) preflight() error {
 	if err := q.preflightBase(); err != nil {
 		return err
@@ -245,9 +228,6 @@ func (q *Query) preflightBase() error {
 	return nil
 }
 
-// execCtx binds the engine's transaction session to ctx so that queries made
-// through a Transaction sub-Engine participate in the transaction even when
-// the caller passes a plain context instead of the session context.
 func (q *Query) execCtx(ctx context.Context) context.Context {
 	if q == nil || q.engine == nil {
 		return ctx
@@ -255,8 +235,6 @@ func (q *Query) execCtx(ctx context.Context) context.Context {
 	return q.engine.sessionContext(ctx)
 }
 
-// normalizeUpdate wraps plain documents (bson.M, map, bson.D, struct) that
-// contain no "$"-prefixed keys into {$set: doc}, aligning with knex update.
 func normalizeUpdate(update any) any {
 	switch doc := update.(type) {
 	case bson.M:

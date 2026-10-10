@@ -40,7 +40,6 @@ func (r *RedisHashRing) getNodeDataKey(nodeID string) string {
 	return fmt.Sprintf("redis:consistent_hash:ring:node:data:%s", nodeID)
 }
 
-// Lock acquires the hash-ring lock with the given TTL. The lock auto-releases on expiry.
 func (r *RedisHashRing) Lock(ctx context.Context, expireSeconds int) error {
 	lock := redis_lock.NewRedisLock(r.getLockKey(), r.redisClient, redis_lock.WithExpireSeconds(int64(expireSeconds)))
 	return lock.Lock(ctx)
@@ -52,7 +51,6 @@ func (r *RedisHashRing) Unlock(ctx context.Context) error {
 }
 
 func (r *RedisHashRing) Add(ctx context.Context, score int32, nodeID string) error {
-	// Add appends nodeID to the node list at the given score.
 	scoreEntities, err := r.redisClient.ZRangeByScore(ctx, r.getTableKey(), int64(score), int64(score))
 	if err != nil {
 		return fmt.Errorf("redis ring add failed, err: %w", err)
@@ -62,7 +60,6 @@ func (r *RedisHashRing) Add(ctx context.Context, score int32, nodeID string) err
 		return fmt.Errorf("invalid score entity len: %d", len(scoreEntities))
 	}
 
-	// Read the existing node list at this score, append the new nodeID, and write it back.
 	var nodeIDs []string
 	if len(scoreEntities) == 1 {
 		if err = json.Unmarshal([]byte(scoreEntities[0].Val), &nodeIDs); err != nil {
@@ -128,7 +125,6 @@ func (r *RedisHashRing) Floor(ctx context.Context, score int32) (int32, error) {
 }
 
 func (r *RedisHashRing) Rem(ctx context.Context, score int32, nodeID string) error {
-	// Rem removes nodeID from the node list at the given score.
 	scoreEntities, err := r.redisClient.ZRangeByScore(ctx, r.getTableKey(), int64(score), int64(score))
 	if err != nil {
 		return fmt.Errorf("redis ring rem zrange by score failed, err: %w", err)
@@ -261,7 +257,6 @@ func (r *RedisHashRing) AddNodeToDataKeys(ctx context.Context, nodeID string, da
 
 func (r *RedisHashRing) DeleteNodeToDataKeys(ctx context.Context, nodeID string, dataKeys map[string]struct{}) error {
 	resStr, err := r.redisClient.Get(ctx, r.getNodeDataKey(nodeID))
-	// A missing key just means there is nothing to delete, same as in AddNodeToDataKeys.
 	if err != nil && !errors.Is(err, go_redis.Nil) {
 		return fmt.Errorf("redis ring deleteNodeToDataKey get failed, err: %w", err)
 	}

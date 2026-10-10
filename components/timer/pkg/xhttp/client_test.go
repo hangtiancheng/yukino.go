@@ -20,8 +20,6 @@ func TestJSONClientGetWithParams(t *testing.T) {
 
 	client := NewJSONClient()
 	var resp map[string]any
-	// Reserved characters must stay percent-encoded so the server parses
-	// them as a single param value.
 	params := map[string]string{"k": "a b&c=d"}
 	if err := client.Get(context.Background(), srv.URL, nil, params, &resp); err != nil {
 		t.Fatalf("Get returned err: %v", err)

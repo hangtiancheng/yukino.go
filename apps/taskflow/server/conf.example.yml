@@ -1,7 +1,3 @@
-# taskflow service config. Secrets (mysql password, llm key, sentry dsn) are
-# read from the process environment through the *_env field names below; ${VAR}
-# expansion inside values is also supported. This yaml is the single config
-# source - there is no .env file.
 
 server:
   host: 127.0.0.1
@@ -13,7 +9,7 @@ server:
   write_timeout_seconds: 600
 
 node:
-  id: "" # empty = hostname-pid
+  id: ""
 
 mysql:
   host: 127.0.0.1
@@ -42,12 +38,12 @@ llm:
   redis_key_prefix: "taskflow:tools:"
 
 scheduler:
-  migrate_step_minutes: 60 # pre-materialization window
-  migrate_tick_seconds: 30 # materialization tick
-  claim_ttl_hours: 72 # redis TTL of idempotency claims
-  stuck_running_minutes: 30 # running-too-long failure threshold
-  overdue_recover_minutes: 2 # overdue pending re-dispatch threshold
-  recover_workers: 8 # timer worker pool size for recovery sweeps
+  migrate_step_minutes: 60
+  migrate_tick_seconds: 30
+  claim_ttl_hours: 72
+  stuck_running_minutes: 30
+  overdue_recover_minutes: 2
+  recover_workers: 8
 
 mq:
   exec_topic: taskflow.exec.commands
@@ -68,17 +64,17 @@ cache:
   report_cache_bytes_mib: 64
   report_expire_seconds: 600
   def_cache_expire_seconds: 60
-  etcd_endpoints: "" # e.g. 127.0.0.1:2379; empty = single-node mode
-  cache_server_addr: "" # e.g. :9001; empty = no peer server
+  etcd_endpoints: ""
+  cache_server_addr: ""
 
 reports:
   dir: ./reports
 
 journal:
-  dir: ./data/journal # lsm_tree audit ledger; empty disables journaling
+  dir: ./data/journal
 
 consensus:
-  id: 1 # raft node id of the embedded single-member consensus group
+  id: 1
 
 sentry:
   dsn_env: SENTRY_DSN
@@ -87,7 +83,7 @@ sentry:
 
 telemetry:
   enabled: true
-  exporter: file # none | stdout | file
+  exporter: file
   file_path: ./logs/traces.jsonl
   client_log_path: ./logs/client-events.jsonl
   sample_rate: 1.0

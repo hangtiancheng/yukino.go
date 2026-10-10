@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// DefaultSingleLockTimeout is the default per-node timeout in red lock (50ms).
 const DefaultSingleLockTimeout = 50 * time.Millisecond
 
 type RedLock struct {
@@ -15,7 +14,6 @@ type RedLock struct {
 }
 
 func NewRedLock(key string, confs []*SingleNodeConf, opts ...RedLockOption) (*RedLock, error) {
-	// RedLock requires at least 3 nodes to be meaningful.
 	if len(confs) < 3 {
 		return nil, errors.New("can not use redLock less than 3 nodes")
 	}
@@ -27,7 +25,6 @@ func NewRedLock(key string, confs []*SingleNodeConf, opts ...RedLockOption) (*Re
 
 	repairRedLock(&r.RedLockOptions)
 	if r.expireDuration > 0 && time.Duration(len(confs))*r.singleNodesTimeout*10 > r.expireDuration {
-		// The cumulative per-node timeout budget must be below one tenth of the lock TTL.
 		return nil, errors.New("expire thresholds of single node is too long")
 	}
 
@@ -54,9 +51,6 @@ func (r *RedLock) Lock(ctx context.Context) error {
 	}
 
 	if successCnt < len(r.locks)>>1+1 {
-		// Majority not reached: release the nodes that were acquired, otherwise
-		// they stay locked until their TTL expires.
-		// ctx may be the reason the acquire failed, so unlock with a live context.
 		unlockCtx := context.WithoutCancel(ctx)
 		for _, lock := range acquired {
 			_ = lock.Unlock(unlockCtx)
@@ -67,7 +61,6 @@ func (r *RedLock) Lock(ctx context.Context) error {
 	return nil
 }
 
-// Unlock broadcasts unlock to every node.
 func (r *RedLock) Unlock(ctx context.Context) error {
 	var err error
 	for _, lock := range r.locks {

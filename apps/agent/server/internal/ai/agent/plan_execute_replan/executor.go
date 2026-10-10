@@ -11,15 +11,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// NewExecutor creates the execution agent that carries out each step of the plan
-// using the available tools. It uses the quick model for fast tool execution.
-//
-// The tool set mirrors the chat pipeline (MCP + Prometheus + MySQL + docs + time)
-// so plan-execute-replan and chat have identical capabilities. MaxIterations is
-// capped at 10 per step to prevent runaway tool-calling loops.
 func NewExecutor(ctx context.Context, cfg *config.Config) (adk.Agent, error) {
-	// Register MCP tools for log querying. GetLogMcpTool degrades to an empty set
-	// when the MCP server is unreachable.
 	toolList, err := tools.GetLogMcpTool(ctx, cfg.MCP)
 	if err != nil {
 		return nil, err

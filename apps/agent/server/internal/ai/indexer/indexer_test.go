@@ -55,8 +55,6 @@ func TestDocumentToRows(t *testing.T) {
 	if err := json.Unmarshal(row.Metadata, &meta); err != nil {
 		t.Fatalf("metadata is not valid JSON: %v", err)
 	}
-	// _source must be normalized to the basename so dedup keys are stable
-	// across working directories.
 	if got := meta[consts.MilvusSourceKey]; got != "guide.md" {
 		t.Errorf("_source = %v, want basename guide.md", got)
 	}

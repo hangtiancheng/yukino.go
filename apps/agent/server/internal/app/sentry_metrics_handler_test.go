@@ -10,7 +10,6 @@ import (
 	test_util "github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// resourceTimingJSON is one IPerformanceResourceTiming as the SDK serializes it.
 const resourceTimingJSON = `{
 	"name": "http://127.0.0.1:8123/app.js",
 	"initiatorType": "script",
@@ -33,8 +32,6 @@ func item(eventType, name, status, payload string) sentryReportItem {
 	}
 }
 
-// syntheticBatch carries one report per yukino-sentry event type, including
-// ScreenRecord, which must only move the generic events counter.
 func syntheticBatch() []sentryReportItem {
 	return []sentryReportItem{
 		item("XMLHttpRequest", "http://127.0.0.1:8123/api/boom", "Error",
@@ -83,8 +80,6 @@ func syntheticBatch() []sentryReportItem {
 	}
 }
 
-// expectedFamilies lists every metric family the bridge must expose. The go_*
-// names come from the opted-in runtime metrics.
 var expectedFamilies = []string{
 	"yukino_sentry_events_total",
 	"yukino_sentry_event_last_seen_timestamp_seconds",
@@ -115,7 +110,6 @@ var expectedFamilies = []string{
 	"yukino_sentry_report_batch_size",
 	"yukino_go_memory_limit_bytes",
 	"yukino_go_heap_used_ratio",
-	// Runtime coverage that the default GoCollector does not provide.
 	"go_sched_latencies_seconds",
 	"go_sched_goroutines_goroutines",
 	"go_gc_pauses_seconds",
@@ -131,15 +125,11 @@ var expectedFamilies = []string{
 }
 
 func init() {
-	// The Prometheus process collector only exposes memory metrics on Linux;
-	// on other platforms (e.g. the darwin dev machines) the family is absent.
 	if runtime.GOOS == "linux" {
 		expectedFamilies = append(expectedFamilies, "process_resident_memory_bytes")
 	}
 }
 
-// The metric registry is package-level, so the synthetic batch is ingested
-// exactly once here; individual tests only read the resulting state.
 func TestMain(m *testing.M) {
 	recordSentryReportBatch(syntheticBatch())
 	sentryReportBatchesTotal.WithLabelValues("invalid").Inc()
@@ -279,7 +269,6 @@ func TestBoundedLabelCollapsesUnboundedValues(t *testing.T) {
 	if got := boundedLabel("test_key", "one-too-many"); got != "other" {
 		t.Errorf("value past the cap: got %q, want \"other\"", got)
 	}
-	// Already-seen values keep their identity once the cap is reached.
 	if got := boundedLabel("test_key", "value-0"); got != "value-0" {
 		t.Errorf("known value after the cap: got %q, want \"value-0\"", got)
 	}
@@ -288,9 +277,6 @@ func TestBoundedLabelCollapsesUnboundedValues(t *testing.T) {
 	}
 }
 
-// Every numeric field in a report payload is decoded into a pointer, because
-// the SDK omits fields that do not apply to an event type. A missing or
-// wrongly-typed field must be skipped, never dereferenced.
 func TestSentryBridgeSurvivesMalformedPayloads(t *testing.T) {
 	malformed := []sentryReportItem{
 		{Type: "Error", Name: "NoPayload", Status: "Error"},
@@ -316,8 +302,6 @@ func TestSentryBridgeSurvivesMalformedPayloads(t *testing.T) {
 		item("", "", "", `{}`),
 	}
 
-	// A panic here would take down the whole /api/log request path, so the
-	// assertion is simply that recording completes and leaves the registry sane.
 	recordSentryReportBatch(malformed)
 
 	if _, err := sentryRegistry.Gather(); err != nil {

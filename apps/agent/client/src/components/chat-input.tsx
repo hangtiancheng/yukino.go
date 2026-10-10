@@ -47,7 +47,6 @@ export class ChatInput extends LitElement {
   @query("[data-input-container]")
   private _container!: HTMLDivElement;
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }
@@ -65,7 +64,6 @@ export class ChatInput extends LitElement {
     document.removeEventListener("keydown", this.#handleEscape);
   }
 
-  // Close dropdowns on outside click or Escape key.
   #handleClickOutside = (e: MouseEvent) => {
     if (!this._showTools && !this._showMode) return;
     if (this._container && !this._container.contains(e.target as Node)) {
@@ -83,7 +81,6 @@ export class ChatInput extends LitElement {
   };
 
   protected updated(changedProperties: PropertyValues) {
-    // Auto-resize textarea to fit content (up to ~10 lines).
     if (changedProperties.has("_text") && this._textarea) {
       this._textarea.style.height = "auto";
       this._textarea.style.height = `${this._textarea.scrollHeight}px`;

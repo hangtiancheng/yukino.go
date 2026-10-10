@@ -24,7 +24,6 @@ func newMockTXStore() TXStore {
 	}
 }
 
-// Creates a transaction detail record
 func (m *mockTXStore) CreateTX(ctx context.Context, components ...TCCComponent) (string, error) {
 	txid := uuid.NewString()
 	m.mutex.Lock()
@@ -51,7 +50,6 @@ func (m *mockTXStore) CreateTX(ctx context.Context, components ...TCCComponent) 
 	return txid, nil
 }
 
-// Updates transaction progress: updates each component's try response result
 func (m *mockTXStore) TXUpdate(ctx context.Context, txID string, componentID string, accept bool) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -76,7 +74,6 @@ func (m *mockTXStore) TXUpdate(ctx context.Context, txID string, componentID str
 	return fmt.Errorf("[TXUpdate]invalid component id: %s for txid: %s", componentID, txID)
 }
 
-// Submits the final transaction status, indicating success or failure
 func (m *mockTXStore) TXSubmit(ctx context.Context, txID string, success bool) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -98,8 +95,6 @@ func (m *mockTXStore) TXSubmit(ctx context.Context, txID string, success bool) e
 	return nil
 }
 
-// copyTransaction returns a deep copy so that readers outside the store lock
-// never share mutable state with concurrent TXUpdate writers.
 func copyTransaction(tx *Transaction) *Transaction {
 	components := make([]*ComponentTryEntity, 0, len(tx.Components))
 	for _, component := range tx.Components {
@@ -116,7 +111,6 @@ func copyTransaction(tx *Transaction) *Transaction {
 	}
 }
 
-// Retrieves all incomplete transactions
 func (m *mockTXStore) GetHangingTXs(ctx context.Context) ([]*Transaction, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -130,7 +124,6 @@ func (m *mockTXStore) GetHangingTXs(ctx context.Context) ([]*Transaction, error)
 	return hangingTXs, nil
 }
 
-// Retrieves a specific transaction by ID
 func (m *mockTXStore) GetTX(ctx context.Context, txID string) (*Transaction, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -141,12 +134,10 @@ func (m *mockTXStore) GetTX(ctx context.Context, txID string) (*Transaction, err
 	return copyTransaction(tx), nil
 }
 
-// Locks the entire TXStore module
 func (m *mockTXStore) Lock(ctx context.Context, expireDuration time.Duration) error {
 	return nil
 }
 
-// Unlocks the TXStore module
 func (m *mockTXStore) Unlock(ctx context.Context) error {
 	return nil
 }
@@ -172,12 +163,10 @@ func newMockComponent(id string) TCCComponent {
 	}
 }
 
-// Returns the unique component ID
 func (m *mockComponent) ID() string {
 	return m.id
 }
 
-// Executes the first-phase try operation
 func (m *mockComponent) Try(ctx context.Context, req *TCCReq) (*TCCResp, error) {
 	resp := TCCResp{
 		ComponentID: m.id,
@@ -208,7 +197,6 @@ func (m *mockComponent) Try(ctx context.Context, req *TCCReq) (*TCCResp, error) 
 	return &resp, nil
 }
 
-// Executes the second-phase confirm operation
 func (m *mockComponent) Confirm(ctx context.Context, txID string) (*TCCResp, error) {
 	resp := TCCResp{
 		ComponentID: m.id,
@@ -226,7 +214,6 @@ func (m *mockComponent) Confirm(ctx context.Context, txID string) (*TCCResp, err
 	return &resp, nil
 }
 
-// Executes the second-phase cancel operation
 func (m *mockComponent) Cancel(ctx context.Context, txID string) (*TCCResp, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -246,7 +233,6 @@ func Test_txmanager_transaction_success(t *testing.T) {
 	txmanager := NewTXManager(newMockTXStore())
 	defer txmanager.Stop()
 
-	// Register 5 components
 	componentsCnt := 5
 	componentReqs := make([]*RequestEntity, 0, componentsCnt)
 	ctx := context.Background()
@@ -280,12 +266,10 @@ func Test_txmanager_transaction_success(t *testing.T) {
 	}
 }
 
-// Verify distributed transaction failure scenario
 func Test_txmanager_transaction_fail(t *testing.T) {
 	txmanager := NewTXManager(newMockTXStore())
 	defer txmanager.Stop()
 
-	// Register 5 components
 	componentsCnt := 5
 	componentReqs := make([]*RequestEntity, 0, componentsCnt)
 	ctx := context.Background()
@@ -326,7 +310,6 @@ func Test_txmanager_transaction_concurrent(t *testing.T) {
 	txmanager := NewTXManager(newMockTXStore(), WithMonitorTick(0), WithTimeout(0))
 	defer txmanager.Stop()
 
-	// Register 10 components
 	componentsCnt := 10
 	for i := range componentsCnt {
 		componentID := strconv.Itoa(i)
@@ -336,7 +319,6 @@ func Test_txmanager_transaction_concurrent(t *testing.T) {
 		}
 	}
 
-	// 100 concurrent distributed transactions, randomly picking 3 components
 	ctx := context.Background()
 	concurrentTXs := 100
 	componentReqCnt := 3
@@ -383,7 +365,6 @@ func Test_txmanager_transaction_advance_progress(t *testing.T) {
 	txmanager := NewTXManager(newMockTXStore(), WithMonitorTick(100*time.Millisecond))
 	defer txmanager.Stop()
 
-	// Register 5 components
 	componentsCnt := 5
 	componentReqs := make([]*RequestEntity, 0, componentsCnt)
 	ctx := context.Background()

@@ -10,8 +10,6 @@ type WorkerPool interface{ Submit(func()) error }
 
 var ErrClosed = errors.New("worker pool is closed")
 
-// GoWorkerPool bounds both goroutines and queued tasks using standard Go channels.
-// Submit applies backpressure. Tasks must eventually return; Close drains them.
 type GoWorkerPool struct {
 	queue   chan func()
 	closing chan struct{}
@@ -36,7 +34,6 @@ func (p *GoWorkerPool) Submit(fn func()) error {
 	if fn == nil {
 		return errors.New("nil worker task")
 	}
-	// Closing first cancels blocked submissions; the mutex then fences channel close.
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	select {

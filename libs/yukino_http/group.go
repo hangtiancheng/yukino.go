@@ -24,9 +24,6 @@ func (r *Router) Router(prefix string) *Router {
 	return newRouter
 }
 
-// normalizePrefix keeps trie registration and matchRouterPath consistent:
-// without it, Router("v1") registers routes reachable at /v1/... (parsePattern
-// collapses slashes) while its middleware silently never matches.
 func normalizePrefix(prefix string) string {
 	if prefix == "" {
 		return ""
@@ -104,8 +101,6 @@ func (r *Router) createStaticHandler(relativePath string, fs http.FileSystem) Mi
 			ctx.statusSet = true
 			return
 		}
-		// flush deferred headers (e.g. CORS) before handing off to FileServer,
-		// otherwise headers set via ctx.Set in upstream middlewares are lost.
 		header := ctx.Writer.Header()
 		for k, v := range ctx.headers {
 			header.Set(k, v)
@@ -115,9 +110,6 @@ func (r *Router) createStaticHandler(relativePath string, fs http.FileSystem) Mi
 	}
 }
 
-// staticFileExists probes the target and closes the handle immediately.
-// Directories are only served when they contain an index.html, matching
-// koa-static; bare directory listings are never exposed.
 func staticFileExists(fs http.FileSystem, name string) bool {
 	f, err := fs.Open(name)
 	if err != nil {
@@ -139,8 +131,6 @@ func staticFileExists(fs http.FileSystem, name string) bool {
 	return true
 }
 
-// statusRecorder mirrors the status FileServer writes into ctx.Status so
-// observers like Logger see the real code instead of the pre-flush default.
 type statusRecorder struct {
 	http.ResponseWriter
 	status *int

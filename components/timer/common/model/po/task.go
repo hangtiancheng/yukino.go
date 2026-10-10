@@ -6,15 +6,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// Task is an execution record for a timer run.
 type Task struct {
 	gorm.Model
-	App      string    `gorm:"column:app;NOT NULL"`           // App name
-	TimerID  uint      `gorm:"column:timer_id;NOT NULL"`      // Timer ID
-	Output   string    `gorm:"column:output;default:null"`    // Execution result
-	RunTimer time.Time `gorm:"column:run_timer;default:null"` // Execution time
-	CostTime int       `gorm:"column:cost_time"`              // Execution cost in milliseconds
-	Status   int       `gorm:"column:status;NOT NULL"`        // Current status
+	App      string    `gorm:"column:app;NOT NULL"`
+	TimerID  uint      `gorm:"column:timer_id;NOT NULL"`
+	Output   string    `gorm:"column:output;default:null"`
+	RunTimer time.Time `gorm:"column:run_timer;default:null"`
+	CostTime int       `gorm:"column:cost_time"`
+	Status   int       `gorm:"column:status;NOT NULL"`
 }
 
 func (t *Task) TableName() string {

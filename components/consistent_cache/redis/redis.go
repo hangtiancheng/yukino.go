@@ -9,7 +9,6 @@ import (
 	go_redis "github.com/redis/go-redis/v9"
 )
 
-// Config holds redis client configuration.
 type Config struct {
 	Address             string
 	Password            string
@@ -22,12 +21,10 @@ type Config struct {
 	WriteTimeoutSeconds int
 }
 
-// RClient wraps a github.com/redis/go-redis/v9 client.
 type RClient struct {
 	client go_redis.UniversalClient
 }
 
-// NewRClient builds an RClient from Config.
 func NewRClient(config *Config) *RClient {
 	return &RClient{client: getRedisClient(config)}
 }
@@ -90,7 +87,6 @@ func (r *RClient) Del(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
 }
 
-// Eval runs the given Lua script. The first keyCount entries of keysAndArgs are KEYS, the rest are ARGV.
 func (r *RClient) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
 	if keyCount < 0 {
 		keyCount = 0
@@ -119,11 +115,8 @@ func (r *RClient) PExpire(ctx context.Context, key string, expireMillis int64) e
 	return r.client.PExpire(ctx, key, time.Duration(expireMillis)*time.Millisecond).Err()
 }
 
-// ErrorCacheMiss is returned when a redis key is not found.
 var ErrorCacheMiss = errors.New("redis cache miss")
 
-// NewUniversalClient shares the caller-owned connection pool, including Sentinel
-// and Cluster routing. The caller is responsible for closing the pool.
 func NewUniversalClient(client go_redis.UniversalClient) *RClient {
 	if client == nil {
 		panic("nil redis client")

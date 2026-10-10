@@ -60,8 +60,6 @@ func randomHex(n int) string {
 	return hex.EncodeToString(buf)
 }
 
-// ------------------------------------------------------------------ overview
-
 func (s *Service) handleHealth(ctx *yukino.Context, _ func()) {
 	ok(ctx, yukino.H{
 		"status": "up",
@@ -136,8 +134,6 @@ func (s *Service) handleOverview(ctx *yukino.Context, _ func()) {
 		"node":                s.cfg.Node.ID,
 	})
 }
-
-// ---------------------------------------------------------- scheduled tasks
 
 type scheduledTaskPayload struct {
 	Name        string  `json:"name"`
@@ -227,9 +223,6 @@ func (s *Service) handleCreateScheduled(ctx *yukino.Context, _ func()) {
 	ok(ctx, row)
 }
 
-// nextFireOrNil computes the next fire time for expr, returning the zero time
-// when the expression is unparsable. Definitions are validated on write, but
-// a hand-edited DB row must never panic the API.
 func nextFireOrNil(expr string, after time.Time) time.Time {
 	sched, err := cronx.Parse(expr)
 	if err != nil {
@@ -392,8 +385,6 @@ func (s *Service) handleTriggerScheduled(ctx *yukino.Context, _ func()) {
 	})
 }
 
-// ---------------------------------------------------------- condition tasks
-
 type conditionTaskPayload struct {
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
@@ -532,8 +523,6 @@ func (s *Service) handleDeleteCondition(ctx *yukino.Context, _ func()) {
 	ok(ctx, yukino.H{"deleted": id})
 }
 
-// handleTestCondition runs a condition task against an existing (or the
-// latest) risk record with a fresh test fire key, bypassing the insert event.
 func (s *Service) handleTestCondition(ctx *yukino.Context, _ func()) {
 	id, valid := parseID(ctx, "id")
 	if !valid {
@@ -627,8 +616,6 @@ func (s *Service) handleTestCondition(ctx *yukino.Context, _ func()) {
 	})
 }
 
-// ---------------------------------------------------------------- executions
-
 func (s *Service) handleListExecutions(ctx *yukino.Context, _ func()) {
 	taskID, _ := strconv.ParseUint(ctx.Query("task_id"), 10, 64)
 	page, _ := strconv.Atoi(ctx.Query("page"))
@@ -700,8 +687,6 @@ func (s *Service) handleCancelExecution(ctx *yukino.Context, _ func()) {
 	ok(ctx, yukino.H{"cancelled": id})
 }
 
-// ------------------------------------------------------------- risk records
-
 func (s *Service) handleListRiskRecords(ctx *yukino.Context, _ func()) {
 	page, _ := strconv.Atoi(ctx.Query("page"))
 	pageSize, _ := strconv.Atoi(ctx.Query("page_size"))
@@ -747,8 +732,6 @@ func (s *Service) handleCreateRiskRecord(ctx *yukino.Context, _ func()) {
 	})
 }
 
-// ------------------------------------------------------------------ monitor
-
 func (s *Service) handleMonitorNodes(ctx *yukino.Context, _ func()) {
 	ok(ctx, s.registry.Members(ctx.Request.Context()))
 }
@@ -782,13 +765,10 @@ func (s *Service) handleListDeadLetters(ctx *yukino.Context, _ func()) {
 	ok(ctx, yukino.H{"items": rows, "total": total})
 }
 
-// handleMonitorConsensus exposes the embedded raft ledger: role, term,
-// commit index and the most recent applied entries.
 func (s *Service) handleMonitorConsensus(ctx *yukino.Context, _ func()) {
 	ok(ctx, s.ledger.Status())
 }
 
-// handleMonitorJournal looks one fire key up in the lsm_tree audit journal.
 func (s *Service) handleMonitorJournal(ctx *yukino.Context, _ func()) {
 	fireKey := strings.TrimSpace(ctx.Query("fire_key"))
 	if fireKey == "" {
@@ -807,8 +787,6 @@ func (s *Service) handleMonitorJournal(ctx *yukino.Context, _ func()) {
 	ok(ctx, entry)
 }
 
-// handleMonitorMirror exposes the redis execution-status mirror maintained by
-// the monitor's MySQL -> redis sync pass.
 func (s *Service) handleMonitorMirror(ctx *yukino.Context, _ func()) {
 	mirror, err := s.monitor.StatusMirror(ctx.Request.Context())
 	if err != nil {
@@ -818,11 +796,6 @@ func (s *Service) handleMonitorMirror(ctx *yukino.Context, _ func()) {
 	ok(ctx, yukino.H{"key": engine.ExecMirrorKey, "entries": len(mirror), "items": mirror})
 }
 
-// ------------------------------------------------------- internal endpoints
-
-// handleFire is the distributed time-wheel callback. The wheel pops each due
-// task atomically across the cluster, and this handler adds the idempotent
-// dispatch funnel on top.
 func (s *Service) handleFire(ctx *yukino.Context, _ func()) {
 	var callback engine.FireCallback
 	if err := ctx.BindJSON(&callback); err != nil {
@@ -851,8 +824,6 @@ func (s *Service) handleFire(ctx *yukino.Context, _ func()) {
 		ctx.JSON(yukino.H{"message": err.Error(), "data": nil})
 		return
 	}
-	// Re-read so the response carries the post-dispatch status, not the
-	// pre-dispatch snapshot.
 	status := exec.Status
 	if fresh, ferr := s.dao.GetExecution(reqCtx, exec.ID); ferr == nil {
 		status = fresh.Status
@@ -864,8 +835,6 @@ func (s *Service) handleFire(ctx *yukino.Context, _ func()) {
 	})
 }
 
-// handleTelemetryLog is the ingestion endpoint used as the dsn of the client
-// @yukino.js/sentry SDK. Events are appended to a jsonl file for inspection.
 func (s *Service) handleTelemetryLog(ctx *yukino.Context, _ func()) {
 	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, 1<<20))
 	if err != nil {

@@ -1,5 +1,3 @@
-<!-- intent-skills:start -->
-
 # Yukino Intent - before editing files, run the matching guidance command.
 
 yukinoIntent:
@@ -46,5 +44,3 @@ custom elements, tag overrides, or lit-jsx tests. Do NOT use for React,
 Next.js, Preact, Solid or Vue rendering; for Lit html` templates without
   JSX; for lit's own decorators via "lit/decorators.js" (import them from
   @yukino.js/lit-jsx so tag names register); or for non-JSX Lit apps."
-
-<!-- intent-skills:end -->

@@ -19,8 +19,6 @@ func New() *Application {
 	app := &Application{router: newRouter()}
 	app.root = &Router{app: app}
 	app.routers = []*Router{app.root}
-	// Constructed here (not in Listen) so a concurrent Shutdown never races
-	// with the server field assignment or silently no-ops before Listen runs.
 	app.server = &http.Server{Handler: app}
 	return app
 }
@@ -115,8 +113,6 @@ func compose(middlewares []Middleware, final Middleware) func(ctx *Context) {
 		var dispatch func(i int)
 		dispatch = func(i int) {
 			if i <= index {
-				// koa-compose rejects with "next() called multiple times";
-				// the panic surfaces as a 500 through Recovery.
 				panic("yukino_http: next() called multiple times")
 			}
 			index = i

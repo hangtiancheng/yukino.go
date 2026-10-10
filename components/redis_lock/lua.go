@@ -1,6 +1,5 @@
 package redis_lock
 
-// LuaCheckAndDeleteDistributionLock deletes the lock only if the caller owns it.
 const LuaCheckAndDeleteDistributionLock = `
   local lockerKey = KEYS[1]
   local targetToken = ARGV[1]
@@ -12,7 +11,6 @@ const LuaCheckAndDeleteDistributionLock = `
   end
 `
 
-// LuaCheckAndExpireDistributionLock extends the lock TTL only if the caller owns it.
 const LuaCheckAndExpireDistributionLock = `
   local lockerKey = KEYS[1]
   local targetToken = ARGV[1]

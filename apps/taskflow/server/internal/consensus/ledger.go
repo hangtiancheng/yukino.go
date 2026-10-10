@@ -1,15 +1,3 @@
-// Package consensus embeds raft's raft core (components//raft) as
-// a per-node consensus commit log. Every dispatch and finish decision is
-// proposed through the raft state machine (leader election, log replication,
-// Ready/Advance batching); committed entries are applied to an in-memory KV
-// state machine that the monitor API can inspect.
-//
-// Deployment note: raft is a teaching implementation whose inter-process
-// transport is stubbed, so each taskflow node runs a single-member raft group
-// (quorum of one, commits land on the next Ready cycle). The log still gives
-// every node an ordered, linearizable-local record of the decisions it made,
-// served through the standard raft Node embedding pattern (Tick + Ready +
-// Advance).
 package consensus
 
 import (
@@ -25,7 +13,6 @@ import (
 
 const recentCap = 64
 
-// AppliedEntry is one committed KV pair exposed by the monitor API.
 type AppliedEntry struct {
 	Index uint64 `json:"index"`
 	Term  uint64 `json:"term"`
@@ -40,7 +27,6 @@ type payload struct {
 	T string `json:"t"`
 }
 
-// Ledger drives one embedded raft node.
 type Ledger struct {
 	node    raft.Node
 	storage *raft.MemoryStorage
@@ -48,7 +34,7 @@ type Ledger struct {
 
 	mu     sync.RWMutex
 	state  map[string]string
-	recent []AppliedEntry // newest first, capped
+	recent []AppliedEntry
 	soft   *raft.SoftState
 	hard   raft.HardState
 
@@ -60,9 +46,6 @@ type Ledger struct {
 	wg       sync.WaitGroup
 }
 
-// NewLedger starts the raft node, its tick loop (100ms) and the Ready/Advance
-// driver loop. id only needs to be unique inside this node's single-member
-// group; distinct ids across nodes keep logs distinguishable.
 func NewLedger(id uint64) *Ledger {
 	if id == 0 {
 		id = 1
@@ -102,8 +85,6 @@ func (l *Ledger) tickLoop() {
 	}
 }
 
-// readyLoop persists hard state, applies committed entries to the KV state
-// machine and advances the raft node, mirroring raft's proxy driver.
 func (l *Ledger) readyLoop() {
 	for {
 		select {
@@ -144,7 +125,6 @@ func (l *Ledger) persistReady(rd raft.Ready) {
 				l.node.ApplyConfChange(cc)
 			}
 		case len(ent.Data) == 0:
-			// Initial empty entry at index 0; nothing to apply.
 		default:
 			var p payload
 			if err := json.Unmarshal(ent.Data, &p); err != nil {
@@ -168,8 +148,6 @@ func (l *Ledger) apply(index, term uint64, p payload) {
 	}
 }
 
-// Propose submits a KV pair through raft. The proposal is asynchronous: the
-// entry commits once the driver loop processes the next Ready batch.
 func (l *Ledger) Propose(ctx context.Context, key, value string) error {
 	if l == nil {
 		return nil
@@ -187,8 +165,6 @@ func (l *Ledger) Propose(ctx context.Context, key, value string) error {
 	return nil
 }
 
-// Get reads the applied state machine. Reads reflect committed-and-applied
-// entries only.
 func (l *Ledger) Get(key string) (string, bool) {
 	if l == nil {
 		return "", false
@@ -214,7 +190,6 @@ func stateName(s raft.StateType) string {
 	}
 }
 
-// Status snapshots raft state for the monitor API.
 func (l *Ledger) Status() map[string]any {
 	if l == nil {
 		return map[string]any{"enabled": false}
@@ -244,7 +219,6 @@ func (l *Ledger) Status() map[string]any {
 	return out
 }
 
-// Stop halts the drivers and the underlying Raft core.
 func (l *Ledger) Stop() {
 	if l == nil {
 		return

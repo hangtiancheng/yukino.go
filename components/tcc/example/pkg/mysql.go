@@ -10,7 +10,6 @@ import (
 
 const dsn = ""
 
-// DBFactory abstracts database creation for testability.
 type DBFactory interface {
 	Open(dsn string, opts ...gorm.Option) (*gorm.DB, error)
 }

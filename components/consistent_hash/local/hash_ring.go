@@ -55,22 +55,16 @@ func (l *LockEntityV2) Unlock(ctx context.Context) error {
 	return nil
 }
 
-// SkiplistHashRing is a local in-memory hash ring backed by a skip list.
 type SkiplistHashRing struct {
 	LockEntity
-	// mu guards the ring state below. It is independent of the lease held via
-	// Lock/Unlock, so the ring stays race-free even when the lease TTL expires
-	// mid-operation and another goroutine starts mutating concurrently.
-	mu   sync.RWMutex
-	root *virtualNode
-	// nodeToReplicas maps each node to its virtual-node count.
+	mu             sync.RWMutex
+	root           *virtualNode
 	nodeToReplicas map[string]int
 	nodeToDataKey  map[string]map[string]struct{}
 }
 
 type LockEntity struct {
-	lock sync.Mutex
-	// doubleLock supports idempotent unlock.
+	lock       sync.Mutex
 	doubleLock sync.Mutex
 	cancel     context.CancelFunc
 	owner      atomic.Value
@@ -85,17 +79,12 @@ func NewSkiplistHashRing() *SkiplistHashRing {
 }
 
 type virtualNode struct {
-	score int32
-	// nodeIDs stores the node ids at this score.
+	score   int32
 	nodeIDs []string
 	nexts   []*virtualNode
 }
 
-// Lock acquires the hash-ring lock with the given TTL. The lock auto-releases on expiry.
 func (s *SkiplistHashRing) Lock(ctx context.Context, expireSeconds int) error {
-	// Acquire the ring mutex before doubleLock: unlock (and the TTL watchdog)
-	// needs doubleLock, so blocking on the ring mutex while holding doubleLock
-	// would deadlock as soon as two goroutines contend for the lock.
 	s.lock.Lock()
 	s.doubleLock.Lock()
 	defer s.doubleLock.Unlock()
@@ -106,11 +95,9 @@ func (s *SkiplistHashRing) Lock(ctx context.Context, expireSeconds int) error {
 		return nil
 	}
 
-	// Lock now, schedule unlock after the TTL. The unlock must verify ownership to avoid unlocking someone else's lock.
 	ctx2, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	go func() {
-		// This goroutine exits once an unlock is performed.
 		select {
 		case <-ctx2.Done():
 			return
@@ -122,17 +109,14 @@ func (s *SkiplistHashRing) Lock(ctx context.Context, expireSeconds int) error {
 }
 
 func (s *SkiplistHashRing) unlock(ctx context.Context, token string) error {
-	// Unlock. If already unlocked, return immediately to avoid a fatal error.
 	s.doubleLock.Lock()
 	defer s.doubleLock.Unlock()
-	// If the lock is not ours, bail out.
 	owner, _ := s.owner.Load().(string)
 	if owner != token {
 		return errors.New("not your lock")
 	}
 	s.owner.Store("")
 
-	// Our lock: cancel the watchdog goroutine.
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -171,7 +155,6 @@ func (s *SkiplistHashRing) Add(ctx context.Context, score int32, nodeID string) 
 		nodeIDs: []string{nodeID},
 	}
 
-	// Top-down level traversal.
 	move := s.root
 	for level := rLevel; level >= 0; level-- {
 		for move.nexts[level] != nil && move.nexts[level].score < score {
@@ -238,7 +221,6 @@ func (s *SkiplistHashRing) Rem(ctx context.Context, score int32, nodeID string) 
 		return nil
 	}
 
-	// Top-down level traversal to unlink the node.
 	move := s.root
 	for level := range slices.Backward(s.root.nexts) {
 		for move.nexts[level] != nil && move.nexts[level].score < score {
@@ -262,7 +244,6 @@ func (s *SkiplistHashRing) Rem(ctx context.Context, score int32, nodeID string) 
 }
 
 func (s *SkiplistHashRing) Nodes(ctx context.Context) (map[string]int, error) {
-	// Return a copy so callers can iterate it while the ring mutates.
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -297,15 +278,12 @@ func (s *SkiplistHashRing) Node(ctx context.Context, score int32) ([]string, err
 	if !ok {
 		return nil, fmt.Errorf("score: %d not exist", score)
 	}
-	// Return a copy: the caller keeps reading the list while a concurrent Rem
-	// may shift the original backing array.
 	nodeIDs := make([]string, len(targetNode.nodeIDs))
 	copy(nodeIDs, targetNode.nodeIDs)
 	return nodeIDs, nil
 }
 
 func (s *SkiplistHashRing) DataKeys(ctx context.Context, nodeID string) (map[string]struct{}, error) {
-	// Return a copy so callers can iterate it while the ring mutates.
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -361,7 +339,6 @@ func (s *SkiplistHashRing) roll() int {
 	return level
 }
 
-// ceiling returns the smallest score >= the given score.
 func (s *SkiplistHashRing) ceiling(score int32) (int32, bool) {
 	if len(s.root.nexts) == 0 {
 		return -1, false
@@ -412,9 +389,7 @@ func (s *SkiplistHashRing) floor(score int32) (int32, bool) {
 	return move.score, true
 }
 
-// last returns the largest score in the ring.
 func (s *SkiplistHashRing) last() (int32, bool) {
-	// Top-down level traversal.
 	move := s.root
 	for level := range slices.Backward(s.root.nexts) {
 		for move.nexts[level] != nil {

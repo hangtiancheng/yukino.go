@@ -16,10 +16,6 @@ func init() {
 	configOnce.Do(loadConfig)
 }
 
-// loadConfig reads ./conf.yml when present. Embedding applications may import
-// timer packages (bloom filter, cron parser, worker pool) without
-// shipping a timer conf.yml, so a missing or malformed file falls back to
-// the built-in defaults instead of panicking.
 func loadConfig() {
 	path, err := os.Getwd()
 	if err != nil {
@@ -52,54 +48,37 @@ func initProviders() {
 	defaultWebServerAppConfProvider = NewWebServerAppConfProvider(gConf.WebServer)
 }
 
-// gConf holds the fallback default configuration.
 var gConf GlobalConf = GlobalConf{
 	Migrator: &MigratorAppConf{
-		// Number of concurrent goroutines per node
-		WorkersNum: 1000,
-		// Time interval for each data migration step, in minutes
-		MigrateStepMinutes: 60,
-		// Lock expiration time updated after successful migration, in minutes
+		WorkersNum:                  1000,
+		MigrateStepMinutes:          60,
 		MigrateSuccessExpireMinutes: 120,
-		// Initial lock expiration time when the migrator acquires the lock, in minutes
-		MigrateTryLockMinutes: 20,
-		// How long the migrator caches timer details in memory ahead of time, in minutes
-		TimerDetailCacheMinutes: 2,
+		MigrateTryLockMinutes:       20,
+		TimerDetailCacheMinutes:     2,
 	},
 
 	Scheduler: &SchedulerAppConf{
-		// Number of concurrent goroutines per node
-		WorkersNum: 100,
-		// Number of buckets
-		BucketsNum: 10,
-		// Initial lock expiration time when the scheduler acquires a distributed lock, in seconds
-		TryLockSeconds: 70,
-		// Interval between each lock acquisition attempt by the scheduler, in milliseconds
+		WorkersNum:             100,
+		BucketsNum:             10,
+		TryLockSeconds:         70,
 		TryLockGapMilliSeconds: 100,
-		// Updated distributed lock duration after a time slice executes successfully, in seconds
-		SuccessExpireSeconds: 130,
+		SuccessExpireSeconds:   130,
 	},
 
 	Trigger: &TriggerAppConf{
-		// Interval at which the trigger polls the timer task zset, in seconds
 		ZRangeGapSeconds: 1,
-		// Number of concurrent goroutines
-		WorkersNum: 10000,
+		WorkersNum:       10000,
 	},
 
 	WebServer: &WebServerAppConf{
 		Port: 8092,
 	},
 	Redis: &RedisConfig{
-		Network: "tcp",
-		// Maximum number of idle connections
-		MaxIdle: 2000,
-		// Idle connection timeout, in seconds
+		Network:            "tcp",
+		MaxIdle:            2000,
 		IdleTimeoutSeconds: 30,
-		// Maximum number of active connections in the pool
-		MaxActive: 1000,
-		// Whether new requests wait or fail immediately when the pool is full
-		Wait: true,
+		MaxActive:          1000,
+		Wait:               true,
 	},
 	Mysql: &MySQLConfig{
 		MaxOpenConns: 100,

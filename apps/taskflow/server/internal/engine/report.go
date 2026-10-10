@@ -16,9 +16,6 @@ import (
 	yukino_cache "github.com/hangtiancheng/yukino.go/libs/yukino_cache"
 )
 
-// ReportStore renders the final structured markdown file, persists it on disk
-// and in the execution row, and feeds the distributed cache group so any node
-// can serve the report with read-through semantics.
 type ReportStore struct {
 	dao    *dao.DAO
 	group  *yukino_cache.Group
@@ -43,8 +40,6 @@ type ReportInput struct {
 	StartedAt time.Time
 }
 
-// Render writes the report artifact. The executor persists its body and terminal
-// state in one ownership-checked update before making it available in the cache.
 func (s *ReportStore) Render(in ReportInput) (path, body string, err error) {
 	markdown := s.buildMarkdown(in)
 
@@ -87,7 +82,6 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(f.Name(), path)
 }
 
-// Load serves the report through the cache group (read-through to the DB row).
 func (s *ReportStore) Load(ctx context.Context, executionID uint) (string, error) {
 	if s.group != nil {
 		view, err := s.group.Get(ctx, ReportCacheKey(executionID))
@@ -185,8 +179,6 @@ func excerpt(s string, max int) string {
 	return truncateRunes(s, max)
 }
 
-// truncateRunes shortens s to at most max runes, appending an ellipsis when it
-// was cut. It never slices a multi-byte rune in half.
 func truncateRunes(s string, max int) string {
 	if max <= 0 {
 		return s

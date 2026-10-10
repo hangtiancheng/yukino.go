@@ -8,8 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/libs/yukino_cache"
 )
 
-// OpenReportPeers optionally enables the library's etcd-backed peer discovery.
-// The caller closes its group before invoking cleanup.
 func OpenReportPeers(cfg conf.CacheConf) (*yukino_cache.ClientPicker, func(), error) {
 	if cfg.EtcdEndpoints == "" {
 		return nil, func() {}, nil
@@ -18,8 +16,6 @@ func OpenReportPeers(cfg conf.CacheConf) (*yukino_cache.ClientPicker, func(), er
 	for i := range endpoints {
 		endpoints[i] = strings.TrimSpace(endpoints[i])
 	}
-	// The library exposes endpoint configuration for pickers as a process-wide
-	// startup setting. Set it before creating any picker or background work.
 	yukino_cache.DefaultRegisterConfig.Endpoints = endpoints
 	server, err := yukino_cache.NewServer(cfg.CacheServerAddr, "taskflow.reports", yukino_cache.WithEtcdEndpoints(endpoints))
 	if err != nil {

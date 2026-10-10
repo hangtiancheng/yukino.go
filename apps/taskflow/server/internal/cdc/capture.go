@@ -23,8 +23,6 @@ func ValidWatchTable(table string) bool {
 	return ValidTable(table) && strings.ToLower(table) != "executions"
 }
 
-// EnsureCapture installs triggers once, under a connection-bound MySQL lock.
-// The audit row rolls back with the original mutation, including direct SQL.
 func EnsureCapture(ctx context.Context, db *gorm.DB, table string) error {
 	if !ValidTable(table) {
 		return fmt.Errorf("unsupported watch table %q", table)
@@ -81,8 +79,6 @@ func EnsureCapture(ctx context.Context, db *gorm.DB, table string) error {
 	})
 }
 
-// EnsureDatabaseCapture instruments existing business tables in the selected
-// schema. Each insertion has a UUID event even when its source has no primary key.
 func EnsureDatabaseCapture(ctx context.Context, db *gorm.DB) error {
 	var tables []string
 	if err := db.WithContext(ctx).Raw("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'").Scan(&tables).Error; err != nil {

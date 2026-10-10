@@ -11,7 +11,6 @@ import (
 	go_redis "github.com/redis/go-redis/v9"
 )
 
-// Transaction status recorded on the TCC component side
 type TXStatus string
 
 func (t TXStatus) String() string {
@@ -19,12 +18,11 @@ func (t TXStatus) String() string {
 }
 
 const (
-	TXTried     TXStatus = "tried"     // Try phase completed
-	TXConfirmed TXStatus = "confirmed" // Confirm phase completed
-	TXCanceled  TXStatus = "canceled"  // Cancel phase completed
+	TXTried     TXStatus = "tried"
+	TXConfirmed TXStatus = "confirmed"
+	TXCanceled  TXStatus = "canceled"
 )
 
-// Data status for a transaction
 type DataStatus string
 
 func (d DataStatus) String() string {
@@ -32,8 +30,8 @@ func (d DataStatus) String() string {
 }
 
 const (
-	DataFrozen     DataStatus = "frozen"     // Frozen state
-	DataSuccessful DataStatus = "successful" // Successful state
+	DataFrozen     DataStatus = "frozen"
+	DataSuccessful DataStatus = "successful"
 )
 
 type MockComponent struct {
@@ -57,7 +55,6 @@ func (m *MockComponent) ID() string {
 }
 
 func (m *MockComponent) Try(ctx context.Context, req *tcc.TCCReq) (*tcc.TCCResp, error) {
-	// Acquire lock by txID
 	lock := m.lockFactory(pkg.BuildTXLockKey(m.id, req.TXID))
 	if err := lock.Lock(ctx); err != nil {
 		return nil, err
@@ -66,7 +63,6 @@ func (m *MockComponent) Try(ctx context.Context, req *tcc.TCCReq) (*tcc.TCCResp,
 		_ = lock.Unlock(ctx)
 	}()
 
-	// Idempotency check by txID
 	txStatus, err := m.client.Get(ctx, pkg.BuildTXKey(m.id, req.TXID))
 	if err != nil && !errors.Is(err, go_redis.Nil) {
 		return nil, err
@@ -77,22 +73,19 @@ func (m *MockComponent) Try(ctx context.Context, req *tcc.TCCReq) (*tcc.TCCResp,
 		TXID:        req.TXID,
 	}
 	switch txStatus {
-	case TXTried.String(), TXConfirmed.String(): // Duplicate try request, return success
+	case TXTried.String(), TXConfirmed.String():
 		res.ACK = true
 		return &res, nil
-	case TXCanceled.String(): // Cancel received before try, reject
+	case TXCanceled.String():
 		return &res, nil
 	default:
 	}
 
-	// Execute try operation, set data to frozen state
 	bizID := fmt.Sprintf("%v", req.Data["biz_id"])
-	// Store bizID-transaction mapping
 	if _, err = m.client.Set(ctx, pkg.BuildTXDetailKey(m.id, req.TXID), bizID); err != nil {
 		return nil, err
 	}
 
-	// Atomically set bizID data to frozen state
 	reply, err := m.client.SetNX(ctx, pkg.BuildDataKey(m.id, req.TXID, bizID), DataFrozen.String())
 	if err != nil {
 		return nil, err
@@ -101,18 +94,15 @@ func (m *MockComponent) Try(ctx context.Context, req *tcc.TCCReq) (*tcc.TCCResp,
 		return &res, nil
 	}
 
-	// Update transaction status
 	if _, err = m.client.Set(ctx, pkg.BuildTXKey(m.id, req.TXID), TXTried.String()); err != nil {
 		return nil, err
 	}
 
-	// Try request succeeded
 	res.ACK = true
 	return &res, nil
 }
 
 func (m *MockComponent) Confirm(ctx context.Context, txID string) (*tcc.TCCResp, error) {
-	// Acquire lock by txID
 	lock := m.lockFactory(pkg.BuildTXLockKey(m.id, txID))
 	if err := lock.Lock(ctx); err != nil {
 		return nil, err
@@ -121,7 +111,6 @@ func (m *MockComponent) Confirm(ctx context.Context, txID string) (*tcc.TCCResp,
 		_ = lock.Unlock(ctx)
 	}()
 
-	// 1. Require txID status to be "tried"
 	txStatus, err := m.client.Get(ctx, pkg.BuildTXKey(m.id, txID))
 	if err != nil {
 		return nil, err
@@ -132,45 +121,38 @@ func (m *MockComponent) Confirm(ctx context.Context, txID string) (*tcc.TCCResp,
 		TXID:        txID,
 	}
 	switch txStatus {
-	case TXConfirmed.String(): // Already confirmed, return idempotent success
+	case TXConfirmed.String():
 		res.ACK = true
 		return &res, nil
-	case TXTried.String(): // Only allow if status is "tried"
-	default: // Reject for any other status
+	case TXTried.String():
+	default:
 		return &res, nil
 	}
 
-	// Get bizID for the transaction
 	bizID, err := m.client.Get(ctx, pkg.BuildTXDetailKey(m.id, txID))
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Require data status to be "frozen"
 	dataStatus, err := m.client.Get(ctx, pkg.BuildDataKey(m.id, txID, bizID))
 	if err != nil {
 		return nil, err
 	}
 	if dataStatus != DataFrozen.String() {
-		// Invalid data status, reject
 		return &res, nil
 	}
 
-	// Set data status to "successful"
 	if _, err = m.client.Set(ctx, pkg.BuildDataKey(m.id, txID, bizID), DataSuccessful.String()); err != nil {
 		return nil, err
 	}
 
-	// Update transaction status to confirmed; failure here does not block the main flow
 	_, _ = m.client.Set(ctx, pkg.BuildTXKey(m.id, txID), TXConfirmed.String())
 
-	// Confirm succeeded, return success
 	res.ACK = true
 	return &res, nil
 }
 
 func (m *MockComponent) Cancel(ctx context.Context, txID string) (*tcc.TCCResp, error) {
-	// Acquire lock by txID
 	lock := m.lockFactory(pkg.BuildTXLockKey(m.id, txID))
 	if err := lock.Lock(ctx); err != nil {
 		return nil, err
@@ -179,28 +161,23 @@ func (m *MockComponent) Cancel(ctx context.Context, txID string) (*tcc.TCCResp, 
 		_ = lock.Unlock(ctx)
 	}()
 
-	// Check transaction status; if not confirmed, unconditionally set to cancelled
 	txStatus, err := m.client.Get(ctx, pkg.BuildTXKey(m.id, txID))
 	if err != nil && !errors.Is(err, go_redis.Nil) {
 		return nil, err
 	}
-	// Confirm followed by cancel is an illegal state transition
 	if txStatus == TXConfirmed.String() {
 		return nil, fmt.Errorf("invalid tx status: %s, txid: %s", txStatus, txID)
 	}
 
-	// Get bizID for the transaction
 	bizID, err := m.client.Get(ctx, pkg.BuildTXDetailKey(m.id, txID))
 	if err != nil {
 		return nil, err
 	}
 
-	// Delete the frozen data record
 	if err = m.client.Del(ctx, pkg.BuildDataKey(m.id, txID, bizID)); err != nil {
 		return nil, err
 	}
 
-	// Update transaction status to cancelled
 	_, _ = m.client.Set(ctx, pkg.BuildTXKey(m.id, txID), TXCanceled.String())
 
 	return &tcc.TCCResp{

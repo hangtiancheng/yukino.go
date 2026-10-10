@@ -1,11 +1,7 @@
-# Local configuration — contains real LLM/embedding API keys.
-# Copy config.example.jsonc to config.json and edit it.
 config.json
 
-# Build and hot-reload artifacts
 bin/
 tmp/
 
-# Uploaded / indexed knowledge-base documents
 data/docs/*
 !data/docs/alert-handling-guide.md

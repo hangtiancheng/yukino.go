@@ -22,7 +22,6 @@ const (
 	mysqlDSN = "please fill in mysql dsn"
 )
 
-// requireInfra skips the test while the redis/mysql endpoints are unconfigured placeholders.
 func requireInfra(t *testing.T) {
 	t.Helper()
 	if strings.Contains(redisAddress, "please fill in") || strings.Contains(mysqlDSN, "please fill in") {
@@ -75,13 +74,11 @@ func Test_consistent_Cache(t *testing.T) {
 	t.Logf("read data: %s, ", expReceiver.Data)
 }
 
-// Verifies: 1) data correctness 2) cache hit ratio.
 func Test_Consistent_Cache_Correct(t *testing.T) {
 	requireInfra(t)
 	service := newService()
 	ctx := context.Background()
 
-	// 100 concurrent writers, with a local backup of every written record.
 	prefix := time.Now().String() + "-"
 	dataChan := make(chan *Example)
 	go func() {
@@ -105,13 +102,11 @@ func Test_Consistent_Cache_Correct(t *testing.T) {
 		close(dataChan)
 	}()
 
-	// Collect written data into a local backup map.
 	mp := make(map[string]string, 500)
 	for data := range dataChan {
 		mp[data.Key_] = data.Data
 	}
 
-	// Wait for the write-path disable markers to expire.
 	<-time.After(time.Second)
 
 	var useCacheCnt int
@@ -155,7 +150,6 @@ func Test_Consistent_Cache_Correct(t *testing.T) {
 	}
 }
 
-// Concurrent read/write. Verifies: 1) disable mechanism works 2) read result correctness.
 func Test_Consistent_Cache_Read_Write(t *testing.T) {
 	requireInfra(t)
 	service := newService()
@@ -167,12 +161,10 @@ func Test_Consistent_Cache_Read_Write(t *testing.T) {
 	var wg sync.WaitGroup
 	dataChan := make(chan *Example)
 
-	// Value range for writers.
 	startV, endV := 1, 5
-	// Multiple writers target the same key with values in [startV, endV].
 	go func() {
 		for i := startV; i <= endV; i++ {
-			i := i // shadow
+			i := i
 			wg.Go(func() {
 				k := prefix
 				v := prefix + strconv.Itoa(i)
@@ -188,7 +180,6 @@ func Test_Consistent_Cache_Read_Write(t *testing.T) {
 		}
 	}()
 
-	// Double the readers targeting the same key.
 	go func() {
 		for i := 0; i < 10*(endV-startV+1); i++ {
 			wg.Go(func() {
@@ -203,7 +194,6 @@ func Test_Consistent_Cache_Read_Write(t *testing.T) {
 				if errors.Is(err, consistent_cache.ErrorDataNotExist) {
 					return
 				}
-				// During concurrent writes the cache is not expected to be used.
 				if useCache {
 					t.Errorf("expected useCache=false, got true")
 				}
@@ -219,14 +209,12 @@ func Test_Consistent_Cache_Read_Write(t *testing.T) {
 		}
 	}()
 
-	// Collect the written records.
 	dataSlice := make([]*Example, 0, 5)
 	for i := startV; i <= endV; i++ {
 		data := <-dataChan
 		dataSlice = append(dataSlice, data)
 	}
 
-	// After writes settle, read the final value.
 	data := Example{
 		Key_: prefix,
 	}
@@ -244,7 +232,6 @@ func Test_Consistent_Cache_Read_Write(t *testing.T) {
 
 	wg.Wait()
 
-	// One second later, read twice: first miss, second hit.
 	<-time.After(time.Second)
 	if useCache, err = service.Get(ctx, &data); err != nil {
 		t.Error(err)

@@ -42,10 +42,6 @@ func (s ServerConf) InternalToken() string { return os.Getenv(s.InternalTokenEnv
 
 func (s ServerConf) Addr() string { return net.JoinHostPort(s.Host, strconv.Itoa(s.Port)) }
 
-// BaseURL is the advertised address used for in-process callbacks (the
-// distributed time wheel POSTs to /internal/v1/fire on this host). A wildcard
-// bind host (0.0.0.0 / ::) is not connectable, so it is rewritten to loopback;
-// the callback always targets this same process.
 func (s ServerConf) BaseURL() string {
 	host := s.Host
 	switch host {
@@ -147,14 +143,10 @@ type ReportsConf struct {
 	Dir string `yaml:"dir"`
 }
 
-// JournalConf locates the node-local lsm_tree audit ledger. An empty dir
-// disables journaling.
 type JournalConf struct {
 	Dir string `yaml:"dir"`
 }
 
-// ConsensusConf configures the embedded raft ledger (single-member
-// group per node; see internal/consensus).
 type ConsensusConf struct {
 	ID uint64 `yaml:"id"`
 }

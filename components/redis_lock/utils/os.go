@@ -12,7 +12,6 @@ func GetCurrentProcessID() string {
 	return strconv.Itoa(os.Getpid())
 }
 
-// GetCurrentGoroutineID returns the current goroutine ID extracted from the runtime stack.
 func GetCurrentGoroutineID() string {
 	buf := make([]byte, 128)
 	buf = buf[:runtime.Stack(buf, false)]

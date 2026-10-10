@@ -9,7 +9,6 @@ type Encryptor interface {
 	Encrypt(origin string) int32
 }
 
-// FnvHasher implements Encryptor using the standard library's FNV-1a 32-bit hash.
 type FnvHasher struct {
 }
 

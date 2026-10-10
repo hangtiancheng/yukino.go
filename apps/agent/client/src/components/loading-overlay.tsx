@@ -6,7 +6,6 @@ export class LoadingOverlay extends LitElement {
   @property({ attribute: false })
   overlay: OverlayState = { show: false, text: "", subtext: "" };
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }

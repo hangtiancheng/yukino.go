@@ -41,12 +41,7 @@ func (w *Worker) Start(ctx context.Context) {
 }
 
 func (w *Worker) Work(ctx context.Context, minuteBucketKey string, ack func()) error {
-	// log.InfoContextf(ctx, "trigger_1 start: %v", time.Now())
-	// defer func() {
-	// 	log.InfoContextf(ctx, "trigger_1 end: %v", time.Now())
-	// }()
 
-	// Process zrange for a one-minute window
 	startTime, err := getStartMinute(minuteBucketKey)
 	if err != nil {
 		return err
@@ -63,10 +58,6 @@ func (w *Worker) Work(ctx context.Context, minuteBucketKey string, ack func()) e
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		// log.InfoContextf(ctx, "trigger_2 start: %v", time.Now())
-		// defer func() {
-		// 	log.InfoContextf(ctx, "trigger_2 end: %v", time.Now())
-		// }()
 		if err := w.handleBatch(ctx, minuteBucketKey, startTime, startTime.Add(time.Duration(conf.ZRangeGapSeconds)*time.Second)); err != nil {
 			notifier.Put(err)
 		}
@@ -83,14 +74,8 @@ func (w *Worker) Work(ctx context.Context, minuteBucketKey string, ack func()) e
 			break
 		}
 
-		// log.InfoContextf(ctx, "start time: %v", startTime)
-
 		wg.Add(1)
 		go func(startTime time.Time) {
-			// log.InfoContextf(ctx, "trigger_2 start: %v", time.Now())
-			// defer func() {
-			// 	log.InfoContextf(ctx, "trigger_2 end: %v", time.Now())
-			// }()
 			defer wg.Done()
 			if err := w.handleBatch(ctx, minuteBucketKey, startTime, startTime.Add(time.Duration(conf.ZRangeGapSeconds)*time.Second)); err != nil {
 				notifier.Put(err)
@@ -124,10 +109,6 @@ func (w *Worker) handleBatch(ctx context.Context, key string, start, end time.Ti
 
 	for _, task := range tasks {
 		if err := w.pool.Submit(func() {
-			// log.InfoContextf(ctx, "trigger_3 start: %v", time.Now())
-			// defer func() {
-			// 	log.InfoContextf(ctx, "trigger_3 end: %v", time.Now())
-			// }()
 			if err := w.executor.Work(ctx, utils.UnionTimerIDUnix(task.TimerID, task.RunTimer.UnixMilli())); err != nil {
 				log.ErrorContextf(ctx, "executor work failed, err: %v", err)
 			}

@@ -1,6 +1,3 @@
-// Package models provides factory functions for creating LLM chat model instances.
-// It supports both OpenAI-compatible API endpoints and Anthropic Claude for
-// different reasoning use cases, selected via the model_provider configuration.
 package models
 
 import (
@@ -19,29 +16,16 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// NewThinkChatModel creates a chat model instance configured for deep reasoning tasks.
-// This model is used by the planner and replanner in the plan-execute-replan pipeline.
 func NewThinkChatModel(ctx context.Context, cfg *config.Config) (model.ToolCallingChatModel, error) {
 	return newChatModel(ctx, cfg, cfg.ThinkChatModel)
 }
 
-// NewQuickChatModel creates a chat model instance configured for fast responses.
-// This model is used for standard chat interactions and tool execution steps.
 func NewQuickChatModel(ctx context.Context, cfg *config.Config) (model.ToolCallingChatModel, error) {
 	return newChatModel(ctx, cfg, cfg.QuickChatModel)
 }
 
-// newChatModel builds a chat model from the given model settings, selecting the
-// underlying implementation based on cfg.ModelProvider. It defaults to the
-// OpenAI-compatible implementation unless "anthropic" is explicitly configured.
-//
-// For Anthropic, extended thinking is enabled when mc.Thinking is set, with
-// budgetTokens = mc.MaxTokens - 1. A signature-patching HTTP transport is
-// injected to backfill the missing `signature` field on thinking blocks
-// returned by non-official Anthropic gateways.
 func newChatModel(ctx context.Context, cfg *config.Config, mc config.ChatModelConfig) (model.ToolCallingChatModel, error) {
 	if cfg.ModelProvider == config.ModelProviderAnthropic {
-		// Claude's BaseURL is optional; nil falls back to the default Anthropic endpoint.
 		var baseURL *string
 		if mc.BaseURL != "" {
 			baseURL = &mc.BaseURL
@@ -71,12 +55,6 @@ func newChatModel(ctx context.Context, cfg *config.Config, mc config.ChatModelCo
 	})
 }
 
-// signaturePatchingTransport wraps an http.RoundTripper to backfill the
-// `signature` field on thinking content blocks returned by non-official
-// Anthropic-compatible gateways. The official Anthropic API always includes
-// `signature` on non-streaming thinking blocks; some proxies omit it, which
-// makes the Anthropic SDK reject the response with "Invalid JSON response".
-// Streaming (SSE) responses are passed through unchanged.
 type signaturePatchingTransport struct {
 	base http.RoundTripper
 }
@@ -108,9 +86,6 @@ func (t *signaturePatchingTransport) RoundTrip(req *http.Request) (*http.Respons
 	return resp, nil
 }
 
-// patchThinkingSignature parses an Anthropic message response and backfills
-// `signature: ""` on any thinking content block missing it. Returns the
-// (possibly modified) body bytes and whether a change was made.
 func patchThinkingSignature(body []byte) ([]byte, bool) {
 	var obj map[string]any
 	if err := json.Unmarshal(body, &obj); err != nil {

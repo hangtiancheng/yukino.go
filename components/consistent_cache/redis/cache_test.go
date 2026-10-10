@@ -9,7 +9,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/consistent_cache"
 )
 
-// fakeClient records the commands issued by Cache.
 type fakeClient struct {
 	mu sync.Mutex
 
@@ -84,9 +83,6 @@ func TestCacheEnableExpiresDisableMarker(t *testing.T) {
 	if len(fc.pexpireKeys) != 1 {
 		t.Fatalf("PExpire called %d times, want 1", len(fc.pexpireKeys))
 	}
-	// Enable must target the disable marker, not the data key: the data key
-	// is deleted right before the db write, so expiring it would be a no-op
-	// and the read path would stay disabled for the full marker TTL.
 	if fc.pexpireKeys[0] != "Enable_Lock_Key_{user:1}" {
 		t.Fatalf("PExpire key = %q, want the disable marker %q", fc.pexpireKeys[0], "Enable_Lock_Key_{user:1}")
 	}
@@ -116,20 +112,17 @@ func TestCacheDisableUsesDisableMarker(t *testing.T) {
 func TestCacheGetTranslatesMiss(t *testing.T) {
 	ctx := context.Background()
 
-	// Cache miss is translated to the consistent_cache sentinel.
 	c := &Cache{client: &fakeClient{getErr: ErrorCacheMiss}}
 	if _, err := c.Get(ctx, "k"); !errors.Is(err, consistent_cache.ErrorCacheMiss) {
 		t.Fatalf("err = %v, want consistent_cache.ErrorCacheMiss", err)
 	}
 
-	// A hit is passed through.
 	c = &Cache{client: &fakeClient{getVal: "v"}}
 	v, err := c.Get(ctx, "k")
 	if err != nil || v != "v" {
 		t.Fatalf("Get = %q, %v, want %q, nil", v, err, "v")
 	}
 
-	// Other errors are passed through unchanged.
 	boom := errors.New("boom")
 	c = &Cache{client: &fakeClient{getErr: boom}}
 	if _, err := c.Get(ctx, "k"); !errors.Is(err, boom) {

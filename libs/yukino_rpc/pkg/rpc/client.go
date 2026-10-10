@@ -117,9 +117,6 @@ func (cc *ClientConn) invokeStatic(ctx context.Context, service, method string, 
 	return future.GetResultWithContext(ctx, reply)
 }
 
-// InvokeAsync sends a request without waiting for the response. The returned
-// Future resolves with the reply, an error, or context.DeadlineExceeded once
-// the dial timeout elapses.
 func (cc *ClientConn) InvokeAsync(ctx context.Context, service, method string, args any) (*Future, error) {
 	switch cc.mode {
 	case modeRegistry:

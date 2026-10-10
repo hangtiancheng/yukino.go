@@ -88,8 +88,6 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.listener = lis
 	s.mu.Unlock()
 
-	// A shutdown that ran before the listener was registered could not
-	// close it; honour that shutdown here instead of blocking in Accept.
 	select {
 	case <-s.closing:
 		_ = lis.Close()
@@ -138,13 +136,8 @@ func (s *Server) Addr() string {
 func (s *Server) GracefulStop() {
 	s.beginShutdown()
 
-	// Wait for the accept loop to exit so no new connection can be
-	// registered after the interrupt sweep below.
 	s.serveWg.Wait()
 
-	// Interrupt connections blocked in Read. Handlers that are mid-request
-	// (including active streams) finish their work before the connection
-	// goroutine exits; idle connections exit immediately.
 	s.mu.Lock()
 	for conn := range s.conns {
 		_ = conn.SetReadDeadline(time.Now())

@@ -1,4 +1,3 @@
-// Package claude projects a selected provider into Claude Code settings.
 package claude
 
 import (
@@ -25,8 +24,6 @@ func DefaultDir() (string, error) {
 	return filepath.Join(home, ".claude"), nil
 }
 
-// Configure saves the exact previous bytes before changing routing fields.
-// Backups are never restored or deleted automatically.
 func Configure(dir string, p config.Provider, proxyURL string) (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
@@ -65,8 +62,6 @@ func Configure(dir string, p config.Provider, proxyURL string) (string, error) {
 	for _, key := range []string{"ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"} {
 		env[key] = p.Model
 	}
-	// Declare the selected provider's context window for custom model IDs.
-	// Clear a previous provider's value when this provider has no declaration.
 	delete(env, "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
 	if p.ContextWindow > 0 {
 		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.FormatInt(p.ContextWindow, 10)
@@ -86,7 +81,6 @@ func Configure(dir string, p config.Provider, proxyURL string) (string, error) {
 	return backup, nil
 }
 
-// WritePrivate replaces a file atomically, without exposing partial JSON.
 func WritePrivate(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".yukino-*")
 	if err != nil {

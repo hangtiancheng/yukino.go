@@ -21,17 +21,12 @@ func repairProducer(opts *ProducerOptions) {
 }
 
 type ConsumerOptions struct {
-	claimIdle time.Duration
-	// receiveTimeout is the per-poll receive timeout.
-	receiveTimeout time.Duration
-	// maxRetryLimit is the max retry count before a message is sent to the dead-letter mailbox.
-	maxRetryLimit int
-	// deadLetterMailbox is the user-customizable dead-letter sink.
-	deadLetterMailbox DeadLetterMailbox
-	// deadLetterDeliverTimeout is the timeout for dead-letter delivery.
+	claimIdle                time.Duration
+	receiveTimeout           time.Duration
+	maxRetryLimit            int
+	deadLetterMailbox        DeadLetterMailbox
 	deadLetterDeliverTimeout time.Duration
-	// handleMsgsTimeout is the timeout for processing a batch of messages.
-	handleMsgsTimeout time.Duration
+	handleMsgsTimeout        time.Duration
 }
 
 type ConsumerOption func(opts *ConsumerOptions)
@@ -67,9 +62,6 @@ func WithHandleMsgsTimeout(timeout time.Duration) ConsumerOption {
 }
 
 func repairConsumer(opts *ConsumerOptions) {
-	// receiveTimeout == 0 maps to XREADGROUP BLOCK 0 (block forever) and a
-	// negative value maps to a non-blocking hot poll, so anything <= 0 is
-	// replaced with the documented default.
 	if opts.receiveTimeout <= 0 {
 		opts.receiveTimeout = 2 * time.Second
 	}
@@ -91,8 +83,6 @@ func repairConsumer(opts *ConsumerOptions) {
 	}
 }
 
-// WithAbandonedMessageRecovery reclaims messages left by stopped consumers.
-// Set idle longer than the handler timeout to avoid stealing active work.
 func WithAbandonedMessageRecovery(idle time.Duration) ConsumerOption {
 	return func(opts *ConsumerOptions) { opts.claimIdle = idle }
 }

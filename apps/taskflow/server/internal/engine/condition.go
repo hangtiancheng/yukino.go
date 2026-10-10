@@ -17,8 +17,6 @@ import (
 	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
 )
 
-// CondEvent is the payload published on the condition topic when a business
-// row is inserted. FireKey makes every (task, row) pair fire exactly once.
 type CondEvent struct {
 	ExecutionID  uint              `json:"execution_id,omitempty"`
 	FireKey      string            `json:"fire_key"`
@@ -30,9 +28,6 @@ type CondEvent struct {
 	TraceCarrier map[string]string `json:"trace_carrier,omitempty"`
 }
 
-// ConditionPipeline publishes insert events and converts them into execution
-// rows that go through the exact same idempotent dispatch funnel as scheduled
-// fires.
 type ConditionPipeline struct {
 	cfg        *conf.Config
 	dao        *dao.DAO
@@ -62,9 +57,6 @@ func CondFireKey(taskID uint, table string, recordID uint, createdAt time.Time) 
 	return fmt.Sprintf("cond:%d:%s:%d:%d", taskID, table, recordID, createdAt.Unix())
 }
 
-// PublishRecordInserted fans a freshly inserted business row out to every
-// enabled condition task watching that table. Called by the API layer right
-// after the INSERT commits.
 func (p *ConditionPipeline) PublishRecordInserted(ctx context.Context, table string, recordID uint, record any, createdAt time.Time) (int, error) {
 	tasks, err := p.dao.EnabledConditionTasks(ctx, table)
 	if err != nil {
@@ -107,7 +99,6 @@ func (p *ConditionPipeline) PublishRecordInserted(ctx context.Context, table str
 			continue
 		}
 		if _, err := p.producer.SendMsg(ctx, p.cfg.MQ.CondTopic, fireKey, string(body)); err != nil {
-			// Release the claim so a publisher retry can still deliver.
 			_ = p.idem.ReleaseEvent(ctx, fireKey)
 			obsx.CaptureError(ctx, fmt.Errorf("publish condition event %s: %w", fireKey, err), nil)
 			continue
@@ -187,8 +178,6 @@ func (p *ConditionPipeline) handle(ctx context.Context, msg *mqredis.MsgEntity) 
 		return nil
 	}
 
-	// Re-read the authoritative row so the analysis always reflects the
-	// stored state, not the publisher's view.
 	record, err := p.dao.GetRiskRecord(ctx, event.RecordID)
 	if err != nil {
 		if dao.IsNotFound(err) {

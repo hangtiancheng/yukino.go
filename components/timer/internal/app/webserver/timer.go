@@ -20,7 +20,6 @@ func NewTimerApp(service *service.TimerService) *TimerApp {
 	return &TimerApp{service: service}
 }
 
-// CreateTimer creates a timer definition.
 func (t *TimerApp) CreateTimer(ctx *yukino.Context, next func()) {
 	var req vo.Timer
 	if err := ctx.BindJSON(&req); err != nil {
@@ -37,7 +36,6 @@ func (t *TimerApp) CreateTimer(ctx *yukino.Context, next func()) {
 	ctx.JSON(vo.NewCreateTimerResp(id, vo.NewCodeMsgWithErr(nil)))
 }
 
-// GetAppTimers returns all timers under an app.
 func (t *TimerApp) GetAppTimers(ctx *yukino.Context, next func()) {
 	req, err := parseGetAppTimersReq(ctx)
 	if err != nil {
@@ -105,7 +103,6 @@ func (t *TimerApp) GetTimer(ctx *yukino.Context, next func()) {
 	ctx.JSON(vo.NewGetTimerResp(timer, vo.NewCodeMsgWithErr(nil)))
 }
 
-// EnableTimer activates a timer.
 func (t *TimerApp) EnableTimer(ctx *yukino.Context, next func()) {
 	var req vo.TimerReq
 	if err := ctx.BindJSON(&req); err != nil {
@@ -121,7 +118,6 @@ func (t *TimerApp) EnableTimer(ctx *yukino.Context, next func()) {
 	ctx.JSON(vo.NewCodeMsgWithErr(nil))
 }
 
-// UnableTimer deactivates a timer.
 func (t *TimerApp) UnableTimer(ctx *yukino.Context, next func()) {
 	var req vo.TimerReq
 	if err := ctx.BindJSON(&req); err != nil {

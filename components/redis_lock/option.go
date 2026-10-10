@@ -3,17 +3,12 @@ package redis_lock
 import "time"
 
 const (
-	// DefaultIdleTimeoutSeconds is the default idle-connection timeout (10s).
 	DefaultIdleTimeoutSeconds = 10
-	// DefaultMaxActive is the default max active connections.
-	DefaultMaxActive = 100
-	// DefaultMaxIdle is the default max idle connections.
-	DefaultMaxIdle = 20
+	DefaultMaxActive          = 100
+	DefaultMaxIdle            = 20
 
-	// DefaultLockExpireSeconds is the default lock TTL.
 	DefaultLockExpireSeconds = 30
-	// WatchDogWorkStepSeconds is the watchdog renewal interval.
-	WatchDogWorkStepSeconds = 10
+	WatchDogWorkStepSeconds  = 10
 )
 
 type ClientOptions struct {
@@ -21,10 +16,9 @@ type ClientOptions struct {
 	idleTimeoutSeconds int
 	maxActive          int
 	wait               bool
-	// Required fields.
-	network  string
-	address  string
-	password string
+	network            string
+	address            string
+	password           string
 }
 
 type ClientOption func(c *ClientOptions)
@@ -89,16 +83,13 @@ func WithExpireSeconds(expireSeconds int64) LockOption {
 
 func repairLock(o *LockOptions) {
 	if o.isBlock && o.blockWaitingSeconds <= 0 {
-		// Default blocking-wait upper bound is 5 seconds.
 		o.blockWaitingSeconds = 5
 	}
 
-	// When the caller does not set an explicit TTL, the watchdog is started.
 	if o.expireSeconds > 0 {
 		return
 	}
 
-	// No explicit TTL: start the watchdog.
 	o.expireSeconds = DefaultLockExpireSeconds
 	o.watchDogMode = true
 }

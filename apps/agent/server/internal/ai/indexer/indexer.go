@@ -1,6 +1,3 @@
-// Package indexer provides a Milvus-backed document indexer for the knowledge base.
-// Documents are split, embedded, and stored as rows in the Milvus collection with
-// their float vector embeddings.
 package indexer
 
 import (
@@ -18,8 +15,6 @@ import (
 	yukino_milvus "github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/milvus"
 )
 
-// docRow is the row-based record inserted into Milvus. The milvus struct tags
-// bind each Go field to its collection field (id / vector / content / metadata).
 type docRow struct {
 	ID       string    `json:"id" milvus:"name:id"`
 	Vector   []float32 `json:"vector" milvus:"name:vector"`
@@ -27,15 +22,6 @@ type docRow struct {
 	Metadata []byte    `json:"metadata" milvus:"name:metadata"`
 }
 
-// NewMilvusIndexer creates an indexer that stores document chunks with their
-// float vector embeddings into the Milvus knowledge collection (database
-// "agent", collection "biz" by default; auto-provisioned on first connect).
-//
-// A custom DocumentConverter is supplied so the stored rows:
-//   - carry the embedding as a native FloatVector (COSINE metric)
-//   - normalize metadata["_source"] to the file basename, keeping the dedup
-//     key stable across working directories
-//   - truncate content to MaxContentLength, matching the collection schema
 func NewMilvusIndexer(ctx context.Context, cfg *config.Config) (indexer.Indexer, error) {
 	cli, dim, err := yukino_milvus.NewClient(ctx, cfg)
 	if err != nil {
@@ -57,7 +43,6 @@ func NewMilvusIndexer(ctx context.Context, cfg *config.Config) (indexer.Indexer,
 	})
 }
 
-// documentToRows maps Eino documents plus their embeddings to Milvus rows.
 func documentToRows(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
 	if len(docs) != len(vectors) {
 		return nil, fmt.Errorf("docs/vectors length mismatch: %d != %d", len(docs), len(vectors))
@@ -69,8 +54,6 @@ func documentToRows(ctx context.Context, docs []*schema.Document, vectors [][]fl
 			return nil, fmt.Errorf("doc id not set")
 		}
 
-		// Normalize _source to the basename so dedup keys are stable across
-		// different working directories.
 		meta := make(map[string]any, len(doc.MetaData))
 		for k, v := range doc.MetaData {
 			meta[k] = v

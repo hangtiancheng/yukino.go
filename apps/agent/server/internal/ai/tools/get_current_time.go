@@ -11,10 +11,8 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 )
 
-// GetCurrentTimeInput is empty as no input parameters are needed.
 type GetCurrentTimeInput struct{}
 
-// GetCurrentTimeOutput contains the current time in multiple formats.
 type GetCurrentTimeOutput struct {
 	Success      bool   `json:"success" jsonschema:"description=Whether the time retrieval was successful"`
 	Seconds      int64  `json:"seconds" jsonschema:"description=Current Unix timestamp in seconds"`
@@ -24,12 +22,6 @@ type GetCurrentTimeOutput struct {
 	Message      string `json:"message" jsonschema:"description=Status message"`
 }
 
-// NewGetCurrentTimeTool creates a tool that returns the current system time
-// in multiple formats (Unix seconds, milliseconds, microseconds, and human-readable).
-// Construction errors are returned to the caller instead of terminating the process.
-//
-// The tool input is parameter-less, so TolerateEmptyArguments is used to handle
-// models that return an empty Arguments string (see empty_arguments.go).
 func NewGetCurrentTimeTool() (tool.InvokableTool, error) {
 	t, err := utils.InferOptionableTool(
 		"get_current_time",

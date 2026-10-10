@@ -11,7 +11,6 @@ const (
 	password = "please fill in redis password, empty string if none"
 )
 
-// skipWithoutRedis skips the test when the redis address is still the placeholder.
 func skipWithoutRedis(t *testing.T) {
 	t.Helper()
 	if address == "please fill in redis address {ip}:{port}" {

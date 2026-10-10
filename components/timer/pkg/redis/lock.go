@@ -16,7 +16,6 @@ type DistributeLocker interface {
 	ExpireLock(ctx context.Context, expireSeconds int64) error
 }
 
-// ReentrantDistributeLock is a reentrant distributed lock.
 type ReentrantDistributeLock struct {
 	key    string
 	token  string
@@ -31,7 +30,6 @@ func NewReentrantDistributeLock(key string, client *Client) *ReentrantDistribute
 	}
 }
 
-// Lock acquires the distributed lock.
 func (r *ReentrantDistributeLock) Lock(ctx context.Context, expireSeconds int64) error {
 	res, err := r.client.Get(ctx, r.key)
 	if err != nil && !errors.Is(err, go_redis.Nil) {
@@ -39,8 +37,6 @@ func (r *ReentrantDistributeLock) Lock(ctx context.Context, expireSeconds int64)
 	}
 
 	if res == r.token {
-		// Reentrant acquisition: refresh the expiration so a long hold does
-		// not let the lock expire while it is still owned.
 		if err := r.ExpireLock(ctx, expireSeconds); err != nil {
 			return err
 		}
@@ -60,7 +56,6 @@ func (r *ReentrantDistributeLock) Lock(ctx context.Context, expireSeconds int64)
 	return nil
 }
 
-// Unlock releases the lock using a Lua script for atomicity.
 func (r *ReentrantDistributeLock) Unlock(ctx context.Context) error {
 	keysAndArgs := []any{r.getLockKey(), r.token}
 	reply, err := r.client.Eval(ctx, LuaCheckAndDeleteDistributionLock, 1, keysAndArgs)
@@ -74,7 +69,6 @@ func (r *ReentrantDistributeLock) Unlock(ctx context.Context) error {
 	return nil
 }
 
-// ExpireLock updates the lock expiration using a Lua script for atomicity.
 func (r *ReentrantDistributeLock) ExpireLock(ctx context.Context, expireSeconds int64) error {
 	keysAndArgs := []any{r.getLockKey(), r.token, expireSeconds}
 	reply, err := r.client.Eval(ctx, LuaCheckAndExpireDistributionLock, 1, keysAndArgs)

@@ -15,16 +15,12 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// replanResponse is the structured output format for the replanner.
 type replanResponse struct {
 	Done      bool     `json:"done"`
 	Remaining []string `json:"remaining"`
 	Summary   string   `json:"summary"`
 }
 
-// NewRePlanAgent creates the replanning agent that adjusts the execution plan
-// based on the results of completed steps. It uses structured output instead
-// of tool calling for better compatibility with different LLM providers.
 func NewRePlanAgent(ctx context.Context, cfg *config.Config) (adk.Agent, error) {
 	chatModel, err := models.NewThinkChatModel(ctx, cfg)
 	if err != nil {
@@ -61,7 +57,6 @@ func (r *customReplanner) Run(ctx context.Context, input *adk.AgentInput, _ ...a
 			generator.Close()
 		}()
 
-		// Get session values
 		executedStep, ok := adk.GetSessionValue(ctx, plan_execute.ExecutedStepSessionKey)
 		if !ok {
 			generator.Send(&adk.AgentEvent{Err: fmt.Errorf("executed step not found")})
@@ -82,7 +77,6 @@ func (r *customReplanner) Run(ctx context.Context, input *adk.AgentInput, _ ...a
 			executedSteps = executedStepsVal.([]plan_execute.ExecutedStep)
 		}
 
-		// Add current step to executed steps
 		executedSteps = append(executedSteps, plan_execute.ExecutedStep{
 			Step:   planObj.FirstStep(),
 			Result: executedStepStr,
@@ -96,7 +90,6 @@ func (r *customReplanner) Run(ctx context.Context, input *adk.AgentInput, _ ...a
 		}
 		userInputMsgs := userInput.([]adk.Message)
 
-		// Build prompt for structured output
 		var userInputStr strings.Builder
 		for _, msg := range userInputMsgs {
 			userInputStr.WriteString(msg.Content)
@@ -105,8 +98,6 @@ func (r *customReplanner) Run(ctx context.Context, input *adk.AgentInput, _ ...a
 
 		planBytes, _ := planObj.MarshalJSON()
 
-		// Present completed steps and their results as two separate sections: steps
-		// are enumerated, results are listed in the same order, one per line.
 		var completedStepsStr strings.Builder
 		var resultsStr strings.Builder
 		for i, step := range executedSteps {
@@ -139,7 +130,6 @@ Based on the progress above, respond with ONLY a JSON object matching this schem
 Set "done" to true and provide a comprehensive summary only when the objective is fully achieved. Otherwise, set "done" to false and list only the remaining steps. Do not include any text, explanations, or markdown formatting outside the JSON object.`,
 			userInputStr.String(), string(planBytes), completedStepsStr.String(), resultsStr.String())
 
-		// Call the model
 		msgs := []*schema.Message{schema.UserMessage(promptText)}
 		resp, err := r.chatModel.Generate(ctx, msgs)
 		if err != nil {
@@ -147,9 +137,6 @@ Set "done" to true and provide a comprehensive summary only when the objective i
 			return
 		}
 
-		// Parse the structured output. extractJSONObject tolerates ```json fences
-		// and leading/trailing reasoning that some models (e.g. Qwen3.7) emit
-		// even when asked to output JSON only.
 		clean, extractErr := extractJSONObject(resp.Content)
 		if extractErr != nil {
 			generator.Send(&adk.AgentEvent{Err: fmt.Errorf("extract replan JSON: %w (raw output: %q)", extractErr, resp.Content)})
@@ -162,12 +149,10 @@ Set "done" to true and provide a comprehensive summary only when the objective i
 		}
 
 		if replanResp.Done {
-			// Task complete - send response and break loop
 			output := schema.AssistantMessage(replanResp.Summary, nil)
 			generator.Send(adk.EventFromMessage(output, nil, schema.Assistant, ""))
 			generator.Send(&adk.AgentEvent{Action: adk.NewBreakLoopAction(r.Name(ctx))})
 		} else {
-			// Need replanning - create new plan
 			newPlan := &customPlan{Steps: replanResp.Remaining}
 			adk.AddSessionValue(ctx, plan_execute.PlanSessionKey, newPlan)
 

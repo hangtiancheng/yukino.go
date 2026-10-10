@@ -1,6 +1,3 @@
-// Package telemetry wires OpenTelemetry tracing: a tracer provider with a
-// configurable stdout exporter, W3C trace-context propagation across HTTP and
-// MQ hops, and helpers to embed trace ids into execution records.
 package telemetry
 
 import (
@@ -107,15 +104,12 @@ func TraceIDFrom(ctx context.Context) string {
 	return ""
 }
 
-// Inject serializes the trace context of ctx into a plain map, so it can
-// travel inside MQ message payloads.
 func Inject(ctx context.Context) map[string]string {
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
 	return carrier
 }
 
-// Extract rebuilds a remote span context from a carrier map.
 func Extract(ctx context.Context, carrier map[string]string) context.Context {
 	return otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(carrier))
 }

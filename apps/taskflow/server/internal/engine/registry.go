@@ -18,9 +18,6 @@ const (
 	heartbeatInterval  = 15 * time.Second
 )
 
-// SingletonRegistry maps singleton role keys (migrator, monitor) to exactly
-// one live node through the consistent-hash ring, and keeps the ring
-// membership in sync with node heartbeats.
 type SingletonRegistry struct {
 	ring     *consistent_hash.ConsistentHash
 	hashRing consistent_hash.HashRing
@@ -43,21 +40,17 @@ func NewSingletonRegistry(ring *consistent_hash.ConsistentHash, hashRing consist
 	}
 }
 
-// Register joins the ring and starts the heartbeat loop.
 func (r *SingletonRegistry) Register(ctx context.Context) error {
 	if err := r.beat(ctx); err != nil {
 		return err
 	}
 	if err := r.ring.AddNode(ctx, r.nodeID, 1); err != nil {
-		// Re-registration after an unclean shutdown can report a duplicate;
-		// the ring already contains our virtual nodes, so this is benign.
 		slog.Warn("ring AddNode", "node", r.nodeID, "err", err)
 	}
 	go r.loop()
 	return nil
 }
 
-// Deregister stops the heartbeat and removes this node from the ring.
 func (r *SingletonRegistry) Deregister(ctx context.Context) {
 	r.stopOnce.Do(func() { close(r.stopChan) })
 	<-r.doneChan
@@ -94,10 +87,6 @@ func (r *SingletonRegistry) beat(ctx context.Context) error {
 	return r.client.Set(ctx, heartbeatKeyPrefix+r.nodeID, time.Now().Unix(), heartbeatTTL).Err()
 }
 
-// IsOwner reports whether this node owns the given singleton role key. On ring
-// errors it fails open: the callers still take a redis lock before doing any
-// work, so a fail-open answer cannot double-execute, while a fail-closed
-// answer could stall the whole cluster when redis hiccups.
 func (r *SingletonRegistry) IsOwner(ctx context.Context, roleKey string) bool {
 	node, err := r.ring.GetNode(ctx, roleKey)
 	if err != nil {
@@ -129,7 +118,6 @@ func (r *SingletonRegistry) evictDeadNodes(ctx context.Context) error {
 	return nil
 }
 
-// Members lists ring membership for the monitor API.
 func (r *SingletonRegistry) Members(ctx context.Context) map[string]any {
 	result := map[string]any{
 		"self": r.nodeID,
@@ -165,8 +153,6 @@ func (r *SingletonRegistry) ownerOf(ctx context.Context, roleKey string) string 
 	return node
 }
 
-// RingMigrator logs data-key movements caused by topology changes. Singleton
-// keys hold no payload, so migration is informational only.
 func RingMigrator(ctx context.Context, dataKeys map[string]struct{}, from, to string) error {
 	for key := range dataKeys {
 		slog.Info("ring migration", "key", key, "from", from, "to", to)

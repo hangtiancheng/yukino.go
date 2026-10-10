@@ -1,10 +1,8 @@
 package raft
 
 type unstable struct {
-	// Unpersisted log entries
 	entries []Entry
-	// Index of the first unpersisted entry
-	offset uint64
+	offset  uint64
 }
 
 func (u *unstable) mustCheckOutOfBounds(l, r uint64) {
@@ -22,7 +20,6 @@ func (u *unstable) slice(l, r uint64) []Entry {
 	return u.entries[l-u.offset : r-u.offset]
 }
 
-// Appending entries to the unstable region may truncate or overlap existing data
 func (u *unstable) truncateAndAppend(entries []Entry) {
 	after := entries[0].Index
 	switch {
@@ -74,11 +71,8 @@ func (u *unstable) stableTo(i, t uint64) {
 }
 
 type raftLog struct {
-	// Storage interface providing access to persisted log entries
-	storage Storage
-	// Unpersisted log entries
-	unstable unstable
-	// Committed log index
+	storage     Storage
+	unstable    unstable
 	commitIndex uint64
 	applyIndex  uint64
 }
@@ -116,7 +110,6 @@ func (r *raftLog) unstableEntries() []Entry {
 	return r.unstable.entries
 }
 
-// Returns committed but not yet applied entries
 func (r *raftLog) nextEntries() []Entry {
 	off := max(r.applyIndex+1, r.firstIndex())
 	if r.commitIndex+1 > off {
@@ -178,7 +171,6 @@ func (r *raftLog) slice(lo, hi uint64) ([]Entry, error) {
 	return entries, nil
 }
 
-// Append only adds entries to the unstable (unpersisted) log
 func (r *raftLog) append(entries ...Entry) uint64 {
 	if len(entries) == 0 {
 		return r.lastIndex()
@@ -213,7 +205,6 @@ func (r *raftLog) lastTerm() uint64 {
 	return t
 }
 
-// Checks whether the given log is at least as up-to-date as the local log
 func (r *raftLog) isUpToDate(index, term uint64) bool {
 	return term > r.lastTerm() || (term == r.lastTerm() && index >= r.lastIndex())
 }
@@ -228,7 +219,6 @@ func (r *raftLog) appliedTo(i uint64) {
 	r.applyIndex = i
 }
 
-// Returns log entries starting from index i
 func (r *raftLog) entries(i uint64) ([]Entry, error) {
 	if i > r.lastIndex() {
 		return nil, nil
@@ -250,12 +240,10 @@ func (r *raftLog) term(i uint64) (uint64, error) {
 		return 0, nil
 	}
 
-	// Retrieve from unstable storage
 	if t, ok := r.unstable.maybeTerm(i); ok && t != 0 {
 		return t, nil
 	}
 
-	// Retrieve from stable storage
 	t, err := r.storage.Term(i)
 	if err == nil {
 		return t, nil
@@ -268,7 +256,6 @@ func (r *raftLog) term(i uint64) (uint64, error) {
 	panic(err)
 }
 
-// Advances the commit index
 func (r *raftLog) commitTo(toCommit uint64) {
 	if r.commitIndex >= toCommit {
 		return
@@ -293,17 +280,14 @@ func (r *raftLog) zeroTermOnErrCompacted(t uint64, err error) uint64 {
 }
 
 func (r *raftLog) maybeAppend(logIndex, logTerm, commitIndex uint64, entries ...Entry) (uint64, bool) {
-	// Reject if the preceding entry's index and term do not match
 	if !r.matchTerm(logIndex, logTerm) {
 		return 0, false
 	}
 
 	lastNewI := logIndex + uint64(len(entries))
-	// Find the first conflicting entry and append from that point
 	conflictStart := r.findConflict(entries)
 	switch {
 	case conflictStart == 0:
-		// No conflict: the local log already contains all the entries
 	case conflictStart <= r.commitIndex:
 		panic("conflict before commit index")
 	default:
@@ -311,7 +295,6 @@ func (r *raftLog) maybeAppend(logIndex, logTerm, commitIndex uint64, entries ...
 		r.append(entries[conflictStart-offset:]...)
 	}
 
-	// Update the commit index
 	r.commitTo(min(commitIndex, lastNewI))
 	return lastNewI, true
 }

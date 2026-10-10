@@ -9,8 +9,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/taskflow/server/internal/model/po"
 )
 
-// BuildUserPrompt renders the per-execution user prompt sent to the model,
-// alongside the definition prompt which travels as the system prompt.
 func BuildUserPrompt(exec *po.Execution) string {
 	var b strings.Builder
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -57,7 +55,6 @@ func writeAuditWindows(b *strings.Builder, exec *po.Execution) {
 	b.WriteString(fmt.Sprintf("Audit windows in UTC (half-open): current = [%s, %s), previous = [%s, %s). Use these literal timestamps even if execution was delayed.\n", start.UTC().Format("2006-01-02 15:04:05.000000"), end.UTC().Format("2006-01-02 15:04:05.000000"), previous.UTC().Format("2006-01-02 15:04:05.000000"), start.UTC().Format("2006-01-02 15:04:05.000000")))
 }
 
-// ScheduledTaskSeedPrompt is the default prompt for the demo scheduled task.
 const ScheduledTaskSeedPrompt = `You own the daily MySQL data inspection. Do the following:
 1. Use mysql_tool to count base tables in the current database: SELECT COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'.
 2. Use mysql_tool to aggregate taskflow_changes by table_name and operation for the two UTC audit windows supplied in the trigger. Filter occurred_at >= window_start AND occurred_at < window_end. These transactional INSERT/DELETE audit events include rows changed by direct SQL.
@@ -65,7 +62,6 @@ const ScheduledTaskSeedPrompt = `You own the daily MySQL data inspection. Do the
 4. List the audited tables and state that totals cover those tables since capture was installed. If no historical events exist, state that a complete baseline is not available; do not infer historical deletions.
 5. Output table count, per-table inserted/deleted rows, the comparison, and recommendations. Use UTC event timestamps and the scheduled fire time, never NOW() as a substitute for the planned window.`
 
-// ConditionTaskSeedPrompt is the default prompt for the demo condition task.
 const ConditionTaskSeedPrompt = `You own the security audit of MySQL inserted records. Each time a business row is inserted you must:
 1. Read the record content in the trigger event carefully (the title / content / source fields).
 2. Decide whether the content contains a stored XSS payload (e.g. <script>, onerror=, the javascript: protocol, event-handler attribute injection), an SQL-injection payload, or any other persistence-level security risk.

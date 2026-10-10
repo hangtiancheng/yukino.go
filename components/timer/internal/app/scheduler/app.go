@@ -8,7 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/timer/pkg/log"
 )
 
-// WorkerApp reads configuration and launches multiple goroutines for scheduling.
 type WorkerApp struct {
 	sync.Once
 	service workerService

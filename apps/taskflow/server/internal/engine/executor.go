@@ -19,10 +19,6 @@ import (
 	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
 )
 
-// Executor consumes execution commands from red_mq and runs the LLM agent.
-// Multiple consumer instances per node share one consumer group; red_mq
-// retries failed callbacks and routes poison messages to the dead-letter
-// table after maxRetry.
 type Executor struct {
 	cfg       *conf.Config
 	dao       *dao.DAO
@@ -100,7 +96,6 @@ func (e *Executor) handle(ctx context.Context, msg *mqredis.MsgEntity) error {
 		return err
 	}
 	if exec == nil {
-		// Duplicate, cancelled or stale command: consumed without running.
 		return nil
 	}
 
@@ -116,7 +111,6 @@ func (e *Executor) handle(ctx context.Context, msg *mqredis.MsgEntity) error {
 		return fmt.Errorf("transition execution %d to running: %w", exec.ID, err)
 	}
 	if affected == 0 {
-		// Somebody else (another delivery of the same command) won the race.
 		return nil
 	}
 
@@ -124,12 +118,6 @@ func (e *Executor) handle(ctx context.Context, msg *mqredis.MsgEntity) error {
 	return nil
 }
 
-// awaitSettled waits for the dispatch transaction to become visible on the
-// execution row. The TCC Try phase runs its participants concurrently, so the
-// MQ command can be delivered before the reserve UPDATE lands; without this
-// wait the executor would misread a legitimate command as stale.
-// A (nil, nil) result means the message is consumed without running
-// (duplicate / cancelled / stale); an error triggers red_mq retry accounting.
 func (e *Executor) awaitSettled(ctx context.Context, cmd ExecCommand) (*po.Execution, error) {
 	const attempts = 12
 	for i := 0; i < attempts; i++ {
@@ -142,20 +130,15 @@ func (e *Executor) awaitSettled(ctx context.Context, cmd ExecCommand) (*po.Execu
 		case exec.Status == po.StatusCancelled:
 			return nil, nil
 		case exec.Status == po.StatusRunning, exec.Status == po.StatusSucceeded, exec.Status == po.StatusFailed:
-			// Duplicate delivery of an already consumed command.
 			return nil, nil
 		case exec.Status == po.StatusPending && exec.TxID == "":
-			// The reserve Try of our transaction has not landed yet; reload.
 		case exec.Status == po.StatusPending:
-			// The row was rolled back or re-reserved by another transaction;
-			// this command must not run.
 			slog.Info("exec command superseded, execution back in flight", "execution_id", exec.ID, "msg_tx", cmd.TxID, "row_tx", exec.TxID)
 			return nil, nil
 		case exec.TxID != cmd.TxID:
 			slog.Info("stale exec command ignored", "execution_id", exec.ID, "msg_tx", cmd.TxID, "row_tx", exec.TxID)
 			return nil, nil
 		case exec.Status == po.StatusReserved:
-			// Owned by our transaction but not confirmed yet; reload.
 		case exec.Status == po.StatusQueued:
 			return exec, nil
 		default:
@@ -210,7 +193,6 @@ func (e *Executor) runExecution(ctx context.Context, exec *po.Execution) {
 }
 
 func (e *Executor) finalize(ctx context.Context, exec *po.Execution, result *llm.RunResult, startedAt time.Time, runErr error, tags map[string]string) {
-	// Persistence must survive an execution deadline or consumer shutdown.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	finishedAt := time.Now()
@@ -270,9 +252,6 @@ func (e *Executor) finalize(ctx context.Context, exec *po.Execution, result *llm
 		e.reports.Warm(ctx, exec.ID, body)
 	}
 
-	// Fold the outcome into the LSM journal and the raft ledger. The redis
-	// status mirror is kept by the monitor's sync sweeper. Audit writes are
-	// best-effort and detached from the consumer context.
 	auditCtx := context.WithoutCancel(ctx)
 	errText := ""
 	if runErr != nil {

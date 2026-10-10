@@ -1,13 +1,3 @@
-// Command knowledge batch-indexes all Markdown documents in the configured
-// file directory into the Milvus knowledge base. It walks the directory tree,
-// and for each .md file, removes any existing documents with the same source
-// (deduplication) before indexing the new content.
-//
-// Usage:
-//
-//	go run ./cmd/knowledge
-//
-// The directory to index is determined by the "file_dir" field in config.json.
 package main
 
 import (

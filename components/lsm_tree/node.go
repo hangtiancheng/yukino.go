@@ -6,18 +6,17 @@ import (
 	"path"
 )
 
-// Node represents one sstable in the lsm tree.
 type Node struct {
-	conf          *Config           // config
-	file          string            // sstable file name (without directory)
-	level         int               // level of this sstable
-	seq           int32             // seq number from the file name level_seq.sst
-	size          uint64            // sstable size in bytes
-	blockToFilter map[uint64][]byte // filter bitmap per block
-	index         []*Index          // index entries per block
-	startKey      []byte            // smallest key in the sstable
-	endKey        []byte            // largest key in the sstable
-	sstReader     *SSTReader        // reader for the sst file
+	conf          *Config
+	file          string
+	level         int
+	seq           int32
+	size          uint64
+	blockToFilter map[uint64][]byte
+	index         []*Index
+	startKey      []byte
+	endKey        []byte
+	sstReader     *SSTReader
 }
 
 func NewNode(conf *Config, file string, sstReader *SSTReader, level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*Index) *Node {
@@ -39,20 +38,16 @@ func (n *Node) GetAll() ([]*KV, error) {
 	return n.sstReader.ReadData()
 }
 
-// Get looks up a key in the node.
 func (n *Node) Get(key []byte) ([]byte, bool, error) {
-	// An empty index means the sstable has no entries.
 	if len(n.index) == 0 {
 		return nil, false, nil
 	}
 
-	// Locate the block via the index.
 	index, ok := n.binarySearchIndex(key, 0, len(n.index)-1)
 	if !ok {
 		return nil, false, nil
 	}
 
-	// Use the bloom filter to check if the key may exist.
 	bitmap := n.blockToFilter[index.PrevBlockOffset]
 	if bitmap == nil {
 		return nil, false, nil
@@ -61,13 +56,11 @@ func (n *Node) Get(key []byte) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	// Read the block.
 	block, err := n.sstReader.ReadBlock(index.PrevBlockOffset, index.PrevBlockSize)
 	if err != nil {
 		return nil, false, err
 	}
 
-	// Parse the block into key-value pairs.
 	kvs, err := n.sstReader.ReadBlockData(block)
 	if err != nil {
 		return nil, false, err
@@ -108,13 +101,11 @@ func (n *Node) Close() {
 	n.sstReader.Close()
 }
 
-// binarySearchIndex finds the block index that may contain the key.
 func (n *Node) binarySearchIndex(key []byte, start, end int) (*Index, bool) {
 	if start == end {
 		return n.index[start], bytes.Compare(n.index[start].Key, key) >= 0
 	}
 
-	// Target block satisfies: key <= index[i].key && key > index[i-1].key
 	mid := start + (end-start)>>1
 	if bytes.Compare(n.index[mid].Key, key) < 0 {
 		return n.binarySearchIndex(key, mid+1, end)

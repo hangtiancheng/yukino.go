@@ -23,22 +23,11 @@ import (
 const (
 	monitorLockKey = "taskflow:lock:monitor"
 	StatsRedisKey  = "taskflow:monitor:stats"
-	// ExecMirrorKey is the redis hash mirroring hot execution statuses out of
-	// MySQL (field = execution id, value = JSON {status, updated_at}). The
-	// sync sweep keeps it aligned with the source of truth.
-	ExecMirrorKey = "taskflow:exec:status"
-	sweepKey      = "monitor-sweep"
-	// execMirrorTTL bounds how long stale mirror entries may live.
-	execMirrorTTL = 7 * 24 * time.Hour
+	ExecMirrorKey  = "taskflow:exec:status"
+	sweepKey       = "monitor-sweep"
+	execMirrorTTL  = 7 * 24 * time.Hour
 )
 
-// Monitor runs on every node but only the consistent-hash owner of
-// SingletonMonitor performs the sweep: fail executions stuck in running,
-// re-dispatch overdue pending executions, re-publish lost queued commands,
-// synchronize MySQL data into redis (status mirror + definition-cache drift
-// repair), and publish a stats snapshot for the dashboard API. The loop
-// itself is driven by the in-process time wheel; per-row recovery work runs
-// on a bounded timer worker pool.
 type Monitor struct {
 	cfg        *conf.Config
 	dao        *dao.DAO
@@ -96,7 +85,6 @@ func (m *Monitor) Stop() {
 	}
 }
 
-// scheduleSweep runs one sweep and re-arms itself on the in-process wheel.
 func (m *Monitor) scheduleSweep() {
 	m.runMu.Lock()
 	defer m.runMu.Unlock()
@@ -143,8 +131,6 @@ func (m *Monitor) sweep() {
 	m.publishStats(ctx)
 }
 
-// each runs fn over rows on the bounded worker pool and waits for completion
-// so one sweep stays inside its lock budget.
 func (m *Monitor) each(n int, fn func(i int)) {
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
@@ -166,8 +152,6 @@ func (m *Monitor) each(n int, fn func(i int)) {
 	wg.Wait()
 }
 
-// failStuckRunning marks executions running far beyond the executor budget as
-// failed; their node crashed or the LLM call wedged.
 func (m *Monitor) failStuckRunning(ctx context.Context) {
 	runningBefore := time.Now().Add(-time.Duration(m.cfg.Scheduler.StuckRunningMinutes) * time.Minute)
 
@@ -193,10 +177,6 @@ func (m *Monitor) failStuckRunning(ctx context.Context) {
 	})
 }
 
-// republishStuckQueued re-publishes the exec command for queued executions
-// whose message was lost or consumed before the TCC reserve landed. The row
-// stays owned by the original transaction, so the executor's tx-id check
-// keeps duplicate deliveries idempotent.
 func (m *Monitor) republishStuckQueued(ctx context.Context) {
 	if m.producer == nil {
 		return
@@ -225,9 +205,6 @@ func (m *Monitor) republishStuckQueued(ctx context.Context) {
 	})
 }
 
-// redispatchOverdue gives pending executions whose wheel callback never
-// arrived (cluster downtime, redis shard aged out) another chance through
-// the normal dispatch funnel.
 func (m *Monitor) redispatchOverdue(ctx context.Context) {
 	before := time.Now().Add(-time.Duration(m.cfg.Scheduler.OverdueRecoverMinutes) * time.Minute)
 	overdue, err := m.dao.PendingOverdue(ctx, before)
@@ -248,11 +225,6 @@ func (m *Monitor) redispatchOverdue(ctx context.Context) {
 	})
 }
 
-// syncData is the MySQL -> redis data-sync pass. It (1) mirrors the status of
-// recently touched executions into the ExecMirrorKey hash so readers (and
-// cross-store reconciliation) never hit MySQL for hot statuses, and (2) runs
-// the definition-cache drift repair so redis-cached task definitions cannot
-// diverge from the DB for longer than one sweep interval.
 func (m *Monitor) syncData(ctx context.Context) {
 	for batch := 0; batch < 4; batch++ {
 		count, err := storage.SyncExecutionMirror(ctx, m.dao.DB(), m.client, ExecMirrorKey, ExecMirrorKey+":cursor", 500)
@@ -275,7 +247,6 @@ func (m *Monitor) syncData(ctx context.Context) {
 	}
 }
 
-// StatusMirror exposes the redis execution-status mirror to the monitor API.
 func (m *Monitor) StatusMirror(ctx context.Context) (map[string]string, error) {
 	fields, _, err := m.client.HScan(ctx, ExecMirrorKey, 0, "*", 200).Result()
 	vals := make(map[string]string)
@@ -332,7 +303,6 @@ func (m *Monitor) publishStats(ctx context.Context) {
 	}
 }
 
-// Stats reads the latest published snapshot.
 func (m *Monitor) Stats(ctx context.Context) (map[string]any, error) {
 	body, err := m.client.Get(ctx, StatsRedisKey).Result()
 	if err == redis.Nil {

@@ -19,8 +19,6 @@ type ClientStreamConn struct {
 	ch     chan streamFrame
 	codec  codec.Codec
 
-	// Terminal state is delivered out-of-band so End/Error never block the
-	// caller (readLoop) even when the data buffer is full.
 	once    sync.Once
 	termCh  chan struct{}
 	termErr error
@@ -61,8 +59,6 @@ func (s *ClientStreamConn) terminate(err error) {
 }
 
 func (s *ClientStreamConn) Recv(msg any) error {
-	// Drain buffered data frames before reporting the terminal state so no
-	// frame received prior to StreamEnd/StreamError is lost.
 	select {
 	case frame := <-s.ch:
 		return s.codec.Unmarshal(frame.body, msg)

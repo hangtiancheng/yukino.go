@@ -27,7 +27,6 @@ type lruStore struct {
 	mask           int32
 }
 
-// NewStore creates a cache store implementation.
 func NewStore(opts StoreOptions) *lruStore {
 	if opts.BucketCount == 0 {
 		opts.BucketCount = 16
@@ -129,8 +128,6 @@ func (s *lruStore) SetWithExpiration(key string, value Value, expiration time.Du
 	defer s.locks[idx].Unlock()
 
 	s.caches[idx][0].put(key, value, expireAt, s.onEvicted)
-	// L1 is the single write authority: drop any stale copy promoted to L2
-	// earlier, otherwise it can resurface after the L1 slot is recycled.
 	s.caches[idx][1].drop(key)
 
 	if s.maxBucketBytes > 0 {
@@ -225,7 +222,6 @@ func (s *lruStore) Walk(fn func(Entry) bool) {
 	}
 }
 
-// Bytes returns the total live bytes (keys + values) across all buckets.
 func (s *lruStore) Bytes() int64 {
 	var total int64
 	for i := range s.caches {
@@ -236,7 +232,6 @@ func (s *lruStore) Bytes() int64 {
 	return total
 }
 
-// Evictions returns the cumulative number of capacity/byte-budget evictions.
 func (s *lruStore) Evictions() int64 {
 	var total int64
 	for i := range s.caches {
@@ -392,14 +387,12 @@ func (c *cache) del(key string) (*node, int, int64) {
 	return nil, 0, 0
 }
 
-// drop logically deletes key and releases the slot's value reference.
 func (c *cache) drop(key string) {
 	if nd, st, _ := c.del(key); st > 0 {
 		nd.v = nil
 	}
 }
 
-// evictOldest logically removes the least recently used live entry.
 func (c *cache) evictOldest(onEvicted func(string, Value)) bool {
 	for idx := c.doubleLink[0][p]; idx != 0; idx = c.doubleLink[idx][p] {
 		nd := &c.m[idx-1]

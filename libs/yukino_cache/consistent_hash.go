@@ -8,9 +8,6 @@ import (
 	"sync/atomic"
 )
 
-// ConsistentHashMap is a concurrent consistent hash ring with virtual nodes.
-// Virtual node counts are fixed (DefaultReplicas per node), matching
-// groupcache's stable key-to-owner mapping.
 type ConsistentHashMap struct {
 	mu            sync.RWMutex
 	config        *ConHashConfig
@@ -21,7 +18,6 @@ type ConsistentHashMap struct {
 	totalRequests atomic.Int64
 }
 
-// NewConsistentHash creates a consistent hash ring.
 func NewConsistentHash(opts ...ConHashOption) *ConsistentHashMap {
 	m := &ConsistentHashMap{
 		config:     DefaultConHashConfig,
@@ -36,10 +32,8 @@ func NewConsistentHash(opts ...ConHashOption) *ConsistentHashMap {
 	return m
 }
 
-// Option configures a Map.
 type ConHashOption func(*ConsistentHashMap)
 
-// WithConfig sets the hash ring config.
 func WithConsistentHashConfig(config *ConHashConfig) ConHashOption {
 	return func(m *ConsistentHashMap) {
 		if config != nil {
@@ -48,7 +42,6 @@ func WithConsistentHashConfig(config *ConHashConfig) ConHashOption {
 	}
 }
 
-// Add adds nodes to the hash ring. Adding an existing node is a no-op.
 func (m *ConsistentHashMap) Add(nodes ...string) error {
 	if len(nodes) == 0 {
 		return errors.New("no nodes provided")
@@ -67,7 +60,6 @@ func (m *ConsistentHashMap) Add(nodes ...string) error {
 	return nil
 }
 
-// Remove removes a node from the hash ring.
 func (m *ConsistentHashMap) Remove(node string) error {
 	if node == "" {
 		return errors.New("invalid node")
@@ -79,7 +71,6 @@ func (m *ConsistentHashMap) Remove(node string) error {
 	return m.removeNodeLocked(node)
 }
 
-// Get returns the node responsible for key.
 func (m *ConsistentHashMap) Get(key string) string {
 	if key == "" {
 		return ""
@@ -117,8 +108,6 @@ func (m *ConsistentHashMap) addNodeLocked(node string, replicas int) {
 	for i := range replicas {
 		hash := int(m.config.HashFunc(fmt.Appendf(nil, "%s-%d", node, i)))
 		if _, taken := m.hashMap[hash]; taken {
-			// Virtual node hash collision with an existing entry; skip it
-			// instead of silently stealing ownership.
 			continue
 		}
 		m.keys = append(m.keys, hash)
@@ -156,7 +145,6 @@ func (m *ConsistentHashMap) removeNodeLocked(node string) error {
 	return nil
 }
 
-// GetStats returns the traffic share per node.
 func (m *ConsistentHashMap) GetStats() map[string]float64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

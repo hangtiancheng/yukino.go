@@ -11,8 +11,6 @@ const (
 	password = "please fill in redis password"
 )
 
-// skipWithoutRedis skips the integration tests until the connection
-// constants above are filled in with a real redis.
 func skipWithoutRedis(t *testing.T) {
 	t.Helper()
 	if address == "please fill in redis address" {

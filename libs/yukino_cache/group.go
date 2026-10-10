@@ -22,20 +22,16 @@ var ErrGroupClosed = errors.New("cache group is closed")
 
 type peerRequestContextKey struct{}
 
-// Getter loads data for a key.
 type Getter interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
-// GetterFunc adapts a function to the Getter interface.
 type GetterFunc func(ctx context.Context, key string) ([]byte, error)
 
-// Get implements Getter.
 func (f GetterFunc) Get(ctx context.Context, key string) ([]byte, error) {
 	return f(ctx, key)
 }
 
-// Group is a cache namespace with an associated data loader.
 type Group struct {
 	name       string
 	getter     Getter
@@ -62,31 +58,26 @@ type groupStats struct {
 	loadDuration   atomic.Int64
 }
 
-// GroupOption configures a Group.
 type GroupOption func(*Group)
 
-// WithExpiration sets the default cache entry TTL. A zero value means no TTL.
 func WithExpiration(d time.Duration) GroupOption {
 	return func(g *Group) {
 		g.expiration = d
 	}
 }
 
-// WithPeers configures distributed peers for the group.
 func WithPeers(peers PeerPicker) GroupOption {
 	return func(g *Group) {
 		g.peers = peers
 	}
 }
 
-// WithCacheOptions replaces the default cache options.
 func WithCacheOptions(opts CacheOptions) GroupOption {
 	return func(g *Group) {
 		g.mainCache = NewCache(opts)
 	}
 }
 
-// NewGroup creates and registers a cache group.
 func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption) *Group {
 	if getter == nil {
 		panic("nil Getter")
@@ -123,14 +114,12 @@ func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption)
 	return g
 }
 
-// GetGroup returns the group registered with name, or nil when it does not exist.
 func GetGroup(name string) *Group {
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
 	return groups[name]
 }
 
-// Get returns a value from cache or loads it on miss.
 func (g *Group) Get(ctx context.Context, key string) (ByteView, error) {
 	if g.closed.Load() == 1 {
 		return ByteView{}, ErrGroupClosed
@@ -151,7 +140,6 @@ func (g *Group) Get(ctx context.Context, key string) (ByteView, error) {
 	return g.load(ctx, key)
 }
 
-// Set stores a value in the local cache and optionally syncs it to the owning peer.
 func (g *Group) Set(ctx context.Context, key string, value []byte) error {
 	if g.closed.Load() == 1 {
 		return ErrGroupClosed
@@ -179,7 +167,6 @@ func (g *Group) Set(ctx context.Context, key string, value []byte) error {
 	return nil
 }
 
-// Delete removes a value from the local cache and optionally syncs the deletion.
 func (g *Group) Delete(ctx context.Context, key string) error {
 	if g.closed.Load() == 1 {
 		return ErrGroupClosed
@@ -225,7 +212,6 @@ func (g *Group) syncToPeers(peers PeerPicker, op string, key string, value []byt
 	}
 }
 
-// Clear removes all local cached values.
 func (g *Group) Clear() {
 	if g.closed.Load() == 1 {
 		return
@@ -234,7 +220,6 @@ func (g *Group) Clear() {
 	log.Printf("[YukinoCache] cleared cache for group [%s]", g.name)
 }
 
-// Close closes the group and removes it from the global registry.
 func (g *Group) Close() error {
 	if !g.closed.CompareAndSwap(0, 1) {
 		return nil
@@ -255,8 +240,6 @@ func (g *Group) Close() error {
 func (g *Group) load(ctx context.Context, key string) (ByteView, error) {
 	startTime := time.Now()
 	viewInterface, err := g.loader.Do(key, func() (any, error) {
-		// Singleflight only dedups concurrent overlapping calls; two serial
-		// callers can both miss the cache, so check again before loading.
 		if view, ok := g.mainCache.Get(ctx, key); ok {
 			return view, nil
 		}
@@ -294,8 +277,6 @@ func (g *Group) load(ctx context.Context, key string) (ByteView, error) {
 }
 
 func (g *Group) loadData(ctx context.Context, key string) (ByteView, error) {
-	// Requests forwarded by a peer must be answered locally, otherwise
-	// transiently inconsistent hash rings can bounce a key between nodes.
 	if peers := g.getPeers(); peers != nil && !isPeerRequest(ctx) {
 		peer, ok, isSelf := peers.PickPeer(key)
 		if ok && !isSelf && peer != nil {
@@ -327,7 +308,6 @@ func (g *Group) getFromPeer(ctx context.Context, peer Peer, key string) (ByteVie
 	return ByteView{b: cloneBytes(bytes)}, nil
 }
 
-// RegisterPeers registers a PeerPicker. It may only be called once.
 func (g *Group) RegisterPeers(peers PeerPicker) {
 	g.peersMu.Lock()
 	defer g.peersMu.Unlock()
@@ -344,7 +324,6 @@ func (g *Group) getPeers() PeerPicker {
 	return g.peers
 }
 
-// Stats returns a snapshot of group and cache statistics.
 func (g *Group) Stats() map[string]any {
 	stats := map[string]any{
 		"name":            g.name,
@@ -382,12 +361,10 @@ func (g *Group) Stats() map[string]any {
 	return stats
 }
 
-// DashboardEnabled reports whether the dashboard is enabled for this group.
 func (g *Group) DashboardEnabled() bool {
 	return g.mainCache != nil && g.mainCache.DashboardEnabled()
 }
 
-// Entries returns all live entries in the group's local cache.
 func (g *Group) Entries() []Entry {
 	if g.closed.Load() == 1 || g.mainCache == nil {
 		return nil
@@ -395,7 +372,6 @@ func (g *Group) Entries() []Entry {
 	return g.mainCache.Entries()
 }
 
-// GetAllGroups returns a snapshot of all registered groups.
 func GetAllGroups() map[string]*Group {
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
@@ -405,7 +381,6 @@ func GetAllGroups() map[string]*Group {
 	return result
 }
 
-// ListGroups returns all registered group names.
 func ListGroups() []string {
 	groupsMu.RLock()
 	defer groupsMu.RUnlock()
@@ -417,7 +392,6 @@ func ListGroups() []string {
 	return names
 }
 
-// DestroyGroup closes and removes a named group.
 func DestroyGroup(name string) bool {
 	groupsMu.Lock()
 	g, exists := groups[name]
@@ -434,7 +408,6 @@ func DestroyGroup(name string) bool {
 	return true
 }
 
-// DestroyAllGroups closes and removes every registered group.
 func DestroyAllGroups() {
 	groupsMu.Lock()
 	toClose := make([]*Group, 0, len(groups))

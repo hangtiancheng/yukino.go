@@ -25,7 +25,6 @@ export class ChatContainer extends LitElement {
   @property({ attribute: false })
   onUpload?: (file: File) => void;
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }

@@ -1,4 +1,3 @@
-// Package bridge translates Codex Responses requests and upstream responses.
 package bridge
 
 import (

@@ -18,19 +18,6 @@ import (
 	"github.com/prometheus/common/expfmt"
 )
 
-// yukino-sentry → Prometheus bridge:
-// the browser SDK posts IReportData batches to POST /api/log, events are
-// converted into the metrics below, and GET /api/metrics serves the text
-// exposition for Prometheus to scrape.
-//
-// Metric names and label sets are stable so that one Prometheus instance can
-// scrape multiple producers of these metrics under a single set of alert rules
-// in prometheus.rules.yml.
-//
-// Every SDK report type is covered except ScreenRecord, which carries only an
-// opaque rrweb blob. History and "Event hashchange" never reach the reporter as
-// their own events (they become breadcrumbs plus a PV event), and
-// "Event unhandledrejection" is re-dispatched as an Error event.
 var (
 	sentryRegistry = prometheus.NewRegistry()
 
@@ -258,19 +245,10 @@ var (
 	)
 )
 
-// noLimit is the value runtime/metrics reports for /gc/gomemlimit:bytes when
-// GOMEMLIMIT is unset, i.e. math.MaxInt64.
 const noLimit = uint64(math.MaxInt64)
 
 func init() {
 	sentryRegistry.MustRegister(
-		// The default GoCollector exposes only go_memstats_*, go_goroutines,
-		// go_threads and the go_gc_duration_seconds summary. Opting into
-		// runtime/metrics adds what actually matters for tracing a Go service:
-		// /sched/latencies (the analogue of event loop lag), /sched/pauses,
-		// per-goroutine-state counts, /gc/pauses, /gc/heap/live, /memory/classes/*,
-		// /cpu/classes/* (GC CPU share) and /sync/mutex/wait (contention).
-		// /godebug/* is excluded: 50-odd always-zero series with no triage value.
 		collectors.NewGoCollector(
 			collectors.WithGoCollectorRuntimeMetrics(
 				collectors.MetricsGC,
@@ -298,9 +276,6 @@ func init() {
 			},
 		),
 
-		// The Go analogue of yukino_node_v8_heap_used_ratio. Without GOMEMLIMIT
-		// the runtime has no ceiling of its own, so the ratio is reported as 0
-		// rather than inventing one; use process_resident_memory_bytes instead.
 		prometheus.NewGaugeFunc(
 			prometheus.GaugeOpts{
 				Name: "yukino_go_heap_used_ratio",
@@ -346,9 +321,6 @@ func init() {
 	)
 }
 
-// readRuntimeUint64 reads a single uint64-valued runtime/metrics sample.
-// Unknown metric names yield KindBad and report not-ok, so a Go version that
-// drops a metric degrades to 0 instead of panicking.
 func readRuntimeUint64(name string) (uint64, bool) {
 	sample := []metrics.Sample{{Name: name}}
 	metrics.Read(sample)
@@ -358,15 +330,10 @@ func readRuntimeUint64(name string) (uint64, bool) {
 	return sample[0].Value.Uint64(), true
 }
 
-// webVitalNames are the only Performance events measured on the shared
-// yukino_sentry_web_vitals gauge. Every other Performance event carries an
-// unrelated unit (bytes, task counts) and must not land in the same series.
 var webVitalNames = map[string]struct{}{
 	"LCP": {}, "FCP": {}, "CLS": {}, "INP": {}, "TTFB": {}, "FSP": {},
 }
 
-// navigationPhases bounds the phase label to the fields the SDK actually emits
-// in a NavigationTiming payload.
 var navigationPhases = []string{
 	"paintTime",
 	"domInteractive",
@@ -384,9 +351,6 @@ var navigationPhases = []string{
 	"unloadTime",
 }
 
-// maxLabelValues caps distinct values per browser-supplied label. Error names,
-// click ids and custom event names are attacker- and refactor-controlled, so
-// collapsing the tail keeps a bad deploy from exploding Prometheus series count.
 const maxLabelValues = 50
 
 var labelValues = struct {
@@ -416,8 +380,6 @@ func boundedLabel(key, value string) string {
 	return trimmed
 }
 
-// sentryReportItem is the loose wire shape of one SDK IReportData entry.
-// Payload stays raw so each event type can decode only the variant it needs.
 type sentryReportItem struct {
 	Type      string          `json:"type"`
 	Name      string          `json:"name"`
@@ -480,9 +442,6 @@ type sentryResourceExtra struct {
 	Resource sentryResourceTiming `json:"resource"`
 }
 
-// decodePayload unmarshals a raw payload into target, reporting whether the
-// payload was present and well-formed. Report payloads are heterogeneous, so a
-// mismatch is expected rather than exceptional and is simply skipped.
 func decodePayload(raw json.RawMessage, target any) bool {
 	if len(raw) == 0 {
 		return false
@@ -490,7 +449,6 @@ func decodePayload(raw json.RawMessage, target any) bool {
 	return json.Unmarshal(raw, target) == nil
 }
 
-// readExtra pulls the raw `extra` field out of a payload.
 func readExtra(raw json.RawMessage) json.RawMessage {
 	var carrier sentryExtraCarrier
 	if !decodePayload(raw, &carrier) {
@@ -615,7 +573,6 @@ func recordSentryPerformanceEvent(item sentryReportItem, projectID string) {
 		return
 	}
 
-	// enableHttpPerformance reports successful requests as "HTTP <METHOD>".
 	if strings.HasPrefix(item.Name, "HTTP ") {
 		recordSentryHTTPPerformance(item.Name, payload, projectID)
 		return
@@ -641,8 +598,6 @@ func recordSentryWebVital(name string, payload sentryPerformancePayload, project
 }
 
 func recordSentryNavigationTiming(extra json.RawMessage, projectID string) {
-	// triggerPageUrl makes the object heterogeneous, so decode loosely and keep
-	// only the numeric phases.
 	var values map[string]any
 	if !decodePayload(extra, &values) {
 		return
@@ -739,9 +694,6 @@ func recordSentryPageViewEvent(item sentryReportItem, projectID string) {
 	}
 }
 
-// handleSentryLog receives yukino-sentry report batches (the SDK dsn).
-// sendBeacon posts text/plain and fetch posts application/json; BindJSON
-// decodes either since it never sniffs the content type.
 func (a *App) handleSentryLog(ctx *yukino_http.Context, next func()) {
 	var items []sentryReportItem
 	if err := ctx.BindJSON(&items); err != nil {
@@ -756,7 +708,6 @@ func (a *App) handleSentryLog(ctx *yukino_http.Context, next func()) {
 	})
 }
 
-// handleMetrics serves the Prometheus text exposition of the bridge registry.
 func (a *App) handleMetrics(ctx *yukino_http.Context, next func()) {
 	families, err := sentryRegistry.Gather()
 	if err != nil {

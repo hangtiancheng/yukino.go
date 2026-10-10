@@ -1,4 +1,3 @@
-// Package upstream uses the official SDKs without dropping unknown wire fields.
 package upstream
 
 import (
@@ -52,7 +51,6 @@ func New(p config.Provider) *Client {
 	return c
 }
 
-// Messages posts an Anthropic Messages request used by the Claude agent.
 func (c *Client) Messages(ctx context.Context, body map[string]any, headers http.Header) (*http.Response, error) {
 	var response *http.Response
 	if c.Provider.Protocol == config.Anthropic {
@@ -63,15 +61,12 @@ func (c *Client) Messages(ctx context.Context, body map[string]any, headers http
 	return response, err
 }
 
-// CountTokens posts a native Anthropic token-count request.
 func (c *Client) CountTokens(ctx context.Context, body map[string]any, headers http.Header) (*http.Response, error) {
 	var response *http.Response
 	err := c.anthropic.Post(ctx, c.path+"/count_tokens", body, &response, nativeHeaders(headers)...)
 	return response, err
 }
 
-// Responses posts an OpenAI Responses request used by the Codex agent. A
-// compact request targets the Responses compaction route on native OpenAI.
 func (c *Client) Responses(ctx context.Context, body map[string]any, headers http.Header, compact bool) (*http.Response, error) {
 	var response *http.Response
 	if c.Provider.Protocol == config.Anthropic {

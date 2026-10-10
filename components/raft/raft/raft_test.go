@@ -75,8 +75,6 @@ func (tn *testNode) tickLoop() {
 	}
 }
 
-// serve consumes ready states, forwards messages to peers, applies committed
-// entries and advances.
 func (tn *testNode) serve() {
 	for rd := range tn.node.Ready() {
 		tn.observe(rd)
@@ -202,7 +200,6 @@ func TestSingleNodeFlow(t *testing.T) {
 	}
 	c.waitApplied(t, []string{"a"})
 
-	// A single-member cluster confirms reads immediately.
 	if err := leader.node.ReadIndex(context.Background(), []byte("read-1")); err != nil {
 		t.Fatal(err)
 	}
@@ -230,8 +227,6 @@ func TestThreeNodeCluster(t *testing.T) {
 	}
 	c.waitApplied(t, []string{"v1", "v2", "v3"})
 
-	// Propose two conf changes back to back: the second must be demoted to an
-	// empty normal entry until the first one is applied.
 	cc1 := ConfChange{ID: 1, Type: ConfChangeAddNode, NodeID: 2}
 	cc2 := ConfChange{ID: 2, Type: ConfChangeAddNode, NodeID: 3}
 	if err := leader.node.ProposeConfChange(context.Background(), cc1); err != nil {
@@ -260,7 +255,6 @@ func TestThreeNodeCluster(t *testing.T) {
 		}
 	}
 
-	// Linearizable read confirmed by a quorum of heartbeats.
 	if err := leader.node.ReadIndex(context.Background(), []byte("read-1")); err != nil {
 		t.Fatal(err)
 	}
@@ -270,8 +264,6 @@ func TestThreeNodeCluster(t *testing.T) {
 	}, "read index not confirmed by quorum in time")
 
 	_, _, _, readStates := leader.snapshot()
-	// Log: no-op(1), v1-v3(2-4), cc1(5), demoted cc2(6). The demoted conf
-	// change still occupies an index.
 	if readStates[0].Index != 6 {
 		t.Fatalf("expected read index 6, got %d", readStates[0].Index)
 	}

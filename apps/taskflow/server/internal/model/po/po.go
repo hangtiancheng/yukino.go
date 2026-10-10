@@ -62,8 +62,6 @@ func (t *ConditionTask) BeforeCreate(tx *gorm.DB) error {
 	return databaseCreatedAt(tx, &t.CreatedAt)
 }
 
-// Subscription ordering uses the same clock and precision as SQL capture.
-// Host clock skew or millisecond rounding must not drop a newly inserted row.
 func databaseCreatedAt(tx *gorm.DB, timestamp *time.Time) error {
 	if !timestamp.IsZero() {
 		return nil
@@ -138,8 +136,6 @@ type TXRecord struct {
 
 func (TXRecord) TableName() string { return "tcc_tx_records" }
 
-// ChangeEvent is inserted by an AFTER INSERT/DELETE trigger in the same
-// transaction as the business mutation. UUID identity survives ID reuse.
 type ChangeEvent struct {
 	ID          uint64     `gorm:"primaryKey" json:"id"`
 	EventKey    string     `gorm:"size:64;uniqueIndex;not null" json:"event_key"`
@@ -152,8 +148,6 @@ type ChangeEvent struct {
 
 func (ChangeEvent) TableName() string { return "taskflow_changes" }
 
-// Outbox bridges MySQL commit and Redis publication. A crash after XADD but
-// before commit redelivers the same key, which the execution CAS suppresses.
 type Outbox struct {
 	ID          uint64     `gorm:"primaryKey" json:"id"`
 	EventKey    string     `gorm:"size:191;uniqueIndex;not null" json:"event_key"`

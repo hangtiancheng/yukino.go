@@ -56,7 +56,6 @@ func TestMapConcurrentAccess(t *testing.T) {
 	if err := m.Add("a", "b", "c"); err != nil {
 		t.Fatalf("Add returned error: %v", err)
 	}
-	// Adding an existing node must be a no-op.
 	if err := m.Add("a"); err != nil {
 		t.Fatalf("re-Add returned error: %v", err)
 	}

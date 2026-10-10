@@ -11,25 +11,18 @@ var ErrUnavailable = errors.New("request entry at index is unavailable")
 
 type Storage interface {
 	InitialState() (HardState, ConfState, error)
-	// Entries returns log entries in the range [l, r)
 	Entries(l, r uint64) ([]Entry, error)
-	// Term returns the term of the entry at the given index
 	Term(i uint64) (uint64, error)
-	// LastIndex returns the index of the last persisted entry
 	LastIndex() (uint64, error)
-	// FirstIndex returns the index of the first persisted entry
 	FirstIndex() (uint64, error)
-	// Append persists the given entries, truncating any conflicting suffix
 	Append(entries []Entry) error
-	// SetHardState persists the given hard state
 	SetHardState(hs HardState) error
 }
 
 type MemoryStorage struct {
 	sync.Mutex
 	hardState HardState
-	// Persisted log entries
-	entries []Entry
+	entries   []Entry
 }
 
 func NewMemoryStorage() *MemoryStorage {
@@ -90,7 +83,6 @@ func (m *MemoryStorage) lastIndex() uint64 {
 	return m.entries[0].Index + uint64(len(m.entries)) - 1
 }
 
-// Append persists entries to storage, truncating any conflicting suffix.
 func (m *MemoryStorage) Append(entries []Entry) error {
 	m.Lock()
 	defer m.Unlock()
@@ -102,7 +94,6 @@ func (m *MemoryStorage) Append(entries []Entry) error {
 	first := entries[0].Index
 	offset := m.entries[0].Index
 	if first < offset {
-		// The batch is older than what is already stored; ignore it.
 		return nil
 	}
 	if first > m.lastIndex()+1 {
@@ -113,7 +104,6 @@ func (m *MemoryStorage) Append(entries []Entry) error {
 	return nil
 }
 
-// SetHardState persists the given hard state.
 func (m *MemoryStorage) SetHardState(hs HardState) error {
 	m.Lock()
 	defer m.Unlock()

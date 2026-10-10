@@ -25,15 +25,14 @@ func NewGetTasksResp(tasks []*Task, total int64, codeMsg CodeMsg) *GetTasksResp 
 	}
 }
 
-// Task is an execution record for a timer run.
 type Task struct {
-	ID       uint      `json:"id"`       // Task ID
-	App      string    `json:"app"`      // App name
-	TimerID  uint      `json:"timerID"`  // Timer ID
-	Output   string    `json:"output"`   // Execution result
-	RunTimer time.Time `json:"runTimer"` // Execution time
-	CostTime int       `json:"costTime"` // Execution cost
-	Status   int       `json:"status"`   // Current status
+	ID       uint      `json:"id"`
+	App      string    `json:"app"`
+	TimerID  uint      `json:"timerID"`
+	Output   string    `json:"output"`
+	RunTimer time.Time `json:"runTimer"`
+	CostTime int       `json:"costTime"`
+	Status   int       `json:"status"`
 }
 
 func NewTask(task *po.Task) *Task {

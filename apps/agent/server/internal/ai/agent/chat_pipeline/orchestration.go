@@ -1,11 +1,3 @@
-// Package chat_pipeline implements the RAG-enhanced chat agent pipeline.
-// The pipeline combines vector retrieval, prompt templating, and a ReAct agent
-// to produce context-aware responses with tool calling capabilities.
-//
-// Pipeline flow:
-//
-//	Input -> [InputToRag, InputToChat] (parallel)
-//	        -> [MilvusRetriever] -> [ChatTemplate] -> [ReactAgent] -> Output
 package chat_pipeline
 
 import (
@@ -16,9 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// BuildChatAgent constructs and compiles the chat agent computation graph.
-// The graph retrieves relevant documents from Milvus, merges them with conversation
-// history via a chat template, and passes the result to a ReAct agent for response generation.
 func BuildChatAgent(ctx context.Context, cfg *config.Config) (compose.Runnable[*UserMessage, *schema.Message], error) {
 	const (
 		InputToRag      = "InputToRag"
@@ -48,12 +37,10 @@ func BuildChatAgent(ctx context.Context, cfg *config.Config) (compose.Runnable[*
 	if err != nil {
 		return nil, err
 	}
-	// Output key "documents" matches the {documents} placeholder in the chat template.
 	_ = g.AddRetrieverNode(MilvusRetriever, milvusRetriever, compose.WithOutputKey("documents"))
 
 	_ = g.AddLambdaNode(InputToChat, compose.InvokableLambdaWithOption(newInputToChatLambda), compose.WithNodeName("UserMessageToChat"))
 
-	// Wire the graph edges.
 	_ = g.AddEdge(compose.START, InputToRag)
 	_ = g.AddEdge(compose.START, InputToChat)
 	_ = g.AddEdge(ReactAgent, compose.END)

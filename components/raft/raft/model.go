@@ -10,9 +10,7 @@ const (
 type EntryType int32
 
 const (
-	// Normal log entry
-	EntryNormal EntryType = 0
-	// Configuration change entry
+	EntryNormal     EntryType = 0
 	EntryConfChange EntryType = 1
 )
 
@@ -26,68 +24,46 @@ type Entry struct {
 type MessageType int32
 
 const (
-	// Triggers local node election
-	MsgHup MessageType = 0
-	// Triggers leader to broadcast heartbeats
-	MsgBeat MessageType = 1
-	// Client proposal submitted to raft
-	MsgProp MessageType = 2
-	// Leader replicates entries to followers
-	MsgApp MessageType = 3
-	// Follower responds to leader's replication request
-	MsgAppResp MessageType = 4
-	// Vote request
-	MsgVote     MessageType = 5
-	MsgVoteResp MessageType = 6
-	// Heartbeat
+	MsgHup           MessageType = 0
+	MsgBeat          MessageType = 1
+	MsgProp          MessageType = 2
+	MsgApp           MessageType = 3
+	MsgAppResp       MessageType = 4
+	MsgVote          MessageType = 5
+	MsgVoteResp      MessageType = 6
 	MsgHeartbeat     MessageType = 7
 	MsgHeartbeatResp MessageType = 8
-	// Linearizable read
 	MsgReadIndex     MessageType = 9
 	MsgReadIndexResp MessageType = 10
-	// Pre-vote
-	MsgPreVote     MessageType = 11
-	MsgPreVoteResp MessageType = 12
+	MsgPreVote       MessageType = 11
+	MsgPreVoteResp   MessageType = 12
 )
 
 type Message struct {
-	Type MessageType `json:"type"`
-	To   uint64      `json:"to"`
-	From uint64      `json:"from"`
-	// Current term
-	Term uint64 `json:"term"`
-	// Term of the preceding log entry
-	LogTerm  uint64 `json:"logTerm"`
-	LogIndex uint64 `json:"logIndex"`
-	// Log entries to replicate
-	Entries []Entry `json:"entries"`
-	// Leader's commit index
-	CommitIndex uint64 `json:"commitIndex"`
-	// Whether the request is rejected
-	Reject bool `json:"reject"`
-	// Hint index for rejection (follower's last log index)
-	RejectHint uint64 `json:"rejectHint"`
-	// Arbitrary context data
-	Context []byte `json:"context"`
+	Type        MessageType `json:"type"`
+	To          uint64      `json:"to"`
+	From        uint64      `json:"from"`
+	Term        uint64      `json:"term"`
+	LogTerm     uint64      `json:"logTerm"`
+	LogIndex    uint64      `json:"logIndex"`
+	Entries     []Entry     `json:"entries"`
+	CommitIndex uint64      `json:"commitIndex"`
+	Reject      bool        `json:"reject"`
+	RejectHint  uint64      `json:"rejectHint"`
+	Context     []byte      `json:"context"`
 }
 
 type StateType int32
 
 const (
-	// Follower
-	StateFollower StateType = 0
-	// Candidate
-	StateCandidate StateType = 1
-	// Leader
-	StateLeader StateType = 2
-	// Pre-candidate
+	StateFollower     StateType = 0
+	StateCandidate    StateType = 1
+	StateLeader       StateType = 2
 	StatePreCandidate StateType = 3
 )
 
 type SoftState struct {
-	// Current cluster leader ID
-	Lead uint64
-	// Current node state
+	Lead      uint64
 	RaftState StateType
 }
 
@@ -98,11 +74,8 @@ func (s *SoftState) equal(pre *SoftState) bool {
 var emptyHardState HardState
 
 type HardState struct {
-	// Current term
-	Term uint64 `json:""`
-	// Candidate voted for in the current term
-	Vote uint64 `json:"vote"`
-	// Committed log index
+	Term        uint64 `json:""`
+	Vote        uint64 `json:"vote"`
 	CommitIndex uint64 `json:"commitIndex"`
 }
 
@@ -111,31 +84,21 @@ func isHardStateEqual(a, b HardState) bool {
 }
 
 type ConfState struct {
-	// Cluster node IDs
 	Nodes []uint64
 }
 
 type Config struct {
-	// Local node ID
-	ID uint64
-	// Peer node IDs
-	peers []uint64
-	// Persistent storage interface
-	Storage Storage
-	// Applied log index
-	Applied uint64
-	// Whether pre-vote is enabled
-	PreVote bool
-	// Election timeout tick for followers
-	ElectionTick int32
-	// Heartbeat tick for the leader
+	ID            uint64
+	peers         []uint64
+	Storage       Storage
+	Applied       uint64
+	PreVote       bool
+	ElectionTick  int32
 	HeartbeatTick int32
 }
 
 type Peer struct {
-	// Node ID
-	ID uint64
-	// Context data
+	ID      uint64
 	Context []byte
 }
 

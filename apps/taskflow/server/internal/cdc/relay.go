@@ -58,8 +58,6 @@ func (r *Relay) Stop() {
 	}
 }
 
-// Drain never advances a timestamp cursor: auto-increment IDs can commit out
-// of order. SKIP LOCKED permits many replicas to drain independent rows.
 func (r *Relay) Drain(ctx context.Context, budget int) error {
 	for i := 0; i < budget; i++ {
 		worked, err := r.fanout(ctx)

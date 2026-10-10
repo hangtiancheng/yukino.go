@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// Single read limit: 4M
 const (
 	defaultReadLimitBytes                = 4 * 1024 * 1024
 	defaultTimeoutDuration time.Duration = 5 * time.Second
@@ -86,8 +85,6 @@ func getCompleteURL(originURL string, params map[string]string) string {
 		values.Add(k, v)
 	}
 
-	// Keep the encoded form: unescaping here would break params containing
-	// reserved characters such as '&' or '='.
 	queriesStr := values.Encode()
 	if len(queriesStr) == 0 {
 		return originURL

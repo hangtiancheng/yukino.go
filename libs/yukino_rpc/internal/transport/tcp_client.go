@@ -19,8 +19,8 @@ type TCPClient struct {
 	writeMu sync.Mutex
 	seq     atomic.Uint64
 
-	pending sync.Map // map[uint64]*Future
-	streams sync.Map // map[uint64]*ClientStreamConn
+	pending sync.Map
+	streams sync.Map
 
 	closed atomic.Int32
 }
@@ -59,8 +59,6 @@ func (c *TCPClient) SendAsyncWithCodec(msg *protocol.Message, cc codec.Codec) (*
 	future := NewFutureWithCodec(cc)
 	c.pending.Store(seq, future)
 
-	// Re-check after Store: a concurrent fail() may have drained pending
-	// before our entry was visible, which would leak the future forever.
 	if c.closed.Load() == 1 {
 		if _, ok := c.pending.LoadAndDelete(seq); ok {
 			return nil, errors.New("connection closed")

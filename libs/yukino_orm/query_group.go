@@ -9,17 +9,12 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// aggSpec declares one accumulator column of a grouped aggregation.
-// An empty field means "count documents" ({$sum: 1}).
 type aggSpec struct {
 	alias string
 	op    string
 	field string
 }
 
-// GroupBy adds grouping keys for Aggregate. Each key appears in the result
-// documents under its own name; dotted paths are flattened with underscores
-// (e.g. "addr.city" becomes "addr_city").
 func (q *Query) GroupBy(fields ...string) *Query {
 	for _, f := range fields {
 		if strings.TrimSpace(f) == "" {
@@ -31,8 +26,6 @@ func (q *Query) GroupBy(fields ...string) *Query {
 	return q
 }
 
-// Having filters grouped rows. It accepts the same argument forms as Where
-// and references result column names: group keys or accumulator aliases.
 func (q *Query) Having(args ...any) *Query {
 	conditions, err := parseWhere(args...)
 	if err != nil {
@@ -43,27 +36,22 @@ func (q *Query) Having(args ...any) *Query {
 	return q
 }
 
-// CountAs adds a per-group document count under the given alias.
 func (q *Query) CountAs(alias string) *Query {
 	return q.addAggSpec(alias, "$sum", "")
 }
 
-// SumAs adds a per-group sum of field under the given alias.
 func (q *Query) SumAs(field string, alias string) *Query {
 	return q.addFieldAggSpec(alias, "$sum", field)
 }
 
-// AvgAs adds a per-group average of field under the given alias.
 func (q *Query) AvgAs(field string, alias string) *Query {
 	return q.addFieldAggSpec(alias, "$avg", field)
 }
 
-// MinAs adds a per-group minimum of field under the given alias.
 func (q *Query) MinAs(field string, alias string) *Query {
 	return q.addFieldAggSpec(alias, "$min", field)
 }
 
-// MaxAs adds a per-group maximum of field under the given alias.
 func (q *Query) MaxAs(field string, alias string) *Query {
 	return q.addFieldAggSpec(alias, "$max", field)
 }
@@ -93,11 +81,6 @@ func (q *Query) addAggSpec(alias string, op string, field string) *Query {
 	return q
 }
 
-// Aggregate executes the grouped aggregation and decodes the result rows into
-// out (a pointer to a slice). Each row contains the group keys and the
-// accumulator aliases as top-level fields. Where conditions are applied
-// before grouping, Having after; OrderBy/Offset/Limit apply to the rows and
-// must reference result column names.
 func (q *Query) Aggregate(ctx context.Context, out any) error {
 	if err := q.preflightBase(); err != nil {
 		return err

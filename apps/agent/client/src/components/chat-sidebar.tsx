@@ -21,7 +21,6 @@ export class ChatSidebar extends LitElement {
   @property({ attribute: false })
   onDelete?: (id: string) => void;
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }

@@ -8,9 +8,6 @@ import (
 	"reflect"
 )
 
-// structuredError is the error envelope ({name, message, statusCode, url,
-// responseBody}) returned to the client so it can parse upstream LLM API
-// failures uniformly.
 type structuredError struct {
 	Name         string `json:"name"`
 	Message      string `json:"message"`
@@ -19,15 +16,6 @@ type structuredError struct {
 	ResponseBody string `json:"responseBody,omitempty"`
 }
 
-// structuredErrorMessage extracts diagnostic fields from an LLM/API error and
-// returns a JSON string suitable for the {message, data} response shape used by
-// ctx.Throw.
-//
-// Extraction is reflection-based so the app package does not need to import
-// provider SDKs. It works with any error type exposing these fields/methods —
-// notably *anthropic.Error (StatusCode / Request.URL / RawJSON()) — and falls
-// back to name+message for wrapped fmt.Errorf errors from other providers
-// (e.g. the OpenAI-compatible ACL, whose errors do not expose HTTP metadata).
 func structuredErrorMessage(err error) string {
 	if err == nil {
 		return ""
@@ -37,7 +25,6 @@ func structuredErrorMessage(err error) string {
 		Message: err.Error(),
 	}
 
-	// Reflect into the concrete error type to pull HTTP diagnostics generically.
 	v := reflect.ValueOf(err)
 	for v.Kind() == reflect.Pointer && !v.IsNil() {
 		v = v.Elem()
@@ -49,7 +36,6 @@ func structuredErrorMessage(err error) string {
 		if f := v.FieldByName("Request"); f.IsValid() && f.Kind() == reflect.Pointer && !f.IsNil() {
 			se.URL = requestURL(f)
 		}
-		// *anthropic.Error exposes RawJSON() returning the cached response body.
 		if m := v.MethodByName("RawJSON"); m.IsValid() && m.Type().NumIn() == 0 && m.Type().NumOut() == 1 {
 			if outs := m.Call(nil); len(outs) == 1 && outs[0].Kind() == reflect.String {
 				se.ResponseBody = outs[0].String()
@@ -57,7 +43,6 @@ func structuredErrorMessage(err error) string {
 		}
 	}
 
-	// net/url.Error fallback for URL (covers low-level transport errors).
 	var urlErr *url.Error
 	if se.URL == "" && errors.As(err, &urlErr) {
 		se.URL = urlErr.URL
@@ -65,14 +50,11 @@ func structuredErrorMessage(err error) string {
 
 	b, mErr := json.Marshal(se)
 	if mErr != nil {
-		// Marshal failure: return the plain message so the client still gets
-		// something useful rather than an empty body.
 		return se.Message
 	}
 	return string(b)
 }
 
-// requestURL extracts the URL string from a *http.Request reflect.Value.
 func requestURL(reqVal reflect.Value) string {
 	if reqVal.Kind() != reflect.Pointer || reqVal.IsNil() {
 		return ""

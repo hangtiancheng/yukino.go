@@ -6,54 +6,44 @@ import (
 	"math"
 )
 
-// Migrator is the user-supplied closure that performs data migration.
 type Migrator func(ctx context.Context, dataKeys map[string]struct{}, from, to string) error
 
 func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, nodeID string) (from, to string, dataSet map[string]struct{}, _err error) {
-	// No migrator injected: nothing to do.
 	if c.migrator == nil {
 		return
 	}
 
-	// Look up the nodes sharing this virtualScore. Multiple nodes can share one score.
 	nodes, err := c.hashRing.Node(ctx, virtualScore)
 	if err != nil {
 		_err = err
 		return
 	}
 
-	// If more than one node is at this score, the current node is not the first, so no migration is needed.
 	if len(nodes) > 1 {
 		return
 	}
 
-	// Find the previous score on the ring.
 	lastScore, err := c.hashRing.Floor(ctx, c.decreaseScore(virtualScore))
 	if err != nil {
 		_err = err
 		return
 	}
 
-	// No other score means the ring has only this node, so no migration is needed.
 	if lastScore == -1 || lastScore == virtualScore {
 		return
 	}
 
-	// Find the next score on the ring.
 	nextScore, err := c.hashRing.Ceiling(ctx, c.incrScore(virtualScore))
 	if err != nil {
 		_err = err
 		return
 	}
 
-	// No other score means the ring has only this node, so no migration is needed.
 	if nextScore == -1 || nextScore == virtualScore {
 		return
 	}
 
-	// patternOne: last-0-cur-next (the ring wraps around between last and cur).
 	patternOne := lastScore > virtualScore
-	// patternTwo: last-cur-0-next (the ring wraps around between cur and next).
 	patternTwo := nextScore < virtualScore
 	if patternOne {
 		lastScore -= math.MaxInt32
@@ -64,14 +54,12 @@ func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, node
 		lastScore -= math.MaxInt32
 	}
 
-	// Fetch the node at nextScore and read its data keys.
 	nextNodes, err := c.hashRing.Node(ctx, nextScore)
 	if err != nil {
 		_err = err
 		return
 	}
 
-	// Take the first node at nextScore and read its data keys.
 	if len(nextNodes) == 0 {
 		return
 	}
@@ -83,7 +71,6 @@ func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, node
 	}
 
 	dataSet = make(map[string]struct{})
-	// Iterate data keys and find those that fall into the new node's range.
 	for dataKey := range dataKeys {
 		dataVirtualScore := c.encryptor.Encrypt(dataKey)
 		if patternOne && dataVirtualScore > (lastScore+math.MaxInt32) {
@@ -98,7 +85,6 @@ func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, node
 			continue
 		}
 
-		// This data key must migrate.
 		dataSet[dataKey] = struct{}{}
 	}
 
@@ -110,12 +96,10 @@ func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, node
 		return "", "", nil, err
 	}
 
-	// from, to, dataSet
 	return c.getNodeID(nextNodes[0]), nodeID, dataSet, nil
 }
 
 func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nodeID string) (from, to string, dataSet map[string]struct{}, err error) {
-	// No migrator injected: nothing to do.
 	if c.migrator == nil {
 		return
 	}
@@ -147,12 +131,10 @@ func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nod
 		return
 	}
 
-	// Not the first node at this score: no migration needed.
 	if c.getNodeID(nodes[0]) != nodeID {
 		return
 	}
 
-	// No data: nothing to migrate.
 	var allDataSet map[string]struct{}
 	if allDataSet, err = c.hashRing.DataKeys(ctx, nodeID); err != nil {
 		return
@@ -162,7 +144,6 @@ func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nod
 		return
 	}
 
-	// Iterate data keys and find those in the range (lastScore, virtualScore].
 	lastScore, _err := c.hashRing.Floor(ctx, c.decreaseScore(virtualScore))
 	if _err != nil {
 		err = _err
@@ -199,16 +180,12 @@ func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nod
 		dataSet[data] = struct{}{}
 	}
 
-	// If multiple nodes share this score, delegate to the next node.
 	if len(nodes) > 1 {
 		to = c.getNodeID(nodes[1])
 		return
 	}
 
-	// Find the successor node.
 	if to, err = c.getValidNextNode(ctx, virtualScore, nodeID, nil); err != nil {
-		// Keep the fresh error: _err is the stale (nil) Floor error, and
-		// overwriting err with it would mask the real failure below.
 		return
 	}
 
@@ -220,7 +197,6 @@ func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nod
 }
 
 func (c *ConsistentHash) getValidNextNode(ctx context.Context, score int32, nodeID string, ranged map[int32]struct{}) (string, error) {
-	// Find the successor score.
 	nextScore, err := c.hashRing.Ceiling(ctx, c.incrScore(score))
 	if err != nil {
 		return "", err
@@ -233,7 +209,6 @@ func (c *ConsistentHash) getValidNextNode(ctx context.Context, score int32, node
 		return "", nil
 	}
 
-	// The successor must not be the same node; otherwise keep searching.
 	nextNodes, err := c.hashRing.Node(ctx, nextScore)
 	if err != nil {
 		return "", err
@@ -256,7 +231,6 @@ func (c *ConsistentHash) getValidNextNode(ctx context.Context, score int32, node
 	}
 	ranged[score] = struct{}{}
 
-	// Continue searching.
 	return c.getValidNextNode(ctx, nextScore, nodeID, ranged)
 }
 

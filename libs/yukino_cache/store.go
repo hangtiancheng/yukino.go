@@ -2,12 +2,10 @@ package yukino_cache
 
 import "time"
 
-// Value is a cache value that reports its memory size.
 type Value interface {
 	Len() int
 }
 
-// Store is the interface shared by cache storage implementations.
 type Store interface {
 	Get(key string) (Value, bool)
 	Set(key string, value Value) error
@@ -19,7 +17,6 @@ type Store interface {
 	Close()
 }
 
-// Options configures store implementations.
 type StoreOptions struct {
 	MaxBytes        int64
 	BucketCount     uint16
@@ -29,7 +26,6 @@ type StoreOptions struct {
 	OnEvicted       func(key string, value Value)
 }
 
-// NewStoreOptions returns default store options.
 func NewStoreOptions() StoreOptions {
 	return StoreOptions{
 		MaxBytes:        8 * 1024 * 1024,

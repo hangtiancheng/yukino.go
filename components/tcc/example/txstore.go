@@ -31,7 +31,6 @@ func NewMockTXStore(dao TXRecordDAO, client *redis_lock.Client) *MockTXStore {
 }
 
 func (m *MockTXStore) CreateTX(ctx context.Context, components ...tcc.TCCComponent) (string, error) {
-	// Create a record keyed by the unique transaction ID
 	componentTryStatuses := make(map[string]*example_dao.ComponentTryStatus, len(components))
 	for _, component := range components {
 		componentTryStatuses[component.ID()] = &example_dao.ComponentTryStatus{
@@ -104,7 +103,6 @@ func (m *MockTXStore) Unlock(ctx context.Context) error {
 	return lock.Unlock(ctx)
 }
 
-// Submits the final transaction status
 func (m *MockTXStore) TXSubmit(ctx context.Context, txID string, success bool) error {
 	do := func(ctx context.Context, dao example_dao.TXRecordUpdater, record *example_dao.TXRecordPO) error {
 		if success {
@@ -127,7 +125,6 @@ func (m *MockTXStore) TXSubmit(ctx context.Context, txID string, success bool) e
 	return m.dao.LockAndDo(ctx, uint(parsedID), do)
 }
 
-// Retrieves a specific transaction by ID
 func (m *MockTXStore) GetTX(ctx context.Context, txID string) (*tcc.Transaction, error) {
 	parsedID, err := strconv.ParseUint(txID, 10, 64)
 	if err != nil {

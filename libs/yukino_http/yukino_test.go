@@ -191,7 +191,7 @@ func TestNextCalledTwiceBecomes500(t *testing.T) {
 	r := Default()
 	r.Use(func(ctx *Context, next func()) {
 		next()
-		next() // koa-compose forbids this
+		next()
 	})
 	r.Get("/twice", func(ctx *Context, next func()) {
 		ctx.String("ok")
@@ -208,7 +208,7 @@ func TestNextCalledTwiceBecomes500(t *testing.T) {
 func TestRouterPrefixNormalized(t *testing.T) {
 	r := New()
 	var ran bool
-	v1 := r.Router("v1") // missing leading slash
+	v1 := r.Router("v1")
 	v1.Use(func(ctx *Context, next func()) {
 		ran = true
 		next()

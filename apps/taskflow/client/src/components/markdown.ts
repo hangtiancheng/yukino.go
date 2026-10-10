@@ -1,10 +1,3 @@
-/**
- * Minimal, escape-first markdown renderer for task reports. Reports come
- * from the server (LLM output); every text node is HTML-escaped before any
- * inline markup is applied, and the produced HTML only ever contains our own
- * tags, so rendering via unsafeHTML stays XSS-safe.
- */
-
 function escapeHtml(input: string): string {
   return input
     .replace(/&/g, "&amp;")

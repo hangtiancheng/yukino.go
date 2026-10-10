@@ -15,17 +15,14 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/red_mq/redis"
 )
 
-// fakeRedis is a minimal RESP2 redis server, just good enough for the
-// stream commands red_mq issues. It lets the producer/consumer paths run
-// under go test -race without a real redis.
 type fakeRedis struct {
 	ln net.Listener
 
 	mu        sync.Mutex
 	xaddCnt   int
 	xackIDs   []string
-	newMsg    *redis.MsgEntity // reply for XREADGROUP with id ">"
-	msgOnce   bool             // hand out newMsg only on the first XREADGROUP
+	newMsg    *redis.MsgEntity
+	msgOnce   bool
 	newServed int
 }
 
@@ -49,8 +46,6 @@ func (f *fakeRedis) client() *redis.Client {
 	return redis.NewClient("tcp", f.addr(), "")
 }
 
-// setNewMsg configures the reply for XREADGROUP with id ">". When once is
-// true the message is delivered only on the first poll.
 func (f *fakeRedis) setNewMsg(msg *redis.MsgEntity, once bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -95,8 +90,6 @@ func (f *fakeRedis) handle(conn net.Conn) {
 	}
 }
 
-// dispatch replies to one command and reports whether the connection is
-// still usable.
 func (f *fakeRedis) dispatch(conn net.Conn, args []string) bool {
 	w := bufio.NewWriter(conn)
 	defer w.Flush()
@@ -104,14 +97,12 @@ func (f *fakeRedis) dispatch(conn net.Conn, args []string) bool {
 	cmd := strings.ToLower(args[0])
 	switch cmd {
 	case "hello":
-		// Refuse RESP3 so go-redis falls back to plain RESP2.
 		fmt.Fprintf(w, "-ERR unknown command 'HELLO'\r\n")
 	case "auth", "client", "select":
 		fmt.Fprintf(w, "+OK\r\n")
 	case "ping":
 		fmt.Fprintf(w, "+PONG\r\n")
 	case "xgroup":
-		// XGROUP CREATE [MKSTREAM]: acknowledge and let the consumer start.
 		fmt.Fprintf(w, "+OK\r\n")
 	case "xadd":
 		f.mu.Lock()
@@ -141,7 +132,6 @@ func (f *fakeRedis) dispatch(conn net.Conn, args []string) bool {
 				return true
 			}
 		}
-		// Null array: no messages available.
 		fmt.Fprintf(w, "*-1\r\n")
 	default:
 		fmt.Fprintf(w, "-ERR unknown command '%s'\r\n", strings.ToUpper(cmd))
@@ -153,22 +143,18 @@ func writeBulk(w *bufio.Writer, s string) {
 	fmt.Fprintf(w, "$%d\r\n%s\r\n", len(s), s)
 }
 
-// writeStreamReply answers XREADGROUP with a single stream holding one
-// message with one field, matching the RESP2 reply shape of real redis:
-// streams -> [name, messages] -> per message [id, fields].
 func writeStreamReply(w *bufio.Writer, topic string, msg *redis.MsgEntity) {
-	fmt.Fprintf(w, "*1\r\n") // streams
-	fmt.Fprintf(w, "*2\r\n") // [name, messages]
+	fmt.Fprintf(w, "*1\r\n")
+	fmt.Fprintf(w, "*2\r\n")
 	writeBulk(w, topic)
-	fmt.Fprintf(w, "*1\r\n") // 1 message
-	fmt.Fprintf(w, "*2\r\n") // [id, fields]
+	fmt.Fprintf(w, "*1\r\n")
+	fmt.Fprintf(w, "*2\r\n")
 	writeBulk(w, msg.MsgID)
-	fmt.Fprintf(w, "*2\r\n") // field/value pairs
+	fmt.Fprintf(w, "*2\r\n")
 	writeBulk(w, msg.Key)
 	writeBulk(w, msg.Val)
 }
 
-// readRespCommand parses one RESP2 array command from the wire.
 func readRespCommand(rd *bufio.Reader) ([]string, error) {
 	head, err := rd.ReadString('\n')
 	if err != nil {
@@ -209,8 +195,6 @@ func readRespCommand(rd *bufio.Reader) ([]string, error) {
 	return args, nil
 }
 
-// recordMailbox is a DeadLetterMailbox capturing every delivery, optionally
-// failing them all.
 type recordMailbox struct {
 	err   error
 	first chan struct{}
@@ -238,7 +222,6 @@ func (m *recordMailbox) delivered() []*redis.MsgEntity {
 	return append([]*redis.MsgEntity(nil), m.msgs...)
 }
 
-// waitForAck polls until the fake redis has recorded an XACK for msgID.
 func waitForAck(t *testing.T, f *fakeRedis, msgID string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

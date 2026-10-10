@@ -18,7 +18,6 @@ func Test_timeWheel(t *testing.T) {
 
 	fired := make(chan string, 4)
 	timeWheel.AddTask("test1", func() { fired <- "test1" }, time.Now().Add(300*time.Millisecond))
-	// Re-adding "test2" must replace the pending 2s task with the 500ms one.
 	timeWheel.AddTask("test2", func() { fired <- "test2" }, time.Now().Add(2*time.Second))
 	timeWheel.AddTask("test2", func() { fired <- "test2" }, time.Now().Add(500*time.Millisecond))
 
@@ -38,7 +37,6 @@ func Test_timeWheel(t *testing.T) {
 		}
 	}
 
-	// The superseded 2s "test2" task must never fire.
 	select {
 	case key := <-fired:
 		t.Fatalf("replaced task fired unexpectedly: %s", key)
@@ -53,7 +51,6 @@ func Test_TimeWheel_RemoveTask(t *testing.T) {
 	fired := make(chan string, 2)
 	timeWheel.AddTask("doomed", func() { fired <- "doomed" }, time.Now().Add(200*time.Millisecond))
 	timeWheel.RemoveTask("doomed")
-	// Removing a key that was never added must be a no-op.
 	timeWheel.RemoveTask("never-added")
 
 	select {
@@ -68,8 +65,6 @@ func Test_TimeWheel_PastExecuteAt(t *testing.T) {
 	defer timeWheel.Stop()
 
 	fired := make(chan string, 2)
-	// A past-due deadline must not panic the wheel; the task fires on the
-	// next pass over its slot.
 	timeWheel.AddTask("past", func() { fired <- "past" }, time.Now().Add(-time.Hour))
 
 	select {
@@ -81,7 +76,6 @@ func Test_TimeWheel_PastExecuteAt(t *testing.T) {
 		t.Fatal("past-due task did not fire; the wheel likely panicked")
 	}
 
-	// The wheel must still be alive and scheduling afterwards.
 	timeWheel.AddTask("after", func() { fired <- "after" }, time.Now().Add(100*time.Millisecond))
 	select {
 	case key := <-fired:
@@ -110,7 +104,6 @@ func Test_TimeWheel_ConcurrentAddRemove(t *testing.T) {
 					timeWheel.RemoveTask(key)
 					continue
 				}
-				// Some deadlines fall in the past once the send is processed.
 				timeWheel.AddTask(key, func() {}, time.Now().Add(time.Duration(i%7)*10*time.Millisecond))
 			}
 		}(w)
@@ -131,12 +124,11 @@ func Test_TimeWheel_ConcurrentAddRemove(t *testing.T) {
 func Test_TimeWheel_StopThenAddDoesNotBlock(t *testing.T) {
 	timeWheel := NewTimeWheel(10, 10*time.Millisecond)
 	timeWheel.Stop()
-	timeWheel.Stop() // double Stop must be a no-op
+	timeWheel.Stop()
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// After Stop these must drop the task instead of blocking forever.
 		timeWheel.AddTask("x", func() {}, time.Now().Add(time.Second))
 		timeWheel.RemoveTask("x")
 	}()
@@ -148,7 +140,7 @@ func Test_TimeWheel_StopThenAddDoesNotBlock(t *testing.T) {
 }
 
 func Test_TimeWheel_StopReleasesGoroutines(t *testing.T) {
-	time.Sleep(200 * time.Millisecond) // let goroutines from earlier tests settle
+	time.Sleep(200 * time.Millisecond)
 	before := runtime.NumGoroutine()
 
 	for i := 0; i < 5; i++ {
@@ -157,7 +149,6 @@ func Test_TimeWheel_StopReleasesGoroutines(t *testing.T) {
 		timeWheel.Stop()
 	}
 
-	// Every driver goroutine must exit after Stop.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if runtime.NumGoroutine() <= before {
@@ -169,14 +160,12 @@ func Test_TimeWheel_StopReleasesGoroutines(t *testing.T) {
 }
 
 const (
-	// redis server info
 	network  = "tcp"
 	address  = "please fill in redis address"
 	password = "please fill in redis password"
 )
 
 var (
-	// scheduled task callback info
 	callbackURL    = "please fill in callback url"
 	callbackMethod = "POST"
 	callbackReq    any

@@ -41,7 +41,6 @@ func (w *Worker) Start(ctx context.Context) {
 }
 
 func (w *Worker) Work(ctx context.Context, timerIDUnixKey string) error {
-	// Received a message, query the full timer definition
 	timerID, unix, err := utils.SplitTimerIDUnix(timerIDUnixKey)
 	if err != nil {
 		return err
@@ -49,10 +48,8 @@ func (w *Worker) Work(ctx context.Context, timerIDUnixKey string) error {
 
 	if exist, err := w.bloomFilter.Exist(ctx, utils.GetTaskBloomFilterKey(utils.GetDayStr(time.UnixMilli(unix))), timerIDUnixKey); err != nil || exist {
 		log.WarnContextf(ctx, "bloom filter check failed, start to check db, bloom key: %s, timerIDUnixKey: %s, err: %v, exist: %t", utils.GetTaskBloomFilterKey(utils.GetDayStr(time.UnixMilli(unix))), timerIDUnixKey, err, exist)
-		// Query the database to check the timer status
 		task, err := w.taskDAO.GetTask(ctx, task_dao.WithTimerID(timerID), task_dao.WithRunTimer(time.UnixMilli(unix)))
 		if err == nil && task.Status != consts.NotRun.ToInt() {
-			// Duplicate execution
 			log.WarnContextf(ctx, "task is already executed, timerID: %d, exec_time: %v", timerID, task.RunTimer)
 			return nil
 		}
@@ -62,13 +59,11 @@ func (w *Worker) Work(ctx context.Context, timerIDUnixKey string) error {
 }
 
 func (w *Worker) executeAndPostProcess(ctx context.Context, timerID uint, unix int64) error {
-	// If not executed, query the full timer definition and execute the callback
 	timer, err := w.timerService.GetTimer(ctx, timerID)
 	if err != nil {
 		return fmt.Errorf("get timer failed, id: %d, err: %w", timerID, err)
 	}
 
-	// If the timer is disabled, no need to process the task
 	if timer.Status != consts.Enable {
 		log.WarnContextf(ctx, "timer has already been unable, timerID: %d", timerID)
 		return nil
@@ -125,6 +120,5 @@ func (w *Worker) postProcess(ctx context.Context, resp map[string]any, execErr e
 
 func (w *Worker) reportMonitorData(app string, expectExecTimeUnix int64, actualExecTime time.Time) {
 	w.reporter.ReportExecRecord(app)
-	// Report delay in milliseconds
 	w.reporter.ReportTimerDelayRecord(app, float64(actualExecTime.UnixMilli()-expectExecTimeUnix))
 }

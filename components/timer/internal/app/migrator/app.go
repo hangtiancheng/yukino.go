@@ -8,7 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/timer/pkg/log"
 )
 
-// MigratorApp periodically loads task records from the timer table and adds them to the task table.
 type MigratorApp struct {
 	sync.Once
 	ctx    context.Context

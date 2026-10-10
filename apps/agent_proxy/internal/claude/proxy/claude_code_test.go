@@ -61,8 +61,6 @@ func TestClaudeCodeSystemMessages(t *testing.T) {
 				gateway := httptest.NewServer(proxy.New(config.Provider{Protocol: protocol, BaseURL: upstream.URL, Model: "selected-model", APIKey: "test"}))
 				defer gateway.Close()
 				client := downstream(gateway.URL)
-				// The ordering and text-block content match Claude Code 2.1.288's
-				// initial request, including a system message after the user turn.
 				messages := []any{
 					bridge.Object{"role": "user", "content": []any{bridge.Object{"type": "text", "text": "Hello"}}},
 					bridge.Object{"role": "system", "content": []any{bridge.Object{"type": "text", "text": "Current context."}}},
@@ -106,9 +104,6 @@ func TestClaudeCodeSystemMessages(t *testing.T) {
 	}
 }
 
-// This opt-in test runs the installed Claude Code against a real provider
-// through an isolated proxy and configuration directory, without changing
-// the user's Claude settings or running daemon lifecycle commands.
 func TestLiveClaudeCode(t *testing.T) {
 	if os.Getenv("YUKINO_PROXY_CLAUDE_TEST") != "1" {
 		t.Skip("set YUKINO_PROXY_CLAUDE_TEST=1 to test the installed Claude Code with a real provider")
@@ -138,8 +133,6 @@ func TestLiveClaudeCode(t *testing.T) {
 	gateway := httptest.NewServer(proxy.New(p))
 	defer gateway.Close()
 	dir := t.TempDir()
-	// The CLI connects to the test gateway even for a native upstream. Use
-	// the production settings writer to exercise context-window projection.
 	settingsProvider := config.Provider{Protocol: config.OpenAICompat, Model: p.Model, ContextWindow: p.ContextWindow}
 	if _, err := claude.Configure(dir, settingsProvider, gateway.URL); err != nil {
 		t.Fatal(err)

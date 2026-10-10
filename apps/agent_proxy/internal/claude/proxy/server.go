@@ -1,4 +1,3 @@
-// Package proxy exposes an Anthropic Messages endpoint backed by any supported provider.
 package proxy
 
 import (
@@ -112,8 +111,6 @@ func handleMessages(c *httpapp.Context, client *upstream.Client) {
 	}
 	reader := bufio.NewReader(response.Body)
 	isSSE := strings.Contains(response.Header.Get("Content-Type"), "text/event-stream")
-	// A few gateways mislabel SSE as JSON. Peek only when a nonstreaming
-	// request needs aggregation, so normal streaming starts immediately.
 	if !stream && !isSSE {
 		for {
 			b, e := reader.Peek(1)

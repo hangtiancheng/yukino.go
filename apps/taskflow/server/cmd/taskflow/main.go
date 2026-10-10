@@ -1,8 +1,3 @@
-// Command taskflow boots the monolithic conditional-task / scheduled-task
-// service: gorm+mysql persistence, redis-backed distributed components from
-// components/ (time wheel, locks, streams MQ, consistent cache/hash, TCC),
-// yukino_cache report caching, the openai-go agent, sentry-go and otel
-// telemetry, all behind a yukino_http API.
 package main
 
 import (
@@ -356,8 +351,6 @@ func openMySQL(cfg *conf.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-// seedDemoTasks inserts the two examples through their unique name indexes.
-// Existing definitions remain under operator control.
 func seedDemoTasks(d *dao.DAO) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

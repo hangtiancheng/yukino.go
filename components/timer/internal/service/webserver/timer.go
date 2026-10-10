@@ -48,7 +48,6 @@ func (t *TimerService) CreateTimer(ctx context.Context, timer *vo.Timer) (uint, 
 	if err := lock.Lock(ctx, defaultEnableGapSeconds); err != nil {
 		return 0, errors.New("create/delete operations too frequent, please try again later")
 	}
-	// Validate the cron expression
 	if !t.cronParser.IsValidCronExpr(timer.Cron) {
 		return 0, fmt.Errorf("invalid cron expression: %s", timer.Cron)
 	}
@@ -86,20 +85,16 @@ func (t *TimerService) GetTimer(ctx context.Context, id uint) (*vo.Timer, error)
 }
 
 func (t *TimerService) EnableTimer(ctx context.Context, app string, id uint) error {
-	// Rate limit enable/disable operations
 	lock := t.lockService.GetDistributionLock(utils.GetEnableLockKey(app))
 	if err := lock.Lock(ctx, defaultEnableGapSeconds); err != nil {
 		return errors.New("enable/disable operations too frequent, please try again later")
 	}
 
 	do := func(ctx context.Context, dao *timer_dao.TimerDAO, timer *po.Timer) error {
-		// Status validation
 		if timer.Status != consts.Unable.ToInt() {
 			return fmt.Errorf("not unable status, enable failed, timer id: %d", id)
 		}
 
-		// Get batch execution times
-		// end is the right boundary of the next two migration slices
 		start := time.Now()
 		end := utils.GetForwardTwoMigrateStepEnd(start, 2*time.Duration(t.migrateConfProvider.Get().MigrateStepMinutes)*time.Minute)
 		executeTimes, err := t.cronParser.NextsBefore(timer.Cron, end)
@@ -108,19 +103,15 @@ func (t *TimerService) EnableTimer(ctx context.Context, app string, id uint) err
 			return err
 		}
 
-		// Add execution times to the database
 		tasks := timer.BatchTasksFromTimer(executeTimes)
-		// Use timer_id + run_timer unique key to prevent duplicate task insertion
 		if err := dao.BatchCreateRecords(ctx, tasks); err != nil && !mysql.IsDuplicateEntryErr(err) {
 			return err
 		}
 
-		// Add execution times to the Redis sorted set
 		if err := t.taskCache.BatchCreateTasks(ctx, tasks, start, end); err != nil {
 			return err
 		}
 
-		// Update timer status to enabled
 		timer.Status = consts.Enable.ToInt()
 		return dao.UpdateTimer(ctx, timer)
 	}
@@ -129,19 +120,16 @@ func (t *TimerService) EnableTimer(ctx context.Context, app string, id uint) err
 }
 
 func (t *TimerService) UnableTimer(ctx context.Context, app string, id uint) error {
-	// Rate limit enable/disable operations
 	lock := t.lockService.GetDistributionLock(utils.GetEnableLockKey(app))
 	if err := lock.Lock(ctx, defaultEnableGapSeconds); err != nil {
 		return errors.New("enable/disable operations too frequent, please try again later")
 	}
 
 	do := func(ctx context.Context, dao *timer_dao.TimerDAO, timer *po.Timer) error {
-		// Status validation
 		if timer.Status != consts.Enable.ToInt() {
 			return fmt.Errorf("not enabled status, unable failed, timer id: %d", id)
 		}
 
-		// Update timer status to disabled
 		timer.Status = consts.Unable.ToInt()
 		return dao.UpdateTimer(ctx, timer)
 	}

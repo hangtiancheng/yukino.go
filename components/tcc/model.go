@@ -5,10 +5,8 @@ import (
 )
 
 type RequestEntity struct {
-	// Component name
-	ComponentID string `json:"componentName"`
-	// Component request parameters
-	Request map[string]any `json:"request"`
+	ComponentID string         `json:"componentName"`
+	Request     map[string]any `json:"request"`
 }
 
 type ComponentEntities []*ComponentEntity
@@ -26,16 +24,12 @@ type ComponentEntity struct {
 	Component TCCComponent
 }
 
-// Transaction status
 type TXStatus string
 
 const (
-	// Transaction in progress
-	TXHanging TXStatus = "hanging"
-	// Transaction succeeded
+	TXHanging    TXStatus = "hanging"
 	TXSuccessful TXStatus = "successful"
-	// Transaction failed
-	TXFailure TXStatus = "failure"
+	TXFailure    TXStatus = "failure"
 )
 
 func (t TXStatus) String() string {
@@ -49,11 +43,9 @@ func (c ComponentTryStatus) String() string {
 }
 
 const (
-	TryHanging ComponentTryStatus = "hanging"
-	// Try succeeded
+	TryHanging    ComponentTryStatus = "hanging"
 	TrySuccessful ComponentTryStatus = "successful"
-	// Try failed
-	TryFailure ComponentTryStatus = "failure"
+	TryFailure    ComponentTryStatus = "failure"
 )
 
 type ComponentTryEntity struct {
@@ -61,7 +53,6 @@ type ComponentTryEntity struct {
 	TryStatus   ComponentTryStatus
 }
 
-// Transaction
 type Transaction struct {
 	TXID       string `json:"txID"`
 	Components []*ComponentTryEntity
@@ -70,7 +61,6 @@ type Transaction struct {
 }
 
 func (t *Transaction) getStatus(createdBefore time.Time) TXStatus {
-	// 1. If any component failed, the transaction is failed
 	var hangingExist bool
 	for _, component := range t.Components {
 		if component.TryStatus == TryFailure {
@@ -79,16 +69,13 @@ func (t *Transaction) getStatus(createdBefore time.Time) TXStatus {
 		hangingExist = hangingExist || (component.TryStatus != TrySuccessful)
 	}
 
-	// 2. If any component is hanging and the transaction has timed out, mark as failed
 	if hangingExist && t.CreatedAt.Before(createdBefore) {
 		return TXFailure
 	}
 
-	// 3. If any component is still hanging, the transaction remains hanging
 	if hangingExist {
 		return TXHanging
 	}
 
-	// 4. All components succeeded
 	return TXSuccessful
 }

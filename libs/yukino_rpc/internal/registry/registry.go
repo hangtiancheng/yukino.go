@@ -19,7 +19,7 @@ type Registry struct {
 	prefix string
 
 	mu       sync.RWMutex
-	services map[string]map[string]Instance // service -> addr -> Instance
+	services map[string]map[string]Instance
 
 	ctx    context.Context
 	cancel context.CancelFunc

@@ -40,7 +40,6 @@ func TestServeHTTPPutProposesBody(t *testing.T) {
 	}
 }
 
-// A failing request body must yield a 5xx response, not a panic.
 func TestServeHTTPPutBodyError(t *testing.T) {
 	s, _, _ := newTestService()
 
@@ -70,8 +69,6 @@ func TestServeHTTPPostProposesConfChange(t *testing.T) {
 	}
 }
 
-// Malformed POST targets must be rejected with 400. The old code panicked on
-// "/" (out-of-range slice) and on non-numeric ids (ParseUint error).
 func TestServeHTTPPostRejectsBadNodeID(t *testing.T) {
 	s, _, _ := newTestService()
 

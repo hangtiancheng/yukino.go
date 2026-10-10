@@ -9,7 +9,6 @@ import (
 	"sync"
 )
 
-// ConsistentHash implements consistent hashing on top of a redis zset-backed hash ring.
 type ConsistentHash struct {
 	hashRing  HashRing
 	migrator  Migrator
@@ -32,9 +31,7 @@ func NewConsistentHash(hashRing HashRing, encryptor Encryptor, migrator Migrator
 	return &ch
 }
 
-// AddNode adds a node and triggers data migration.
 func (c *ConsistentHash) AddNode(ctx context.Context, nodeID string, weight int) error {
-	// 1. Acquire the global distributed lock.
 	if err := c.hashRing.Lock(ctx, c.opts.lockExpireSeconds); err != nil {
 		return err
 	}
@@ -43,7 +40,6 @@ func (c *ConsistentHash) AddNode(ctx context.Context, nodeID string, weight int)
 		_ = c.hashRing.Unlock(ctx)
 	}()
 
-	// 2. Reject duplicate nodes.
 	nodes, err := c.hashRing.Nodes(ctx)
 	if err != nil {
 		return err
@@ -55,39 +51,29 @@ func (c *ConsistentHash) AddNode(ctx context.Context, nodeID string, weight int)
 		}
 	}
 
-	// 3. Compute the virtual-node count from weight and replicas.
 	replicas := c.getValidWeight(weight) * c.opts.replicas
-	// 4. Persist the nodeID-to-replicas mapping so the node is marked as present.
 	if err = c.hashRing.AddNodeToReplica(ctx, nodeID, replicas); err != nil {
 		return err
 	}
 
 	var migrateTasks []func()
 	for i := range replicas {
-		// 5. Hash the i-th virtual node key to get its score on the ring.
 		nodeKey := c.getRawNodeKey(nodeID, i)
 		virtualScore := c.encryptor.Encrypt(nodeKey)
 
-		// 6. Add the virtual node to the hash ring.
 		if err := c.hashRing.Add(ctx, virtualScore, nodeKey); err != nil {
 			return err
 		}
 
-		// 7. Determine which data keys must migrate to the new node.
-		// from: the source node id.
-		// to: the destination node id.
-		// data: the data keys to migrate.
 		from, to, dataSet, err := c.migrateIn(ctx, virtualScore, nodeID)
 		if err != nil {
 			return err
 		}
 
-		// Skip when there is nothing to migrate.
 		if len(dataSet) == 0 {
 			continue
 		}
 
-		// Defer migration so all tasks run in batch before returning.
 		migrateTasks = append(migrateTasks, func() {
 			_ = c.migrator(ctx, dataSet, from, to)
 		})
@@ -98,10 +84,7 @@ func (c *ConsistentHash) AddNode(ctx context.Context, nodeID string, weight int)
 	return nil
 }
 
-// RemoveNode removes a node and triggers data migration.
-// The caller learns which data must migrate and from/to which nodes.
 func (c *ConsistentHash) RemoveNode(ctx context.Context, nodeID string) error {
-	// 1. Acquire the global distributed lock.
 	if err := c.hashRing.Lock(ctx, c.opts.lockExpireSeconds); err != nil {
 		return err
 	}
@@ -110,7 +93,6 @@ func (c *ConsistentHash) RemoveNode(ctx context.Context, nodeID string) error {
 		_ = c.hashRing.Unlock(ctx)
 	}()
 
-	// 2. Reject if the node does not exist.
 	nodes, err := c.hashRing.Nodes(ctx)
 	if err != nil {
 		return err
@@ -137,11 +119,8 @@ func (c *ConsistentHash) RemoveNode(ctx context.Context, nodeID string) error {
 	}
 
 	var migrateTasks []func()
-	// 3. Iterate over all virtual nodes.
 	for i := 0; i < replicas; i++ {
-		// 4. Hash the i-th virtual node key to get its score on the ring.
 		virtualScore := c.encryptor.Encrypt(fmt.Sprintf("%s_%d", nodeID, i))
-		// 5. Determine migration targets, then remove the virtual node.
 		from, to, dataSet, err := c.migrateOut(ctx, virtualScore, nodeID)
 		if err != nil {
 			return err
@@ -156,7 +135,6 @@ func (c *ConsistentHash) RemoveNode(ctx context.Context, nodeID string) error {
 			continue
 		}
 
-		// Defer migration so all tasks run in batch before returning.
 		migrateTasks = append(migrateTasks, func() {
 			_ = c.migrator(ctx, dataSet, from, to)
 		})
@@ -169,7 +147,6 @@ func (c *ConsistentHash) RemoveNode(ctx context.Context, nodeID string) error {
 }
 
 func (c *ConsistentHash) batchExecuteMigrator(migrateTasks []func()) {
-	// Execute all migration tasks concurrently.
 	var wg sync.WaitGroup
 	for _, migrateTask := range migrateTasks {
 		wg.Add(1)
@@ -187,7 +164,6 @@ func (c *ConsistentHash) batchExecuteMigrator(migrateTasks []func()) {
 }
 
 func (c *ConsistentHash) GetNode(ctx context.Context, dataKey string) (string, error) {
-	// 1. Acquire the global distributed lock.
 	if err := c.hashRing.Lock(ctx, c.opts.lockExpireSeconds); err != nil {
 		return "", err
 	}
@@ -196,7 +172,6 @@ func (c *ConsistentHash) GetNode(ctx context.Context, dataKey string) (string, e
 		_ = c.hashRing.Unlock(ctx)
 	}()
 
-	// 1. Given a data key, find the node that owns it.
 	dataScore := c.encryptor.Encrypt(dataKey)
 	ceilingScore, err := c.hashRing.Ceiling(ctx, dataScore)
 	if err != nil {
@@ -216,7 +191,6 @@ func (c *ConsistentHash) GetNode(ctx context.Context, dataKey string) (string, e
 		return "", errors.New("no node available with empty score")
 	}
 
-	// 2. Persist the data-key-to-node mapping.
 	nodeID := c.getNodeID(nodes[0])
 	if err = c.hashRing.AddNodeToDataKeys(ctx, nodeID, map[string]struct{}{
 		dataKey: {},
@@ -224,8 +198,6 @@ func (c *ConsistentHash) GetNode(ctx context.Context, dataKey string) (string, e
 		return "", err
 	}
 
-	// Return the physical node id, consistent with the ownership index above,
-	// so the result can be fed back into RemoveNode.
 	return nodeID, nil
 }
 

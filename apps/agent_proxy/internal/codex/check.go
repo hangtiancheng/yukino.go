@@ -13,8 +13,6 @@ import (
 
 const CheckTimeout = 20 * time.Second
 
-// Check makes a small inference request before changing the running service or
-// Codex files. Error messages never include request credentials or SDK dumps.
 func Check(ctx context.Context, c *upstream.Client) error {
 	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
 	defer cancel()

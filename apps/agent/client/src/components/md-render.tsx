@@ -2,9 +2,6 @@ import { LitElement, customElement, property } from "@yukino.js/lit-jsx";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { renderMarkdown } from "./markdown.js";
 
-// Markdown renderer built on markdown-it + DOMPurify, replacing the React
-// app's Streamdown. Output is sanitized before being injected with
-// unsafeHTML; styling comes from the global .md-content rules.
 @customElement("md-render")
 export class MdRender extends LitElement {
   @property()
@@ -13,7 +10,6 @@ export class MdRender extends LitElement {
   @property({ attribute: false })
   mdClass?: string;
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }

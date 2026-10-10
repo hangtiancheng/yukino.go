@@ -6,7 +6,6 @@ func normalizedModel(model string) string {
 	return strings.ReplaceAll(strings.ToLower(model), ".", "-")
 }
 
-// Model family prefixes also cover dated IDs and gateway suffixes.
 func adaptiveThinking(model string) bool {
 	model = normalizedModel(model)
 	for _, prefix := range []string{

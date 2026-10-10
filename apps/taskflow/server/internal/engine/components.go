@@ -21,9 +21,6 @@ const (
 	ComponentMQDispatch       = "mq_dispatch"
 )
 
-// ExecCommand is the payload published on the execution topic. TxID binds the
-// message to one dispatch transaction: the executor only runs a command whose
-// transaction still owns the execution row.
 type ExecCommand struct {
 	ExecutionID  uint              `json:"execution_id"`
 	TxID         string            `json:"tx_id"`
@@ -31,9 +28,6 @@ type ExecCommand struct {
 	TraceCarrier map[string]string `json:"trace_carrier,omitempty"`
 }
 
-// ExecutionReserveComponent is TCC participant 1: it flips the execution row
-// from pending to reserved (Try), to queued (Confirm), or rolls it back to
-// pending and releases the redis idempotency claim (Cancel).
 type ExecutionReserveComponent struct {
 	dao  *dao.DAO
 	idem *idem.Service
@@ -62,8 +56,6 @@ func (c *ExecutionReserveComponent) Try(ctx context.Context, req *tcc.TCCReq) (*
 		return c.ack(req), nil
 	}
 
-	// Not affected: either our own earlier Try (crash before TXUpdate) or
-	// another transaction owns the row.
 	exec, err := c.dao.GetExecution(ctx, execID)
 	if err != nil {
 		return nil, err
@@ -120,7 +112,6 @@ func (c *ExecutionReserveComponent) Cancel(ctx context.Context, txID string) (*t
 		return nil, err
 	}
 	if exec.TxID != txID {
-		// Reservation belongs to a different transaction; nothing to release.
 		return &tcc.TCCResp{ComponentID: c.ID(), TXID: txID, ACK: true}, nil
 	}
 	if exec.Status != po.StatusReserved {
@@ -135,7 +126,6 @@ func (c *ExecutionReserveComponent) Cancel(ctx context.Context, txID string) (*t
 		return nil, err
 	}
 	if affected == 1 {
-		// Release the redis fast-path claim so a recovery pass can re-dispatch.
 		if err := c.idem.ReleaseFire(ctx, exec.FireKey); err != nil {
 			slog.Warn("release fire claim on cancel failed", "fire_key", exec.FireKey, "err", err)
 		}
@@ -161,10 +151,6 @@ func (c *ExecutionReserveComponent) ack(req *tcc.TCCReq) *tcc.TCCResp {
 	return &tcc.TCCResp{ComponentID: c.ID(), TXID: req.TXID, ACK: true}
 }
 
-// MQDispatchComponent is TCC participant 2: Try publishes the execution
-// command to red_mq. Confirm is a no-op (the stream entry is durable), and
-// Cancel is a no-op because the executor validates ownership by tx id and
-// execution status before running anything.
 type MQDispatchComponent struct {
 	producer *red_mq.Producer
 	topic    string

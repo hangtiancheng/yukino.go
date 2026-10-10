@@ -6,7 +6,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/libs/yukino_rpc/internal/registry"
 )
 
-// WeightedRR implements smooth weighted round-robin selection.
 type WeightedRR struct {
 	mu            sync.Mutex
 	weights       []int

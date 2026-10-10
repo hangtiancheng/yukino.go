@@ -64,18 +64,18 @@ func NewGetTimerResp(timer *Timer, codeMsg CodeMsg) *GetTimerResp {
 
 type Timer struct {
 	ID              uint               `json:"id,omitempty"`
-	App             string             `json:"app,omitempty" binding:"required"`             // App name
-	Name            string             `json:"name,omitempty" binding:"required"`            // Timer name
-	Status          consts.TimerStatus `json:"status"`                                       // Timer status: 1=disabled, 2=enabled
-	Cron            string             `json:"cron,omitempty" binding:"required"`            // Cron expression
-	NotifyHTTPParam *NotifyHTTPParam   `json:"notifyHTTPParam,omitempty" binding:"required"` // HTTP callback parameters
+	App             string             `json:"app,omitempty" binding:"required"`
+	Name            string             `json:"name,omitempty" binding:"required"`
+	Status          consts.TimerStatus `json:"status"`
+	Cron            string             `json:"cron,omitempty" binding:"required"`
+	NotifyHTTPParam *NotifyHTTPParam   `json:"notifyHTTPParam,omitempty" binding:"required"`
 }
 
 type NotifyHTTPParam struct {
-	Method string            `json:"method,omitempty" binding:"required"` // HTTP method: POST, GET, etc.
-	URL    string            `json:"url,omitempty" binding:"required"`    // URL path
-	Header map[string]string `json:"header,omitempty"`                    // Request headers
-	Body   string            `json:"body,omitempty"`                      // Request body
+	Method string            `json:"method,omitempty" binding:"required"`
+	URL    string            `json:"url,omitempty" binding:"required"`
+	Header map[string]string `json:"header,omitempty"`
+	Body   string            `json:"body,omitempty"`
 }
 
 func NewTimer(timer *po.Timer) (*Timer, error) {

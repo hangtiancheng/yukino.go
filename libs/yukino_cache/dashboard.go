@@ -35,8 +35,6 @@ type dashboardCommand struct {
 
 var dashboardOnce sync.Once
 
-// DashboardHandler returns a handler that can be mounted on any yukino_http application
-// to serve the dashboard WebSocket endpoint.
 func DashboardHandler() func(ctx *yukino_http.Context, next func()) {
 	return func(ctx *yukino_http.Context, next func()) {
 		ws, err := ctx.Upgrade(&yukino_http.UpgradeOptions{
@@ -88,8 +86,6 @@ func serveDashboardConn(ws *yukino_http.WSConn) {
 	}()
 }
 
-// StartDashboard starts the dashboard HTTP server on addr.
-// It is safe to call multiple times; only the first call takes effect.
 func StartDashboard(addr string) {
 	dashboardOnce.Do(func() {
 		app := yukino_http.New()

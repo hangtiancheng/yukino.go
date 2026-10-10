@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-// fakeClient is an in-memory LockClient implementing the subset of redis
-// semantics the lock relies on: SET NX EX plus the token-checked DEL/EXPIRE
-// Lua scripts. The clock is injectable so lease expiry can be simulated
-// without waiting or contacting a real redis.
 type fakeClient struct {
 	mu       sync.Mutex
 	values   map[string]string
@@ -79,8 +75,6 @@ func (f *fakeClient) Eval(_ context.Context, src string, keyCount int, keysAndAr
 	}
 }
 
-// newLockInFreshGoroutine builds the lock inside a fresh goroutine so that its
-// token (process + goroutine id) differs from the caller's.
 func newLockInFreshGoroutine(key string, client LockClient, opts ...LockOption) *RedisLock {
 	var l *RedisLock
 	done := make(chan struct{})
@@ -122,15 +116,12 @@ func TestMockLockUnlockAndContention(t *testing.T) {
 		t.Fatal("contention error should be retryable")
 	}
 
-	// A non-owner can not unlock.
 	if err := other.Unlock(ctx); err == nil {
 		t.Fatal("other.Unlock should fail without ownership")
 	}
-	// The key is still locked after the failed unlock attempt.
 	if err := other.Lock(ctx); !errors.Is(err, ErrLockAcquiredByOthers) {
 		t.Fatalf("lock should still be held after failed unlock, err = %v", err)
 	}
-	// Owner releases; contender takes over.
 	if err := owner.Unlock(ctx); err != nil {
 		t.Fatalf("owner.Unlock: %v", err)
 	}
@@ -140,7 +131,6 @@ func TestMockLockUnlockAndContention(t *testing.T) {
 	if err := other.Unlock(ctx); err != nil {
 		t.Fatalf("other.Unlock: %v", err)
 	}
-	// Unlocking again without ownership fails.
 	if err := owner.Unlock(ctx); err == nil {
 		t.Fatal("owner.Unlock on a released lock should fail")
 	}
@@ -193,7 +183,7 @@ func TestMockWatchDogStartsAndStops(t *testing.T) {
 	fc := newFakeClient()
 	ctx := context.Background()
 
-	l := NewRedisLock("k", fc) // watchdog mode: no explicit TTL
+	l := NewRedisLock("k", fc)
 	if err := l.Lock(ctx); err != nil {
 		t.Fatalf("Lock: %v", err)
 	}
@@ -203,8 +193,6 @@ func TestMockWatchDogStartsAndStops(t *testing.T) {
 	if err := l.Unlock(ctx); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
-	// The watchdog must exit promptly on unlock instead of waiting for its
-	// next tick (which would take up to WatchDogWorkStepSeconds).
 	waitFor(t, 2*time.Second, func() bool { return l.runningDog.Load() == 0 })
 }
 
@@ -242,7 +230,7 @@ func TestMockExpiredLeaseIsReacquirable(t *testing.T) {
 	if err := l1.Lock(ctx); err != nil {
 		t.Fatalf("l1.Lock: %v", err)
 	}
-	fc.advance(2 * time.Second) // the lease elapses
+	fc.advance(2 * time.Second)
 	if err := l1.DelayExpire(ctx, 1); !errors.Is(err, errLockLost) {
 		t.Fatalf("DelayExpire after expiry err = %v, want errLockLost", err)
 	}
@@ -257,15 +245,12 @@ func TestMockExpiredLeaseIsReacquirable(t *testing.T) {
 	}
 }
 
-// TestMockConcurrentLockUnlock exercises Lock/Unlock/watchdog start-stop from
-// different goroutines on a single lock object. Run with -race.
 func TestMockConcurrentLockUnlock(t *testing.T) {
 	fc := newFakeClient()
 	ctx := context.Background()
 
-	l := newLockInFreshGoroutine("k", fc) // watchdog mode
+	l := newLockInFreshGoroutine("k", fc)
 
-	// Sequential handoff: Lock on the test goroutine, Unlock on another one.
 	for i := 0; i < 50; i++ {
 		if err := l.Lock(ctx); err != nil {
 			t.Fatalf("Lock: %v", err)
@@ -280,7 +265,6 @@ func TestMockConcurrentLockUnlock(t *testing.T) {
 		<-done
 	}
 
-	// Fully concurrent burst; outcomes are not asserted, only race-freedom.
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Add(2)
@@ -295,7 +279,6 @@ func TestMockConcurrentLockUnlock(t *testing.T) {
 	}
 	wg.Wait()
 
-	// The last successful Lock may have left a watchdog running; stop it.
 	_ = l.Unlock(ctx)
 
 	waitFor(t, 2*time.Second, func() bool { return l.runningDog.Load() == 0 })
@@ -317,7 +300,6 @@ func TestLockOptionDefaults(t *testing.T) {
 		t.Fatal("explicit TTL should disable the watchdog")
 	}
 
-	// A non-positive TTL falls back to the watchdog defaults.
 	l = NewRedisLock("k", nil, WithExpireSeconds(-1))
 	if l.expireSeconds != DefaultLockExpireSeconds || !l.watchDogMode {
 		t.Fatalf("negative TTL repair: expireSeconds=%d watchDogMode=%v", l.expireSeconds, l.watchDogMode)
@@ -353,7 +335,6 @@ func TestRedLockValidation(t *testing.T) {
 	if _, err := NewRedLock("k", confs[:2]); err == nil {
 		t.Fatal("NewRedLock with fewer than 3 nodes should fail")
 	}
-	// The per-node timeout budget (3 * 1s * 10 = 30s) exceeds the TTL (10s).
 	if _, err := NewRedLock("k", confs,
 		WithRedLockExpireDuration(10*time.Second),
 		WithSingleNodesTimeout(time.Second)); err == nil {
@@ -366,9 +347,6 @@ func TestRedLockValidation(t *testing.T) {
 	}
 }
 
-// TestRedLockLockFailsWithUnreachableNodes checks the failure path (including
-// the release of any partially acquired nodes). All addresses point at closed
-// loopback ports, so nothing external is contacted.
 func TestRedLockLockFailsWithUnreachableNodes(t *testing.T) {
 	confs := make([]*SingleNodeConf, 0, 3)
 	for i := 0; i < 3; i++ {

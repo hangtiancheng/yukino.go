@@ -24,11 +24,6 @@ func New(db *gorm.DB) *DAO {
 
 func (d *DAO) DB() *gorm.DB { return d.db }
 
-// ---------------------------------------------------------------- executions
-
-// InsertPending creates a pending execution. Returns (true, id) when this call
-// created the row, (false, existingID) when the fire key already exists. The
-// unique index on fire_key makes this the durable idempotency gate.
 func (d *DAO) InsertPending(ctx context.Context, exec *po.Execution) (created bool, id uint, err error) {
 	result := d.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "fire_key"}},
@@ -37,8 +32,6 @@ func (d *DAO) InsertPending(ctx context.Context, exec *po.Execution) (created bo
 	if result.Error != nil {
 		return false, 0, result.Error
 	}
-	// MySQL ON DUPLICATE KEY may return LAST_INSERT_ID even for a no-op.
-	// Always resolve by fire_key instead of trusting the driver-populated ID.
 	var existing po.Execution
 	if err := d.db.WithContext(ctx).Where("fire_key = ?", exec.FireKey).First(&existing).Error; err != nil {
 		return false, 0, err
@@ -65,8 +58,6 @@ func (d *DAO) GetExecutionByFireKey(ctx context.Context, fireKey string) (*po.Ex
 	return &exec, nil
 }
 
-// Transition atomically moves an execution across statuses; only one node can
-// win a transition. Returns the number of affected rows.
 func (d *DAO) Transition(ctx context.Context, id uint, from []string, to string, updates map[string]any) (int64, error) {
 	values := make(map[string]any, len(updates)+1)
 	for key, value := range updates {
@@ -144,8 +135,6 @@ func (d *DAO) ExecutionStats(ctx context.Context, since time.Time) (map[string]i
 	return stats, nil
 }
 
-// StuckExecutions finds executions running far beyond the executor budget,
-// used by the monitor recovery sweep.
 func (d *DAO) StuckExecutions(ctx context.Context, runningBefore time.Time) ([]*po.Execution, error) {
 	var rows []*po.Execution
 	err := d.db.WithContext(ctx).
@@ -154,9 +143,6 @@ func (d *DAO) StuckExecutions(ctx context.Context, runningBefore time.Time) ([]*
 	return rows, err
 }
 
-// QueuedStuck returns queued executions whose command message appears lost
-// (never picked up, or dead-lettered). The monitor re-publishes their
-// commands against the owning transaction.
 func (d *DAO) QueuedStuck(ctx context.Context, before time.Time) ([]*po.Execution, error) {
 	var rows []*po.Execution
 	err := d.db.WithContext(ctx).
@@ -165,9 +151,6 @@ func (d *DAO) QueuedStuck(ctx context.Context, before time.Time) ([]*po.Executio
 	return rows, err
 }
 
-// PendingOverdue returns pending executions whose fire time has long passed
-// (e.g. the cluster was down when the wheel fired). The monitor re-dispatches
-// them; the fire key is unchanged so idempotency holds.
 func (d *DAO) PendingOverdue(ctx context.Context, before time.Time) ([]*po.Execution, error) {
 	var rows []*po.Execution
 	err := d.db.WithContext(ctx).
@@ -176,8 +159,6 @@ func (d *DAO) PendingOverdue(ctx context.Context, before time.Time) ([]*po.Execu
 	return rows, err
 }
 
-// RecentlyUpdated returns executions touched since `since` (newest first),
-// used by the monitor's MySQL -> redis status-mirror sync pass.
 func (d *DAO) RecentlyUpdated(ctx context.Context, since time.Time, limit int) ([]*po.Execution, error) {
 	if limit <= 0 || limit > 2000 {
 		limit = 500
@@ -189,8 +170,6 @@ func (d *DAO) RecentlyUpdated(ctx context.Context, since time.Time, limit int) (
 		Order("updated_at DESC").Limit(limit).Find(&rows).Error
 	return rows, err
 }
-
-// ------------------------------------------------------- scheduled/condition
 
 func (d *DAO) ListScheduledTasks(ctx context.Context) ([]*po.ScheduledTask, error) {
 	var rows []*po.ScheduledTask
@@ -271,8 +250,6 @@ func (d *DAO) DeleteConditionTask(ctx context.Context, id uint) error {
 	return d.db.WithContext(ctx).Delete(&po.ConditionTask{}, id).Error
 }
 
-// ------------------------------------------------------------- risk records
-
 func (d *DAO) CreateRiskRecord(ctx context.Context, row *po.RiskRecord) error {
 	return d.db.WithContext(ctx).Create(row).Error
 }
@@ -301,8 +278,6 @@ func (d *DAO) GetRiskRecord(ctx context.Context, id uint) (*po.RiskRecord, error
 	return &row, nil
 }
 
-// -------------------------------------------------------------- dead letters
-
 func (d *DAO) CreateDeadLetter(ctx context.Context, row *po.DeadLetter) error {
 	return d.db.WithContext(ctx).Create(row).Error
 }
@@ -323,10 +298,6 @@ func (d *DAO) ListDeadLetters(ctx context.Context, page, pageSize int) ([]*po.De
 	return rows, total, err
 }
 
-// --------------------------------------------- consistent_cache Object shapes
-
-// ScheduledTaskObject adapts po.ScheduledTask to the consistent_cache.Object
-// contract so task definitions get cache-aside reads/writes keyed by id.
 type ScheduledTaskObject struct {
 	po.ScheduledTask
 }
@@ -348,7 +319,6 @@ func (o *ScheduledTaskObject) Read(body string) error {
 	return json.Unmarshal([]byte(body), &o.ScheduledTask)
 }
 
-// ConditionTaskObject mirrors ScheduledTaskObject for condition definitions.
 type ConditionTaskObject struct {
 	po.ConditionTask
 }
@@ -372,7 +342,6 @@ func (o *ConditionTaskObject) Read(body string) error {
 
 var ErrDefNotExist = consistent_cache.ErrorDataNotExist
 
-// IsNotFound reports gorm record-not-found or the cache negative sentinel.
 func IsNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, consistent_cache.ErrorDataNotExist)
 }

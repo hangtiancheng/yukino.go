@@ -129,7 +129,7 @@ func (m *Manager) Serve(ctx context.Context, lockStartup bool) error {
 		}
 		return nil
 	}
-	cancel() // Interrupt in-flight upstream streams before draining HTTP handlers.
+	cancel()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {

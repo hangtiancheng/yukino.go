@@ -23,7 +23,7 @@ func TestSafeChanPutDoesNotBlockWhenFull(t *testing.T) {
 	s.Put(1)
 	done := make(chan struct{})
 	go func() {
-		s.Put(2) // must be dropped instead of blocking
+		s.Put(2)
 		close(done)
 	}()
 
@@ -37,17 +37,14 @@ func TestSafeChanPutDoesNotBlockWhenFull(t *testing.T) {
 func TestSafeChanCloseIsIdempotent(t *testing.T) {
 	s := NewSafeChan(1)
 	s.Close()
-	s.Close() // double close must not panic
+	s.Close()
 
-	s.Put(1) // put after close must not panic
+	s.Put(1)
 	if v := s.Get(); v != nil {
 		t.Fatalf("Get() after close = %v, want nil", v)
 	}
 }
 
-// TestSafeChanConcurrentPutAndClose exercises the race where Put runs while
-// Close cancels the context and closes the channel. Before the Put/Close
-// mutual exclusion fix this could panic with "send on closed channel".
 func TestSafeChanConcurrentPutAndClose(t *testing.T) {
 	s := NewSafeChan(16)
 
@@ -79,7 +76,6 @@ func TestSafeChanConcurrentPutAndClose(t *testing.T) {
 	}
 }
 
-// TestSafeChanPutAfterCloseNoPanic hammers Put on an already closed channel.
 func TestSafeChanPutAfterCloseNoPanic(t *testing.T) {
 	s := NewSafeChan(1)
 	s.Close()

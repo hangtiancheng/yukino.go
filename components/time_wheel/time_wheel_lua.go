@@ -1,8 +1,6 @@
 package time_wheel
 
 const (
-	// LuaAddTasks: when adding a task, if a delete marker exists for the key, remove it first.
-	// The task is routed to a shard based on its minute-level timestamp.
 	LuaAddTasks = `
 	   local zsetKey = KEYS[1]
 	   local deleteSetKey = KEYS[2]
@@ -13,7 +11,6 @@ const (
 	   return redis.call('zadd',zsetKey,score,task)
 	`
 
-	// LuaDeleteTask: mark the task key as deleted.
 	LuaDeleteTask = `
 	   local deleteSetKey = KEYS[1]
 	   local taskKey = ARGV[1]
@@ -26,7 +23,6 @@ const (
 	   return scnt
 	`
 
-	// LuaZrangeTasks: fetch all tasks whose delete markers are absent via zrange.
 	LuaZrangeTasks = `
 	   local zsetKey = KEYS[1]
 	   local deleteSetKey = KEYS[2]

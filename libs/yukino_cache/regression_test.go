@@ -12,10 +12,9 @@ import (
 	pb "github.com/hangtiancheng/yukino.go/libs/yukino_cache/pb"
 )
 
-// MaxBytes must bound the total bytes per bucket (groupcache's cacheBytes contract).
 func TestLRUStoreMaxBytesEviction(t *testing.T) {
 	s := NewStore(StoreOptions{
-		MaxBytes:        64, // single bucket -> 64 bytes budget
+		MaxBytes:        64,
 		BucketCount:     1,
 		CapPerBucket:    64,
 		Level2Cap:       64,
@@ -23,7 +22,6 @@ func TestLRUStoreMaxBytesEviction(t *testing.T) {
 	})
 	defer s.Close()
 
-	// Each entry is 4 (key) + 12 (value) = 16 bytes; 5 entries exceed 64.
 	for i := range 5 {
 		key := fmt.Sprintf("k%03d", i)
 		if err := s.Set(key, testValue(strings.Repeat("v", 12))); err != nil {
@@ -43,8 +41,6 @@ func TestLRUStoreMaxBytesEviction(t *testing.T) {
 	}
 }
 
-// A Set must invalidate the stale copy previously promoted to L2, otherwise the
-// old value can resurface after the L1 slot is recycled.
 func TestLRUStoreSetInvalidatesL2Copy(t *testing.T) {
 	s := NewStore(StoreOptions{BucketCount: 1, CapPerBucket: 2, Level2Cap: 4, CleanupInterval: time.Hour})
 	defer s.Close()
@@ -52,14 +48,13 @@ func TestLRUStoreSetInvalidatesL2Copy(t *testing.T) {
 	if err := s.Set("k", testValue("v1")); err != nil {
 		t.Fatalf("Set returned error: %v", err)
 	}
-	if _, ok := s.Get("k"); !ok { // promotes v1 to L2
+	if _, ok := s.Get("k"); !ok {
 		t.Fatal("Get(k) should hit")
 	}
 	if err := s.Set("k", testValue("v2")); err != nil {
 		t.Fatalf("Set returned error: %v", err)
 	}
 
-	// Churn L1 (cap=2) until k's L1 slot is recycled.
 	if err := s.Set("x1", testValue("v")); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +70,6 @@ func TestLRUStoreSetInvalidatesL2Copy(t *testing.T) {
 	}
 }
 
-// An expired L1 entry must fire OnEvicted exactly once on read.
 func TestLRUStoreExpiredReadFiresOnEvicted(t *testing.T) {
 	var mu sync.Mutex
 	var evicted []string
@@ -113,7 +107,6 @@ func TestLRUStoreExpiredReadFiresOnEvicted(t *testing.T) {
 	}
 }
 
-// A panic inside the singleflight fn must surface as an error to all callers.
 func TestSingleFlightPanicIsRecovered(t *testing.T) {
 	var g SingleFlightGroup
 
@@ -124,14 +117,12 @@ func TestSingleFlightPanicIsRecovered(t *testing.T) {
 		t.Fatalf("expected panic error, got %v", err)
 	}
 
-	// The key must be released for subsequent calls.
 	v, err := g.Do("boom", func() (any, error) { return "ok", nil })
 	if err != nil || v != "ok" {
 		t.Fatalf("Do after panic = %v, %v", v, err)
 	}
 }
 
-// A panicking Getter must return an error from Group.Get, not crash callers.
 func TestGroupGetterPanicReturnsError(t *testing.T) {
 	DestroyAllGroups()
 	group := NewGroup("group-panic", 1024, GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
@@ -144,7 +135,6 @@ func TestGroupGetterPanicReturnsError(t *testing.T) {
 	}
 }
 
-// Duplicate group registration must panic, matching groupcache.
 func TestNewGroupPanicsOnDuplicate(t *testing.T) {
 	DestroyAllGroups()
 	getter := GetterFunc(func(ctx context.Context, key string) ([]byte, error) { return []byte("v"), nil })
@@ -159,7 +149,6 @@ func TestNewGroupPanicsOnDuplicate(t *testing.T) {
 	NewGroup("group-dup", 1024, getter)
 }
 
-// Peer-originated reads must be answered locally, never re-forwarded.
 func TestPeerOriginatedGetDoesNotForward(t *testing.T) {
 	DestroyAllGroups()
 	group := NewGroup("group-peer-get", 1024, GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
@@ -179,7 +168,6 @@ func TestPeerOriginatedGetDoesNotForward(t *testing.T) {
 	}
 }
 
-// PickPeer returning (nil, true, true) for self must load locally.
 func TestGroupSelfPickLoadsLocally(t *testing.T) {
 	DestroyAllGroups()
 	loads := 0
@@ -196,7 +184,6 @@ func TestGroupSelfPickLoadsLocally(t *testing.T) {
 	}
 }
 
-// Serial duplicate loads must hit the in-callback cache double-check.
 func TestLoadDoubleChecksCache(t *testing.T) {
 	DestroyAllGroups()
 	loads := 0
@@ -206,8 +193,6 @@ func TestLoadDoubleChecksCache(t *testing.T) {
 	}))
 	defer group.Close()
 
-	// Preload the cache, then invoke load directly: the callback must see the
-	// cached value and skip the getter.
 	if _, err := group.Get(context.Background(), "key"); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +205,6 @@ func TestLoadDoubleChecksCache(t *testing.T) {
 	}
 }
 
-// addrFromEventKey must extract addresses from etcd keys (DELETE events carry no value).
 func TestAddrFromEventKey(t *testing.T) {
 	p := &ClientPicker{svcName: "svc"}
 	if got := p.addrFromEventKey([]byte("/services/svc/10.0.0.1:9001")); got != "10.0.0.1:9001" {
@@ -228,7 +212,6 @@ func TestAddrFromEventKey(t *testing.T) {
 	}
 }
 
-// Concurrent Add/Get/Delete racing with Close must never panic on a nil store.
 func TestCacheConcurrentUseWithClose(t *testing.T) {
 	for range 20 {
 		c := NewCache(CacheOptions{MaxBytes: 1 << 20, CleanupTime: time.Hour})
@@ -250,7 +233,6 @@ func TestCacheConcurrentUseWithClose(t *testing.T) {
 	}
 }
 
-// gets / loads_deduped / server_requests / cache bytes+evictions must be reported.
 func TestStatsAlignmentCounters(t *testing.T) {
 	DestroyAllGroups()
 	ctx := context.Background()
@@ -259,10 +241,10 @@ func TestStatsAlignmentCounters(t *testing.T) {
 	}))
 	defer group.Close()
 
-	if _, err := group.Get(ctx, "key"); err != nil { // miss -> load
+	if _, err := group.Get(ctx, "key"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := group.Get(ctx, "key"); err != nil { // hit
+	if _, err := group.Get(ctx, "key"); err != nil {
 		t.Fatal(err)
 	}
 

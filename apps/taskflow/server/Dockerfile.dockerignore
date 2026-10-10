@@ -1,6 +1,3 @@
-# Docker context pruning for the server image (BuildKit per-Dockerfile ignore).
-# The build context is the repository root; keep only the Go modules the
-# server's replace directives need.
 *
 !components/consistent_cache
 !components/consistent_hash
@@ -15,7 +12,6 @@
 !libs/yukino_http
 !services/taskflow/server
 
-# Local runtime artifacts that must not leak into the image.
 **/.git
 **/node_modules
 **/*.log

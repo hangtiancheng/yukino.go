@@ -17,8 +17,6 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
-// CORSMiddleware allows the vite dev server (and any configured origin) to
-// call the API cross-origin.
 func CORSMiddleware(allowAll bool, allowedOrigins []string) yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
 		origin := ctx.Get("Origin")
@@ -87,8 +85,6 @@ func BodyLimitMiddleware() yukino.Middleware {
 	}
 }
 
-// TraceMiddleware extracts the W3C traceparent header, opens a server span
-// and stamps the trace id onto the response and request context.
 func TraceMiddleware() yukino.Middleware {
 	tracer := telemetry.Tracer("http")
 	return func(ctx *yukino.Context, next func()) {
@@ -114,8 +110,6 @@ func TraceMiddleware() yukino.Middleware {
 	}
 }
 
-// SentryRecoverMiddleware converts panics into 500 responses and reports them
-// to sentry with request context.
 func SentryRecoverMiddleware() yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
 		defer func() {
@@ -133,7 +127,6 @@ func SentryRecoverMiddleware() yukino.Middleware {
 	}
 }
 
-// AccessLogMiddleware records a structured line per request.
 func AccessLogMiddleware() yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
 		start := time.Now()

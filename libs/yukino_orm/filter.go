@@ -16,8 +16,6 @@ type condition struct {
 	value any
 }
 
-// Canonical internal ops beyond MongoDB "$" operators:
-// "=", "null", "notNull", "between", "notBetween", "like", "ilike".
 var opAliases = map[string]string{
 	"=":           "=",
 	"==":          "=",
@@ -36,12 +34,6 @@ var opAliases = map[string]string{
 	"not between": "notBetween",
 }
 
-// parseWhere translates Where/OrWhere arguments into conditions.
-// Supported forms:
-//
-//	parseWhere(map)                -> one equality condition per key
-//	parseWhere(field, value)       -> equality (nil value becomes null check)
-//	parseWhere(field, op, value)   -> operator condition
 func parseWhere(args ...any) ([]condition, error) {
 	switch len(args) {
 	case 1:
@@ -134,8 +126,6 @@ func toBetweenPair(value any) ([2]any, error) {
 	return [2]any{}, fmt.Errorf("where: between requires a 2-element slice or array, got %T", value)
 }
 
-// likeToRegex converts a SQL LIKE pattern (% and _ wildcards) into an anchored
-// regular expression, escaping all regex metacharacters in the pattern.
 func likeToRegex(pattern string) string {
 	quoted := regexp.QuoteMeta(pattern)
 	quoted = strings.ReplaceAll(quoted, "%", ".*")
@@ -167,14 +157,8 @@ func (q *Query) buildFilter() bson.M {
 	return bson.M{"$or": orClauses}
 }
 
-// buildConditionFilter merges conditions into a single filter document.
-// Conditions on the same field that cannot be merged into one operator map
-// (duplicate equalities, equality after operators, duplicate operators) are
-// preserved through a top-level $and instead of being overwritten.
 func buildConditionFilter(conditions []condition) bson.M {
 	filter := bson.M{}
-	// Tracks fields whose filter value is an operator map created here, as
-	// opposed to a user-supplied equality value that happens to be a bson.M.
 	opFields := make(map[string]bool)
 	var andClauses []bson.M
 

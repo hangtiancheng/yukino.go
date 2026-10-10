@@ -31,9 +31,6 @@ func Recovery() Middleware {
 		defer func() {
 			if err := recover(); err != nil {
 				if err == http.ErrAbortHandler {
-					// net/http uses this sentinel to abort a request without
-					// logging; converting it into a 500 would break e.g.
-					// httputil.ReverseProxy client-disconnect handling.
 					panic(err)
 				}
 				message := fmt.Sprintf("%v", err)

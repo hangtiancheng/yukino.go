@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// writeConfig writes content to a temp config.json and returns its path.
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -16,9 +15,6 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
-// TestLoadJSONC verifies that the shipped JSONC reference file (comments plus
-// trailing commas) decodes correctly, since the documented quick start is
-// `cp config.example.jsonc config.json`.
 func TestLoadJSONC(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.jsonc"))
 	if err != nil {
@@ -45,9 +41,6 @@ func TestLoadJSONC(t *testing.T) {
 	}
 }
 
-// TestLoadJSONCPreservesURLs guards the regression that matters most: a "//"
-// inside a string literal (every http(s) base_url) must survive comment
-// stripping instead of being treated as the start of a line comment.
 func TestLoadJSONCPreservesURLs(t *testing.T) {
 	path := writeConfig(t, `{
   // a line comment mentioning "quotes" and // markers
@@ -83,7 +76,6 @@ func TestLoadJSONCPreservesURLs(t *testing.T) {
 	}
 }
 
-// TestStripJSONCDirect asserts byte-level behavior of the stripper.
 func TestStripJSONCDirect(t *testing.T) {
 	tests := []struct {
 		name string
@@ -135,8 +127,6 @@ func TestStripJSONCDirect(t *testing.T) {
 	}
 }
 
-// TestApplyDefaultsDoesNotForcePrometheusURL locks in the documented contract
-// that an empty prometheus_url disables the query_prometheus_alerts tool.
 func TestApplyDefaultsDoesNotForcePrometheusURL(t *testing.T) {
 	path := writeConfig(t, `{}`)
 	cfg, err := Load(path)
@@ -148,7 +138,6 @@ func TestApplyDefaultsDoesNotForcePrometheusURL(t *testing.T) {
 	}
 }
 
-// TestApplyDefaults covers the remaining defaults.
 func TestApplyDefaults(t *testing.T) {
 	path := writeConfig(t, `{}`)
 	cfg, err := Load(path)
@@ -176,7 +165,6 @@ func TestApplyDefaults(t *testing.T) {
 	}
 }
 
-// TestLoadMissingFile ensures a missing config surfaces a clear error.
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "absent.json")); err == nil {
 		t.Fatal("Load(absent) = nil error, want error")

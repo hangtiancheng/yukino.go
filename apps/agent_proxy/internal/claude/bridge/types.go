@@ -1,4 +1,3 @@
-// Package bridge translates Anthropic Messages to OpenAI wire protocols.
 package bridge
 
 import (

@@ -1,7 +1,3 @@
-// Command ai_ops runs the plan-execute-replan agent standalone to perform
-// intelligent alert operations analysis. It executes a predefined prompt that
-// queries Prometheus alerts, retrieves internal documentation, and generates
-// a structured alert operations report.
 package main
 
 import (

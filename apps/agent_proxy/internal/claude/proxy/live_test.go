@@ -17,8 +17,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server_proxy/internal/upstream"
 )
 
-// Opt in explicitly: this test sends small, billable requests to configured
-// providers. It never changes Claude Code settings or logs request credentials.
 func TestLiveProviders(t *testing.T) {
 	if os.Getenv("YUKINO_PROXY_LIVE_TEST") != "1" {
 		t.Skip("set YUKINO_PROXY_LIVE_TEST=1 to test configured endpoints")

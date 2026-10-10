@@ -70,9 +70,7 @@ export class ExecutionDetailPage extends AtomElement {
     let pretty = this.exec.trigger_info;
     try {
       pretty = JSON.stringify(JSON.parse(this.exec.trigger_info), null, 2);
-    } catch {
-      /* keep raw */
-    }
+    } catch {}
     return (
       <div class="mt-4">
         <div class="text-base-content/50 mb-1 text-xs font-semibold tracking-wide uppercase">

@@ -1,22 +1,7 @@
-/**
- * Lit port of the React <RandomCrash /> component.
- *
- * In React, RandomCrash throws during the render phase inside a
- * <ReactErrorBoundary>, which catches the error and reports it as
- * EventType.React. Lit has no error-boundary mechanism, so this component
- * throws asynchronously (via setTimeout) instead — the SDK's global
- * `window "error"` listener captures it as EventType.Error without
- * disturbing the UI.
- *
- * Mount once anywhere in the tree (DEV only) to seed probabilistic
- * render-crash-equivalent reports.
- */
 import { LitElement, customElement } from "@yukino.js/lit-jsx";
 
-/** Interval between crash probability rolls. */
 const ROLL_INTERVAL_MS = 20_000;
 
-/** Probability that a single roll triggers a crash (4%). */
 const CRASH_PROBABILITY = 0.04;
 
 @customElement("random-crash")

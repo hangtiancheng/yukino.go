@@ -13,8 +13,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// stdioServerEnv marks the test binary to run as an MCP stdio server
-// subprocess instead of running tests (fork-and-exec trick).
 const stdioServerEnv = "YUKINO_TEST_MCP_STDIO_SERVER"
 
 func TestMain(m *testing.M) {
@@ -53,8 +51,7 @@ func newTestMCPServer() *mcp.Server {
 
 func TestGetLogMcpToolTransports(t *testing.T) {
 	cases := []struct {
-		name string
-		// startServer returns the MCP config endpoint for the transport and a cleanup func.
+		name        string
 		startServer func(t *testing.T) config.MCPConfig
 	}{
 		{
@@ -63,8 +60,6 @@ func TestGetLogMcpToolTransports(t *testing.T) {
 				server := newTestMCPServer()
 				handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 				ts := httptest.NewServer(handler)
-				// CloseClientConnections first: the cached MCP session keeps a
-				// long-lived SSE stream open, and Close blocks on outstanding requests.
 				t.Cleanup(func() {
 					ts.CloseClientConnections()
 					ts.Close()
@@ -140,7 +135,6 @@ func TestGetLogMcpToolTransports(t *testing.T) {
 				t.Errorf("fail tool error = %v, want it to contain %q", err, "boom")
 			}
 
-			// A second call with the same config is served from cache.
 			cached, err := GetLogMcpTool(ctx, cfg)
 			if err != nil {
 				t.Fatalf("second GetLogMcpTool: %v", err)
@@ -152,14 +146,11 @@ func TestGetLogMcpToolTransports(t *testing.T) {
 	}
 }
 
-// TestStdioHelper is a placeholder so -test.run=^TestStdioHelper$ matches; the
-// actual stdio server runs through TestMain via stdioServerEnv.
 func TestStdioHelper(t *testing.T) {}
 
 func TestGetLogMcpToolDegradation(t *testing.T) {
 	ctx := context.Background()
 
-	// Closed server: connection fails, GetLogMcpTool must degrade to an empty tool set.
 	server := newTestMCPServer()
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	ts := httptest.NewServer(handler)
@@ -174,7 +165,6 @@ func TestGetLogMcpToolDegradation(t *testing.T) {
 		t.Errorf("unreachable server: got %d tools, want 0", len(tools))
 	}
 
-	// Invalid transport degrades the same way.
 	tools, err = GetLogMcpTool(ctx, config.MCPConfig{Transport: "carrier-pigeon", URL: url})
 	if err != nil {
 		t.Fatalf("invalid transport: err = %v, want nil", err)

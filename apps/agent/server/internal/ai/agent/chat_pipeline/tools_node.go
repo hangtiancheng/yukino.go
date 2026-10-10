@@ -9,11 +9,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// newReactAgentLambda creates a ReAct (Reasoning + Acting) agent that can use tools
-// to answer questions. The agent iteratively reasons about the problem, selects tools,
-// observes results, and generates a final response.
 func newReactAgentLambda(ctx context.Context, cfg *config.Config) (*compose.Lambda, error) {
-	// Use agentCfg (not config) to avoid shadowing the imported config package.
 	agentCfg := &react.AgentConfig{
 		MaxStep:            25,
 		ToolReturnDirectly: map[string]struct{}{},
@@ -25,15 +21,12 @@ func newReactAgentLambda(ctx context.Context, cfg *config.Config) (*compose.Lamb
 	}
 	agentCfg.ToolCallingModel = chatModel
 
-	// Register MCP tools (log querying). GetLogMcpTool degrades to an empty set
-	// when the MCP server is unreachable, so it never blocks agent construction.
 	mcpTools, err := tools.GetLogMcpTool(ctx, cfg.MCP)
 	if err != nil {
 		return nil, err
 	}
 	agentCfg.ToolsConfig.Tools = mcpTools
 
-	// Register additional tools.
 	promTool, err := tools.NewPrometheusAlertsQueryTool(cfg.PrometheusURL)
 	if err != nil {
 		return nil, err

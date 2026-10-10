@@ -7,7 +7,6 @@ import (
 )
 
 func Test_SSTReader(t *testing.T) {
-	// Build an sst writer and write data.
 	conf, err := NewConfig("./lsm", WithSSTDataBlockSize(16))
 	if err != nil {
 		t.Error(err)
@@ -20,11 +19,6 @@ func Test_SSTReader(t *testing.T) {
 	}
 	defer sstWriter.Close()
 
-	// datablock1: record: [0 1 1 a b] [1 1 2 b c d] [0 1 1 e f]
-	// datablock2: record: [0 2 1 e f g h]
-	// filter: 0 -> bitmap1  16 -> bitmap2
-	// index: [` 0 0] [e 0 16] [ef 16 7]
-	// footer: ...
 	expectKvs := []*KV{
 		{
 			Key:   []byte("a"),
@@ -50,7 +44,6 @@ func Test_SSTReader(t *testing.T) {
 
 	_, expectBlockToFilter, expectIndex := sstWriter.Finish()
 
-	// Build an sst reader and read data.
 	sstReader, err := NewSSTReader("test_write_read.sst", conf)
 	if err != nil {
 		t.Error(err)

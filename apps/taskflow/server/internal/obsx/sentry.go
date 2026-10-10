@@ -1,6 +1,3 @@
-// Package obsx initializes sentry-go and exposes capture helpers. With an
-// empty DSN the SDK stays in noop mode, keeping local development silent while
-// the full instrumentation path remains wired.
 package obsx
 
 import (
@@ -33,8 +30,6 @@ func Flush(timeout time.Duration) {
 	sentry.Flush(timeout)
 }
 
-// CaptureError reports an error with structured context tags. Safe to call
-// with a nil error (no-op).
 func CaptureError(ctx context.Context, err error, tags map[string]string) {
 	if err == nil {
 		return

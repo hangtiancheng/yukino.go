@@ -16,7 +16,6 @@ import (
 )
 
 func TestComputeAcceptKey(t *testing.T) {
-	// RFC 6455 Section 4.2.2 example
 	key := "dGhlIHNhbXBsZSBub25jZQ=="
 	h := sha1.New()
 	h.Write([]byte(key + wsGUID))
@@ -261,8 +260,6 @@ func TestWebSocketClosedChannel(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
-// --- test helpers ---
-
 type testWSClient struct {
 	conn net.Conn
 	br   *bufio.Reader
@@ -374,7 +371,6 @@ func readServerFrame(br *bufio.Reader) (int, []byte, error) {
 	return opcode, payload, nil
 }
 
-// writeClientFrameRaw writes a single frame with explicit FIN and mask control.
 func writeClientFrameRaw(conn net.Conn, opcode int, fin bool, mask bool, payload []byte) error {
 	b0 := byte(opcode)
 	if fin {
@@ -419,7 +415,6 @@ func TestWebSocketFragmentedMessage(t *testing.T) {
 	ws := dialWS(t, server.URL, "/ws")
 	defer ws.Close()
 
-	// text frame without FIN, continuation without FIN, final continuation
 	if err := writeClientFrameRaw(ws.conn, TextMessage, false, true, []byte("hello ")); err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +447,7 @@ func TestWebSocketRejectsUnmaskedClientFrame(t *testing.T) {
 		defer ws.Close()
 		msgType, data, err := ws.ReadMessage()
 		if err != nil {
-			return // expected: unmasked frame must be rejected
+			return
 		}
 		_ = ws.WriteMessage(msgType, data)
 	})
@@ -515,5 +510,4 @@ func TestWebSocketUpgradeRequiresVersion13(t *testing.T) {
 	}
 }
 
-// ensure sha1 import is used
 var _ = sha1.New

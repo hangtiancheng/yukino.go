@@ -1,5 +1,3 @@
-# Yukino Agent Makefile
-# Unified build / run / test entry points
 
 GO ?= go
 APP := yukino-agent
@@ -9,47 +7,36 @@ PKG := ./...
 
 all: build
 
-# Compile binary to bin/
 build:
 	$(GO) build -o bin/$(APP) ./cmd/agent
 
-# Run directly
 run:
 	$(GO) run ./cmd/agent
 
-# Hot-reload development with air
 dev:
 	air
 
-# Run tests
 test:
 	$(GO) test $(PKG) -race -cover
 
-# go vet
 vet:
 	$(GO) vet $(PKG)
 
-# go mod tidy
 tidy:
 	$(GO) mod tidy
 
-# Format code
 fmt:
 	$(GO) fmt $(PKG)
 
-# Clean build artifacts
 clean:
 	rm -rf bin/ tmp/
 
-# Start infrastructure (Milvus/Prometheus/Grafana)
 docker-up:
 	docker compose up -d
 
-# Stop infrastructure
 docker-down:
 	docker compose down
 
-# Build Docker image (context is the repo root: go.mod replaces ../../../libs/*)
 docker-build:
 	docker build -f Dockerfile -t $(APP) ../../..
 

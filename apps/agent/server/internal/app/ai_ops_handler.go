@@ -7,9 +7,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/libs/yukino_http"
 )
 
-// handleAIOps processes AI operations analysis requests.
-// It runs the plan-execute-replan agent with a predefined alert analysis prompt
-// and returns the final report and detailed execution steps.
 func (a *App) handleAIOps(ctx *yukino_http.Context, next func()) {
 	appCtx := ctx.Request.Context()
 	resp, detail, err := plan_execute_replan.BuildPlanAgent(appCtx, a.cfg, plan_execute_replan.AIOpsQuery)

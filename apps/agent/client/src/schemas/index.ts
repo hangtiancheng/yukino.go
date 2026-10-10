@@ -1,10 +1,5 @@
 import { z } from "zod/v4";
 
-// Unified API response shape { message, data }, used by the chat store to
-// parse fetch responses with zod instead of type assertions. Mirrors the
-// shapes returned by the Go server route handlers. The server always
-// serializes the data key — null on error responses — so nullable, not optional.
-
 export const chatResponseSchema = z.object({
   message: z.string(),
   data: z

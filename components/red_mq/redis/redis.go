@@ -18,7 +18,6 @@ type MsgEntity struct {
 
 var ErrNoMsg = errors.New("no msg received")
 
-// Client wraps a github.com/redis/go-redis/v9 client.
 type Client struct {
 	opts   *ClientOptions
 	client go_redis.UniversalClient
@@ -51,12 +50,10 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	return &c
 }
 
-// Close releases the underlying redis connections.
 func (c *Client) Close() error {
 	return c.client.Close()
 }
 
-// XADD appends a message to the stream, capping it at maxLen entries. Returns the generated message ID.
 func (c *Client) XADD(ctx context.Context, topic string, maxLen int, key, val string) (string, error) {
 	if topic == "" {
 		return "", errors.New("redis XADD topic can't be empty")
@@ -73,7 +70,6 @@ func (c *Client) XADD(ctx context.Context, topic string, maxLen int, key, val st
 	return c.client.XAdd(ctx, args).Result()
 }
 
-// XACK acknowledges a message in the given consumer group.
 func (c *Client) XACK(ctx context.Context, topic, groupID, msgID string) error {
 	if topic == "" || groupID == "" || msgID == "" {
 		return errors.New("redis XACK topic | group_id | msg_ id can't be empty")
@@ -90,12 +86,10 @@ func (c *Client) XACK(ctx context.Context, topic, groupID, msgID string) error {
 	return nil
 }
 
-// XReadGroupPending reads messages assigned to this consumer but not yet acknowledged.
 func (c *Client) XReadGroupPending(ctx context.Context, groupID, consumerID, topic string) ([]*MsgEntity, error) {
 	return c.xReadGroup(ctx, groupID, consumerID, topic, 0, true)
 }
 
-// XReadGroup reads new messages from the stream for the given consumer group.
 func (c *Client) XReadGroup(ctx context.Context, groupID, consumerID, topic string, timeoutMilliSeconds int) ([]*MsgEntity, error) {
 	return c.xReadGroup(ctx, groupID, consumerID, topic, timeoutMilliSeconds, false)
 }
@@ -105,8 +99,6 @@ func (c *Client) xReadGroup(ctx context.Context, groupID, consumerID, topic stri
 		return nil, errors.New("redis XREADGROUP groupID/consumerID/topic can't be empty")
 	}
 
-	// pending=true: read messages already assigned to this consumer but not yet acked (id "0-0").
-	// pending=false: read never-delivered new messages (id ">"), blocking up to timeoutMilliSeconds.
 	args := &go_redis.XReadGroupArgs{
 		Group:    groupID,
 		Count:    1,
@@ -145,7 +137,6 @@ func (c *Client) xReadGroup(ctx context.Context, groupID, consumerID, topic stri
 	return msgs, nil
 }
 
-// parseStreamValues extracts the first field name/value pair from a stream message.
 func parseStreamValues(values map[string]any) (string, string) {
 	for k, v := range values {
 		return k, toString(v)
@@ -186,7 +177,6 @@ func (c *Client) Set(ctx context.Context, key, value string) (int64, error) {
 	return 0, nil
 }
 
-// SetNEX runs SET key value NX EX expireSeconds. Returns 1 on success, 0 if the key already exists.
 func (c *Client) SetNEX(ctx context.Context, key, value string, expireSeconds int64) (int64, error) {
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
@@ -231,10 +221,7 @@ func (c *Client) Incr(ctx context.Context, key string) (int64, error) {
 	return c.client.Incr(ctx, key).Result()
 }
 
-// Eval runs the given Lua script. The first keyCount entries of keysAndArgs are KEYS, the rest are ARGV.
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
-	// Clamp keyCount: out of bounds values would make the capacity of args
-	// below negative and panic.
 	if keyCount < 0 {
 		keyCount = 0
 	}
@@ -254,10 +241,6 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	return c.client.Eval(ctx, src, keys, args...).Result()
 }
 
-// XGroupCreate creates a consumer group at the given start position.
-// The stream is created when missing (MKSTREAM) and BUSYGROUP (group already
-// exists) is treated as success, so multiple consumers racing on the same
-// group all succeed.
 func (c *Client) XGroupCreate(ctx context.Context, topic, group string) error {
 	err := c.client.XGroupCreateMkStream(ctx, topic, group, "0-0").Err()
 	if err != nil && strings.Contains(err.Error(), "BUSYGROUP") {
@@ -266,8 +249,6 @@ func (c *Client) XGroupCreate(ctx context.Context, topic, group string) error {
 	return err
 }
 
-// NewUniversalClient shares the caller-owned connection pool, including Sentinel
-// and Cluster routing. The caller is responsible for closing the pool.
 func NewUniversalClient(client go_redis.UniversalClient) *Client {
 	if client == nil {
 		panic("nil redis client")

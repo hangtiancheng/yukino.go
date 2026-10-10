@@ -1,13 +1,3 @@
-# taskflow one-click deployment: MySQL + Redis + server + client.
-#
-#   cd services/taskflow
-#   cp .env.example .env        # fill in at least OPENAI_API_KEY
-#   docker compose up --build -d
-#
-#   client: http://localhost:8080   (proxies /api -> server:8090)
-#   server : http://localhost:8090/api/v1/health
-#
-# Override ports via SERVER_PORT / CLIENT_PORT if the defaults collide.
 
 name: taskflow
 
@@ -71,9 +61,6 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-taskflow_secret}
-      # LLM credentials are read by conf.docker.yml via the *_env fields.
-      # Provide them in services/taskflow/.env; OPENAI_API_KEY is needed for the LLM
-      # tasks but the service starts without it.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}

@@ -19,7 +19,6 @@ import (
 
 var live = flag.Bool("live", false, "Run inference against real providers from ~/.yukino/config.yaml")
 
-// Opt-in because these requests consume upstream inference quota.
 func TestLiveProviders(t *testing.T) {
 	if !*live {
 		t.Skip("pass -args -live to enable real endpoint tests")

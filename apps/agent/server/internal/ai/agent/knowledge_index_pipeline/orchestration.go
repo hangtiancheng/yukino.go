@@ -1,10 +1,3 @@
-// Package knowledge_index_pipeline implements the document indexing pipeline.
-// It loads documents from the filesystem, splits them into chunks using Markdown
-// header-based splitting, embeds the chunks, and stores them in Milvus.
-//
-// Pipeline flow:
-//
-//	Source -> [FileLoader] -> [MarkdownSplitter] -> [MilvusIndexer] -> IDs
 package knowledge_index_pipeline
 
 import (
@@ -15,9 +8,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// BuildKnowledgeIndexing constructs and compiles the knowledge indexing pipeline graph.
-// The pipeline loads a document, splits it by Markdown headers, and indexes the
-// resulting chunks into Milvus.
 func BuildKnowledgeIndexing(ctx context.Context, cfg *config.Config) (compose.Runnable[document.Source, []string], error) {
 	const (
 		FileLoader       = "FileLoader"

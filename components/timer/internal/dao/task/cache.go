@@ -35,54 +35,16 @@ func (t *TaskCache) BatchCreateBucket(ctx context.Context, cntByMins []*po.Minut
 	return err
 }
 
-// func (t *TaskCache) batchGetBucket(ctx context.Context, start, end time.Time) ([]*vo.MinuteBucket, error) {
-// 	var keys []string
-// 	for move := start; move.Before(end); move = move.Add(time.Minute) {
-// 		keys = append(keys, utils.GetBucketCntKey(move.Format(consts.MinuteFormat)))
-// 	}
-
-// 	buckets, err := t.client.MGet(ctx, keys...)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	if len(buckets) != len(keys) {
-// 		return nil, fmt.Errorf("not equal len, len of buckets: %d, len of keys: %d", len(buckets), len(keys))
-// 	}
-
-// 	cnts := make([]*vo.MinuteBucket, 0, len(keys))
-// 	for i := 0; i < len(keys); i++ {
-// 		bucket, err := strconv.Atoi(buckets[i])
-// 		if err != nil {
-// 			return nil, err
-// 		}
-
-// 		cnts = append(cnts, &vo.MinuteBucket{
-// 			Bucket: bucket,
-// 			Minute: keys[i],
-// 		})
-// 	}
-
-// 	return cnts, nil
-// }
-
 func (t *TaskCache) BatchCreateTasks(ctx context.Context, tasks []*po.Task, start, end time.Time) error {
 	if len(tasks) == 0 {
 		return nil
 	}
 
-	// minBuckets, err := t.batchGetBucket(ctx, start, end)
-	// if err != nil {
-	// 	log.WarnContextf(ctx, "get buckets between %v and %v failed, err: %v", start, end, err)
-	// }
-
 	commands := make([]*redis.Command, 0, 2*len(tasks))
 	for _, task := range tasks {
 		unix := task.RunTimer.UnixMilli()
 		tableName := t.GetTableName(task)
-		// tableName := t.GetTableName(task, minBuckets)
 		commands = append(commands, redis.NewZAddCommand(tableName, unix, utils.UnionTimerIDUnix(task.TimerID, unix)))
-		// Expire the zset after one day
 		aliveSeconds := int64(time.Until(task.RunTimer.Add(24*time.Hour)) / time.Second)
 		commands = append(commands, redis.NewExpireCommand(tableName, aliveSeconds))
 	}
@@ -110,30 +72,10 @@ func (t *TaskCache) GetTasksByTime(ctx context.Context, table string, start, end
 }
 
 func (t *TaskCache) GetTableName(task *po.Task) string {
-	// Fallback value
 	maxBucket := t.confProvider.Get().BucketsNum
-	// for _, minBucket := range minuteBuckets {
-	// 	if minBucket.Minute == task.RunTimer.Format(consts.MinuteFormat) {
-	// 		bucket = minBucket.Bucket
-	// 		break
-	// 	}
-	// }
 
 	return fmt.Sprintf("%s_%d", task.RunTimer.Format(consts.MinuteFormat), int64(task.TimerID)%int64(maxBucket))
 }
-
-// func (t *TaskCache) GetTableName(task *po.Task, minuteBuckets []*vo.MinuteBucket) string {
-// 	// Fallback value
-// 	bucket := t.confProvider.Get().BucketsNum
-// 	for _, minBucket := range minuteBuckets {
-// 		if minBucket.Minute == task.RunTimer.Format(consts.MinuteFormat) {
-// 			bucket = minBucket.Bucket
-// 			break
-// 		}
-// 	}
-
-// 	return fmt.Sprintf("%s_%d", task.RunTimer.Format(consts.MinuteFormat), int64(task.TimerID)%int64(bucket))
-// }
 
 type cacheClient interface {
 	Transaction(ctx context.Context, commands ...*redis.Command) ([]any, error)

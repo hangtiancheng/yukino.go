@@ -9,10 +9,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/consistent_cache"
 )
 
-// DefinitionCache serves task definitions through consistent_cache services.
-// The library keys cache entries by Object.Key(), which is the numeric row id
-// for both tables, so each service is wrapped in a prefixedCache to keep the
-// two key spaces apart.
 type DefinitionCache struct {
 	dao       *dao.DAO
 	schedSvc  *consistent_cache.Service
@@ -58,7 +54,6 @@ func NewDefinitionCache(d *dao.DAO, schedCache, condCache consistent_cache.Cache
 	}
 }
 
-// Definition is the subset of a task definition the executor needs.
 type Definition struct {
 	Name   string
 	Prompt string
@@ -87,13 +82,10 @@ func (c *DefinitionCache) LoadDefinition(ctx context.Context, exec *po.Execution
 	}
 }
 
-// PutScheduledTask persists a definition through the cache-consistency flow
-// (disable marker -> cache delete -> DB write -> delayed re-enable).
 func (c *DefinitionCache) PutScheduledTask(ctx context.Context, task *po.ScheduledTask) error {
 	return c.schedSvc.Put(ctx, &dao.ScheduledTaskObject{ScheduledTask: *task})
 }
 
-// GetScheduledTaskCached reads one definition through the cache-aside flow.
 func (c *DefinitionCache) GetScheduledTaskCached(ctx context.Context, id uint) (*po.ScheduledTask, bool, error) {
 	obj := dao.NewScheduledTaskObject(id)
 	useCache, err := c.schedSvc.Get(ctx, obj)
@@ -104,9 +96,6 @@ func (c *DefinitionCache) GetScheduledTaskCached(ctx context.Context, id uint) (
 	return &task, useCache, nil
 }
 
-// UpdateScheduledTask mirrors the library write path for updates that must
-// persist zero values (enabled=false): it drops the cache under a short
-// disable marker, then writes through an explicit column map.
 func (c *DefinitionCache) UpdateScheduledTask(ctx context.Context, task *po.ScheduledTask) error {
 	key := fmt.Sprintf("%d", task.ID)
 	_ = c.schedKeys.Disable(ctx, key, 1)
@@ -114,7 +103,6 @@ func (c *DefinitionCache) UpdateScheduledTask(ctx context.Context, task *po.Sche
 	return c.dao.UpdateScheduledTask(ctx, task)
 }
 
-// GetConditionTaskCached reads one condition definition through the cache.
 func (c *DefinitionCache) GetConditionTaskCached(ctx context.Context, id uint) (*po.ConditionTask, bool, error) {
 	obj := dao.NewConditionTaskObject(id)
 	useCache, err := c.condSvc.Get(ctx, obj)
@@ -125,7 +113,6 @@ func (c *DefinitionCache) GetConditionTaskCached(ctx context.Context, id uint) (
 	return &task, useCache, nil
 }
 
-// UpdateConditionTask is the zero-value-safe update path for conditions.
 func (c *DefinitionCache) UpdateConditionTask(ctx context.Context, task *po.ConditionTask) error {
 	key := fmt.Sprintf("%d", task.ID)
 	_ = c.condKeys.Disable(ctx, key, 1)
@@ -133,27 +120,18 @@ func (c *DefinitionCache) UpdateConditionTask(ctx context.Context, task *po.Cond
 	return c.dao.UpdateConditionTask(ctx, task)
 }
 
-// PutConditionTask does the same for condition definitions.
 func (c *DefinitionCache) PutConditionTask(ctx context.Context, task *po.ConditionTask) error {
 	return c.condSvc.Put(ctx, &dao.ConditionTaskObject{ConditionTask: *task})
 }
 
-// InvalidateScheduledTask drops the cached entry after a definition delete.
 func (c *DefinitionCache) InvalidateScheduledTask(ctx context.Context, id uint) {
 	_ = c.schedKeys.Del(ctx, fmt.Sprintf("%d", id))
 }
 
-// InvalidateConditionTask drops the cached entry after a definition delete.
 func (c *DefinitionCache) InvalidateConditionTask(ctx context.Context, id uint) {
 	_ = c.condKeys.Del(ctx, fmt.Sprintf("%d", id))
 }
 
-// SyncDrift reconciles the redis definition cache against MySQL: any cached
-// entry whose payload diverges from the DB row is dropped under a short
-// disable marker so the next read re-hydrates from the source of truth.
-// Writes that bypass the cache-aware path (migrator bookkeeping, direct SQL)
-// are the main drift source; the monitor sweep calls this periodically.
-// Returns the number of repaired (dropped) entries.
 func (c *DefinitionCache) SyncDrift(ctx context.Context) (int, error) {
 	repaired := 0
 
@@ -181,14 +159,12 @@ func (c *DefinitionCache) SyncDrift(ctx context.Context) (int, error) {
 	return repaired, nil
 }
 
-// repair compares one cached definition with its DB shape and drops the entry
-// on divergence. Returns true when an entry was repaired.
 func (c *DefinitionCache) repair(ctx context.Context, keys prefixedCache, key string, obj interface {
 	Write() (string, error)
 }) bool {
 	cached, err := keys.Get(ctx, key)
 	if err != nil || cached == "" {
-		return false // not cached (or cache error): nothing to repair
+		return false
 	}
 	fresh, err := obj.Write()
 	if err != nil {

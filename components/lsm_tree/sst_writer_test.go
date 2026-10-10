@@ -22,11 +22,6 @@ func Test_SSTWriter(t *testing.T) {
 	sstWriter.Append([]byte("e"), []byte("f"))
 	sstWriter.Append([]byte("ef"), []byte("gh"))
 
-	// datablock1: record: [0 1 1 a b] [1 1 2 b c d] trailer: [0000]  [0001]
-	// datablock2: record: [0 1 1 e f] [1 1 2 f g h] trailer: [0000]  [0001]
-	// filter: 0 -> bitmap1  19 -> bitmap2
-	// index: [` 0 19] [d 19 19]
-	// footer: ...
 	_, blockToFilter, index := sstWriter.Finish()
 	if len(blockToFilter) != 2 {
 		t.Errorf("unexpect filter len: %d", len(blockToFilter))

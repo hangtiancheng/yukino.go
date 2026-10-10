@@ -1,6 +1,3 @@
-// Package milvus provides a client factory for connecting to Milvus standalone.
-// It bootstraps the vector knowledge base — database "agent", collection "biz" —
-// storing embeddings as native FloatVector with COSINE similarity.
 package milvus
 
 import (
@@ -19,10 +16,6 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
-// Client cache. Bootstrapping (two gRPC connections, an embedding dimension
-// probe, collection provisioning and load) is expensive, so the connected
-// client is cached per Milvus config — the chat handler rebuilds pipelines per
-// request and must not pay the bootstrap cost each time.
 var (
 	mu     sync.Mutex
 	cached cachedClient
@@ -34,10 +27,6 @@ type cachedClient struct {
 	dim int
 }
 
-// NewClient returns a Milvus client connected to the configured database with
-// the knowledge collection provisioned (created if missing, recreated when the
-// stored vector dimension no longer matches the live embedding provider).
-// The second return value is the vector dimension of the collection.
 func NewClient(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, error) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -61,7 +50,6 @@ func NewClient(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, 
 	return cli, dim, nil
 }
 
-// cacheKey derives a deterministic cache key from the Milvus config.
 func cacheKey(mc config.MilvusConfig) (string, error) {
 	raw, err := json.Marshal(mc)
 	if err != nil {
@@ -70,11 +58,7 @@ func cacheKey(mc config.MilvusConfig) (string, error) {
 	return string(raw), nil
 }
 
-// bootstrap connects to the default database, ensures the target database
-// exists, reconnects to it, and ensures the collection is ready and loaded.
 func bootstrap(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, error) {
-	// 1. Connect to the default database first: the target database may not
-	//    exist yet, and Milvus refuses connections to a missing database.
 	defaultCli, err := milvuscli.NewClient(ctx, milvuscli.Config{
 		Address:  cfg.Milvus.Addr,
 		Username: cfg.Milvus.Username,
@@ -85,7 +69,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, 
 		return nil, 0, fmt.Errorf("connect to Milvus at %s: %w", cfg.Milvus.Addr, err)
 	}
 
-	// 2. Ensure the target database exists.
 	if cfg.Milvus.DBName != "default" {
 		databases, err := defaultCli.ListDatabases(ctx)
 		if err != nil {
@@ -109,7 +92,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, 
 	}
 	defaultCli.Close()
 
-	// 3. Connect to the target database.
 	cli, err := milvuscli.NewClient(ctx, milvuscli.Config{
 		Address:  cfg.Milvus.Addr,
 		Username: cfg.Milvus.Username,
@@ -120,7 +102,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, 
 		return nil, 0, fmt.Errorf("connect to Milvus database %q: %w", cfg.Milvus.DBName, err)
 	}
 
-	// 4. Ensure the collection exists, is indexed, and is loaded.
 	dim, err := ensureCollection(ctx, cli, cfg)
 	if err != nil {
 		cli.Close()
@@ -129,11 +110,6 @@ func bootstrap(ctx context.Context, cfg *config.Config) (milvuscli.Client, int, 
 	return cli, dim, nil
 }
 
-// ensureCollection provisions the knowledge collection. The vector dimension is
-// probed from the live embedding provider (authoritative over any static
-// config); if an existing collection carries a different dimension it is
-// dropped and recreated so stale vectors can never be matched against the new
-// embedding model. Returns the collection's vector dimension.
 func ensureCollection(ctx context.Context, cli milvuscli.Client, cfg *config.Config) (int, error) {
 	dim, err := embedder.ProbeDimension(ctx, cfg)
 	if err != nil {
@@ -184,8 +160,6 @@ func ensureCollection(ctx context.Context, cli milvuscli.Client, cfg *config.Con
 		logger.L().Info("created milvus collection", "collection", coll, "dim", dim)
 	}
 
-	// A collection must be loaded before search; LoadCollection is a no-op
-	// error-wise when already loaded, so check the load state first.
 	state, err := cli.GetLoadState(ctx, coll, nil)
 	if err != nil {
 		return 0, fmt.Errorf("get load state of %q: %w", coll, err)
@@ -198,10 +172,6 @@ func ensureCollection(ctx context.Context, cli milvuscli.Client, cfg *config.Con
 	return dim, nil
 }
 
-// Fields builds the collection schema fields for the given vector dimension.
-// Shared by the bootstrap and the Eino indexer config so the schema check in
-// milvus.NewIndexer always sees exactly the fields the collection was created
-// with.
 func Fields(dim int) []*entity.Field {
 	return []*entity.Field{
 		entity.NewField().
@@ -227,8 +197,6 @@ func Fields(dim int) []*entity.Field {
 	}
 }
 
-// vectorDim extracts the dim type-param of the vector field from a collection
-// schema. Returns ok=false when the field is missing or unparsable.
 func vectorDim(s *entity.Schema) (int, bool) {
 	if s == nil {
 		return 0, false
@@ -246,9 +214,6 @@ func vectorDim(s *entity.Schema) (int, bool) {
 	return 0, false
 }
 
-// DeleteBySource removes all rows whose metadata["_source"] equals source, so
-// re-indexing a file replaces its previous chunks instead of duplicating them.
-// Ids are queried first and then deleted in batches to keep expressions small.
 func DeleteBySource(ctx context.Context, cli milvuscli.Client, collection, source string) error {
 	if source == "" {
 		return nil
@@ -291,8 +256,6 @@ func DeleteBySource(ctx context.Context, cli milvuscli.Client, collection, sourc
 	return nil
 }
 
-// escapeMilvusString escapes a string for use inside a Milvus boolean
-// expression double-quoted literal.
 func escapeMilvusString(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)

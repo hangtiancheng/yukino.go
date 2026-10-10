@@ -105,9 +105,6 @@ func (e *Engine) NextSequence(ctx context.Context, name string) (int64, error) {
 	return result.Value, nil
 }
 
-// sessionContext binds the engine's transaction session to ctx so that
-// operations join the transaction even when a plain context is passed. A
-// context that already carries a session is returned unchanged.
 func (e *Engine) sessionContext(ctx context.Context) context.Context {
 	if e == nil || e.session == nil {
 		return ctx

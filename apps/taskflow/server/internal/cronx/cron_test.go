@@ -58,10 +58,9 @@ func TestDayOfWeekSunday(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2026-10-05 is a Monday.
 	base := time.Date(2026, 10, 5, 0, 0, 0, 0, loc)
 	next := sched.Next(base)
-	want := time.Date(2026, 10, 11, 8, 30, 0, 0, loc) // Sunday
+	want := time.Date(2026, 10, 11, 8, 30, 0, 0, loc)
 	if !next.Equal(want) {
 		t.Fatalf("next = %v, want %v", next, want)
 	}

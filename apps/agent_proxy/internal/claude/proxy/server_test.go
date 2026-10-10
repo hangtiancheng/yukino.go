@@ -69,8 +69,6 @@ func answer(protocol string) bridge.Object {
 	}
 }
 
-// Exercise a real Anthropic SDK client through the HTTP proxy and back through
-// an official upstream SDK, including a two-tool result turn.
 func TestSDKToolLoop(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "unrelated-environment-token")
 	for _, protocol := range []string{config.Anthropic, config.OpenAICompat, config.OpenAI} {
@@ -182,7 +180,6 @@ func TestStreamingFallbackAndForcedSSE(t *testing.T) {
 						writeJSON(w, answer(protocol))
 						return
 					}
-					// Deliberately mislabeled by a gateway.
 					w.Header().Set("Content-Type", "application/json")
 					if protocol == config.OpenAI {
 						event(w, bridge.Object{"type": "response.completed", "response": answer(protocol)})

@@ -10,33 +10,23 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/red_mq/redis"
 )
 
-// MsgCallback is invoked for each received message.
 type MsgCallback func(ctx context.Context, msg *redis.MsgEntity) error
 
-// Consumer reads messages from a redis stream consumer group.
 type Consumer struct {
-	// Lifecycle management.
 	ctx  context.Context
 	stop context.CancelFunc
 	done chan struct{}
 
-	// callbackFunc is the user-supplied handler invoked for each message.
 	callbackFunc MsgCallback
 
-	// client is the redis client backing the message queue.
 	client *redis.Client
 
-	// topic is the stream to consume from.
-	topic string
-	// groupID is the consumer group.
-	groupID string
-	// consumerID is the current node's consumer id.
+	topic      string
+	groupID    string
 	consumerID string
 
-	// failureCnts tracks the cumulative failure count per message.
 	failureCnts map[redis.MsgEntity]int
 
-	// opts holds user-supplied configuration.
 	opts *ConsumerOptions
 }
 
@@ -59,7 +49,6 @@ func NewConsumer(client *redis.Client, topic, groupID, consumerID string, callba
 	}
 
 	if err := c.checkParam(); err != nil {
-		// Release the context created above, otherwise it leaks.
 		stop()
 		return nil, err
 	}
@@ -70,8 +59,6 @@ func NewConsumer(client *redis.Client, topic, groupID, consumerID string, callba
 
 	repairConsumer(c.opts)
 
-	// Ensure the consumer group (and the backing stream) exists before the
-	// receive loop starts; BUSYGROUP is treated as success inside the client.
 	if err := c.client.XGroupCreate(ctx, topic, groupID); err != nil {
 		stop()
 		return nil, err
@@ -97,18 +84,13 @@ func (c *Consumer) checkParam() error {
 	return nil
 }
 
-// Stop signals the consumer to exit.
 func (c *Consumer) Stop() {
 	c.stop()
 	<-c.done
 }
 
-// retryBackoff is the pause between receive attempts after an error, so a
-// persistently failing redis does not turn run into a hot error loop.
 const retryBackoff = time.Second
 
-// backoff waits before the next receive attempt. It reports false when the
-// consumer was stopped while waiting.
 func (c *Consumer) backoff() bool {
 	select {
 	case <-c.ctx.Done():
@@ -118,7 +100,6 @@ func (c *Consumer) backoff() bool {
 	}
 }
 
-// run is the consumer main loop.
 func (c *Consumer) run() {
 	defer close(c.done)
 	claimCursor := "0-0"
@@ -129,7 +110,6 @@ func (c *Consumer) run() {
 		default:
 		}
 
-		// Reclaim abandoned entries gradually without scanning the entire PEL.
 		if c.opts.claimIdle > 0 {
 			messages, next, err := c.client.XAutoClaim(c.ctx, c.topic, c.groupID, c.consumerID, claimCursor, c.opts.claimIdle)
 			if err == nil {
@@ -139,7 +119,6 @@ func (c *Consumer) run() {
 				cancel()
 			}
 		}
-		// Receive new messages.
 		msgs, err := c.receive()
 		if err != nil {
 			log.ErrorContextf(c.ctx, "receive msg failed, err: %v", err)
@@ -153,12 +132,10 @@ func (c *Consumer) run() {
 		c.handlerMsgs(ctx, msgs)
 		cancel()
 
-		// Deliver dead letters.
 		ctx, cancel = context.WithTimeout(c.ctx, c.opts.deadLetterDeliverTimeout)
 		c.deliverDeadLetter(ctx)
 		cancel()
 
-		// Receive and process pending messages.
 		pendingMsgs, err := c.receivePending()
 		if err != nil {
 			log.ErrorContextf(c.ctx, "pending msg received failed, err: %v", err)
@@ -195,12 +172,10 @@ func (c *Consumer) receivePending() ([]*redis.MsgEntity, error) {
 func (c *Consumer) handlerMsgs(ctx context.Context, msgs []*redis.MsgEntity) {
 	for _, msg := range msgs {
 		if err := c.invoke(ctx, msg); err != nil {
-			// Increment the failure counter.
 			c.failureCnts[*msg]++
 			continue
 		}
 
-		// Callback succeeded: ack the message.
 		if err := c.client.XACK(ctx, c.topic, c.groupID, msg.MsgID); err != nil {
 			log.ErrorContextf(ctx, "msg ack failed, msg id: %s, err: %v", msg.MsgID, err)
 			continue
@@ -211,27 +186,21 @@ func (c *Consumer) handlerMsgs(ctx context.Context, msgs []*redis.MsgEntity) {
 }
 
 func (c *Consumer) deliverDeadLetter(ctx context.Context) {
-	// Messages that have failed enough times are delivered to the dead-letter mailbox, then acked.
 	for msg, failureCnt := range c.failureCnts {
 		if failureCnt < c.opts.maxRetryLimit {
 			continue
 		}
 
-		// Deliver to the dead-letter mailbox.
 		if err := c.opts.deadLetterMailbox.Deliver(ctx, &msg); err != nil {
 			log.ErrorContextf(c.ctx, "dead letter deliver failed, msg id: %s, err: %v", msg.MsgID, err)
-			// Keep the message around, it must not be acked before it
-			// reached the dead-letter mailbox.
 			continue
 		}
 
-		// Ack the message.
 		if err := c.client.XACK(ctx, c.topic, c.groupID, msg.MsgID); err != nil {
 			log.ErrorContextf(c.ctx, "msg ack failed, msg id: %s, err: %v", msg.MsgID, err)
 			continue
 		}
 
-		// Remove acked messages from the failure map.
 		delete(c.failureCnts, msg)
 	}
 }

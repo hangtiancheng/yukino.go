@@ -1,7 +1,3 @@
-// Package tools provides AI agent tool implementations for the Yukino Chatbot.
-// Each tool wraps a specific capability (MCP integration, Prometheus alerts,
-// MySQL queries, documentation search, time retrieval) as an Eino tool
-// that can be invoked by the AI agent during reasoning.
 package tools
 
 import (
@@ -21,27 +17,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// MCP tool cache. The MCP server provides log querying capabilities; it is a
-// non-essential dependency, so connection failures degrade gracefully (empty tool
-// set) rather than failing the whole chat/agent build. The connected session is
-// cached per config so we don't reopen the transport on every request.
 var (
 	mcpMu       sync.Mutex
 	cachedTools []tool.BaseTool
 	cachedKey   string
 )
 
-// GetLogMcpTool connects to an MCP (Model Context Protocol) server using the
-// configured transport (streamable_http, sse or stdio) and returns the tools
-// advertised by that server as Eino tools. Results are cached per config.
-//
-// If the MCP server is unreachable, it logs a warning and returns an empty tool
-// slice with a nil error, so the chat / plan-execute pipelines keep working
-// without log-querying capabilities.
-//
-// See:
-//   - https://modelcontextprotocol.io/
-//   - https://github.com/modelcontextprotocol/go-sdk
 func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, error) {
 	mcpMu.Lock()
 	defer mcpMu.Unlock()
@@ -51,15 +32,12 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 		return nil, err
 	}
 
-	// Serve from cache when we already connected with the same config.
 	if cachedKey == key && cachedTools != nil {
 		return cachedTools, nil
 	}
 
 	tools, err := buildMcpTools(ctx, cfg)
 	if err != nil {
-		// Degrade gracefully: log and return an empty tool set. Do not cache the
-		// failure so the next request can retry once the MCP server comes back.
 		logger.L().Warn("mcp connect failed, skipping log tools", "transport", cfg.Transport, "err", err)
 		return []tool.BaseTool{}, nil
 	}
@@ -69,8 +47,6 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 	return tools, nil
 }
 
-// mcpCacheKey derives a deterministic cache key from the MCP config.
-// encoding/json sorts map keys, so the marshaled config is stable.
 func mcpCacheKey(cfg config.MCPConfig) (string, error) {
 	raw, err := json.Marshal(cfg)
 	if err != nil {
@@ -79,10 +55,6 @@ func mcpCacheKey(cfg config.MCPConfig) (string, error) {
 	return string(raw), nil
 }
 
-// buildMcpTools opens a fresh connection over the configured transport,
-// initializes the session, and returns the tools advertised by the server.
-// On failure the partially established session is closed; on success the
-// session stays open and is shared by the returned tools.
 func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, error) {
 	transport, err := newMcpTransport(cfg)
 	if err != nil {
@@ -94,7 +66,6 @@ func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 		Version: "1.0.0",
 	}, nil)
 
-	// Connect starts the transport and performs the MCP initialize handshake.
 	session, err := cli.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, err
@@ -108,7 +79,6 @@ func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 	return tools, nil
 }
 
-// newMcpTransport builds the go-sdk transport matching cfg.Transport.
 func newMcpTransport(cfg config.MCPConfig) (mcp.Transport, error) {
 	switch cfg.Transport {
 	case config.MCPTransportStreamableHTTP:
@@ -136,8 +106,6 @@ func newMcpTransport(cfg config.MCPConfig) (mcp.Transport, error) {
 	}
 }
 
-// listMcpTools enumerates the server tools (following pagination) and wraps
-// each one as an Eino tool backed by the shared session.
 func listMcpTools(ctx context.Context, session *mcp.ClientSession) ([]tool.BaseTool, error) {
 	tools := make([]tool.BaseTool, 0)
 	for t, err := range session.Tools(ctx, &mcp.ListToolsParams{}) {
@@ -153,9 +121,6 @@ func listMcpTools(ctx context.Context, session *mcp.ClientSession) ([]tool.BaseT
 	return tools, nil
 }
 
-// einoToolInfo converts an MCP tool definition into Eino tool metadata. The
-// input schema is round-tripped through JSON because the go-sdk exposes it as
-// an opaque value (map[string]any from the wire).
 func einoToolInfo(t *mcp.Tool) (*schema.ToolInfo, error) {
 	info := &schema.ToolInfo{
 		Name: t.Name,
@@ -177,8 +142,6 @@ func einoToolInfo(t *mcp.Tool) (*schema.ToolInfo, error) {
 	return info, nil
 }
 
-// mcpToolAdapter exposes one MCP server tool as an Eino invokable tool backed
-// by the established go-sdk client session.
 type mcpToolAdapter struct {
 	session *mcp.ClientSession
 	name    string
@@ -207,10 +170,6 @@ func (t *mcpToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 	return formatCallResult(t.name, result)
 }
 
-// formatCallResult renders an MCP call result as the string observation sent
-// back to the model. Text content is passed through directly; other content
-// types (images, resources, structured output) fall back to JSON. A result
-// flagged IsError is surfaced as a Go error so the model can self-correct.
 func formatCallResult(name string, result *mcp.CallToolResult) (string, error) {
 	text := extractText(result)
 	if result.IsError {
@@ -225,7 +184,6 @@ func formatCallResult(name string, result *mcp.CallToolResult) (string, error) {
 	return marshalContent(result), nil
 }
 
-// extractText concatenates the text parts of the result content.
 func extractText(result *mcp.CallToolResult) string {
 	var parts []string
 	for _, c := range result.Content {
@@ -236,7 +194,6 @@ func extractText(result *mcp.CallToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
-// marshalContent renders non-text result payloads as JSON.
 func marshalContent(result *mcp.CallToolResult) string {
 	if len(result.Content) == 0 {
 		if result.StructuredContent == nil {

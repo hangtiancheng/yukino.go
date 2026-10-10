@@ -6,43 +6,13 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/**
- * @typedef {'yukino-agent-proxy'} ProjectName
- * @typedef {object} Project
- * @property {ProjectName} name Fixed release tag, title and artifact prefix.
- * @property {string} directory Go module directory relative to the repository.
- * @typedef {object} CommandResult
- * @property {number} code Process exit code.
- * @property {string} stdout Captured standard output.
- * @property {string} stderr Captured standard error.
- * @typedef {object} RunOptions
- * @property {string} cwd Working directory.
- * @property {boolean} [inherit] Stream output instead of capturing it.
- * @property {boolean} [allowFailure] Return nonzero exits instead of throwing.
- * @typedef {(command: string, args: readonly string[], options: RunOptions) => Promise<CommandResult>} Runner
- * @typedef {object} ReleaseOptions
- * @property {string} [root] Repository root; defaults to this script's directory.
- * @property {boolean} [dryRun] Build and inspect GitHub, then print writes only.
- * @property {Runner} [runner] Command runner override for integration tests.
- * @typedef {object} ReleaseState
- * @property {Project} project Selected project.
- * @property {boolean} releaseExists Whether its fixed GitHub release exists.
- * @property {boolean} tagExists Whether its fixed remote tag exists.
- * @property {string[]} assets Six platform executables; excludes the native link.
- * @typedef {object} CLIOptions
- * @property {boolean} help Show usage without building or accessing GitHub.
- * @property {boolean} dryRun Build and inspect, but do not change GitHub.
- * @property {ProjectName[]} names Selected projects, in deterministic order.
- */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOTES =
   "Standalone executables for Linux, macOS, and Windows on x64 and arm64.";
-/** @type {readonly Project[]} */
 const PROJECTS = [
   { name: "yukino-agent-proxy", directory: "services/agent_proxy" },
 ];
-/** @type {readonly string[]} */
 const PLATFORMS = [
   "linux-x64",
   "linux-arm64",
@@ -52,12 +22,7 @@ const PLATFORMS = [
   "win32-arm64",
 ];
 
-/**
- * Spawn without a shell so paths and arguments remain literal.
- * @type {Runner}
- */
 async function runCommand(command, args, options) {
-  /** @type {Promise<CommandResult>} */
   const completion = new Promise((resolve, reject) => {
     const child = spawn(command, [...args], {
       cwd: options.cwd,
@@ -72,10 +37,10 @@ async function runCommand(command, args, options) {
     let stderr = "";
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (/** @type {string} */ chunk) => {
+    child.stdout?.on("data", ( chunk) => {
       stdout += chunk;
     });
-    child.stderr?.on("data", (/** @type {string} */ chunk) => {
+    child.stderr?.on("data", ( chunk) => {
       stderr += chunk;
     });
     child.once("error", (error) =>
@@ -98,21 +63,10 @@ async function runCommand(command, args, options) {
   return completion;
 }
 
-/**
- * @param {unknown} value
- * @returns {value is Record<string, unknown>}
- */
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Only an actual HTTP 404 means absent. Auth/network/server errors abort.
- * @param {Runner} runner
- * @param {string} root
- * @param {string} endpoint
- * @returns {Promise<Record<string, unknown> | null>}
- */
 async function readGitHub(runner, root, endpoint) {
   const result = await runner("gh", ["api", endpoint, "--include"], {
     cwd: root,
@@ -133,7 +87,6 @@ async function readGitHub(runner, root, endpoint) {
   const separator = /\r?\n\r?\n/.exec(result.stdout);
   if (!separator)
     throw new Error(`GitHub returned invalid headers for ${endpoint}`);
-  /** @type {unknown} */
   const value = JSON.parse(
     result.stdout.slice(separator.index + separator[0].length),
   );
@@ -142,14 +95,9 @@ async function readGitHub(runner, root, endpoint) {
   return value;
 }
 
-/**
- * @param {readonly string[]} args
- * @returns {CLIOptions}
- */
 export function parseArgs(args) {
   let help = false;
   let dryRun = false;
-  /** @type {Set<ProjectName>} */
   const selected = new Set();
   for (const arg of args) {
     if (arg === "--help" || arg === "-h") {
@@ -173,13 +121,6 @@ export function parseArgs(args) {
   return { help, dryRun, names };
 }
 
-/**
- * Build every selected project before making any remote changes.
- * Fixed tags are moved to HEAD; fixed asset names are replaced using --clobber.
- * @param {readonly ProjectName[]} names
- * @param {ReleaseOptions} [options]
- * @returns {Promise<void>}
- */
 export async function release(names, options = {}) {
   const root = path.resolve(options.root ?? ROOT);
   const runner = options.runner ?? runCommand;
@@ -217,7 +158,6 @@ export async function release(names, options = {}) {
   console.log(
     `Releasing ${selected.map((project) => project.name).join(", ")} to ${repo} at ${commit}`,
   );
-  /** @type {ReleaseState[]} */
   const states = [];
   for (const project of selected) {
     const current = await readGitHub(
@@ -269,10 +209,6 @@ export async function release(names, options = {}) {
   if (afterBuild.stdout.trim() !== commit)
     throw new Error("HEAD changed during the build; start the release again.");
 
-  /**
-   * @param {readonly string[]} args
-   * @returns {Promise<void>}
-   */
   async function publish(args) {
     if (options.dryRun) {
       console.log(`[dry-run] gh ${JSON.stringify(args)}`);
@@ -293,7 +229,6 @@ export async function release(names, options = {}) {
       NOTES,
       "--latest",
     ];
-    // --target does not move an already-existing tag; update the ref explicitly.
     if (state.tagExists) {
       await publish([
         "api",
@@ -355,10 +290,6 @@ export async function release(names, options = {}) {
   );
 }
 
-/**
- * @param {readonly string[]} [args]
- * @returns {Promise<void>}
- */
 export async function main(args = process.argv.slice(2)) {
   const options = parseArgs(args);
   if (options.help) {
@@ -380,7 +311,7 @@ if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  main().catch((/** @type {unknown} */ error) => {
+  main().catch(( error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });

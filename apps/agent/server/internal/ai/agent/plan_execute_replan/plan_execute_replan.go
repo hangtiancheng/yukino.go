@@ -1,7 +1,3 @@
-// Package plan_execute_replan implements a Plan-Execute-Replan agent pattern.
-// The planner creates an execution plan, the executor carries out each step
-// using available tools, and the replanner adjusts the plan based on results.
-// This pattern is well-suited for complex multi-step AI operations tasks.
 package plan_execute_replan
 
 import (
@@ -15,9 +11,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 )
 
-// BuildPlanAgent creates and runs a plan-execute-replan agent pipeline.
-// It returns the final response content, a list of detail messages from each step,
-// and any error encountered during execution.
 func BuildPlanAgent(ctx context.Context, cfg *config.Config, query string) (string, []string, error) {
 	planAgent, err := NewPlanner(ctx, cfg)
 	if err != nil {
@@ -54,9 +47,6 @@ func BuildPlanAgent(ctx context.Context, cfg *config.Config, query string) (stri
 		if !ok {
 			break
 		}
-		// Log one structured line per event. The event payload is deliberately
-		// not dumped here: reading Output.MessageOutput.MessageStream would
-		// drain it before adk.GetMessage below could consume it.
 		logger.L().Info("plan-execute event",
 			"agent", event.AgentName,
 			"path", event.RunPath,
@@ -71,9 +61,6 @@ func BuildPlanAgent(ctx context.Context, cfg *config.Config, query string) (stri
 			continue
 		}
 		lastMessage = msg
-		// Collect only each step's final executor answer as plain markdown.
-		// Planner/replanner JSON, tool-call turns and Message.String() debug
-		// dumps would render as garbage in the client step list.
 		if event.AgentName == executorName && msg.Role == schema.Assistant && len(msg.ToolCalls) == 0 && msg.Content != "" {
 			detail = append(detail, msg.Content)
 		}

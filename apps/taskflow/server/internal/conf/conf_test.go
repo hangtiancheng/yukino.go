@@ -113,9 +113,6 @@ func TestBaseURLRewritesWildcardHost(t *testing.T) {
 }
 
 func TestNoEnvFileIsLoaded(t *testing.T) {
-	// A stale .env-style variable in the environment must not be picked up by
-	// Load: the yaml is the single config source. Only the *_env field names
-	// (read at use time) and ${VAR} expansion are honored.
 	path := writeConf(t, "mysql:\n  password_env: TEST_MYSQL_PASSWORD\n")
 	t.Setenv("TEST_MYSQL_PASSWORD", "from-shell")
 

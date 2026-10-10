@@ -11,7 +11,6 @@ import (
 )
 
 func Test_blockingLock(t *testing.T) {
-	// Fill in the redis node address and password.
 	addr := os.Getenv("REDIS_LOCK_ADDR")
 	passwd := os.Getenv("REDIS_LOCK_PASSWORD")
 	if addr == "" {
@@ -44,7 +43,6 @@ func Test_blockingLock(t *testing.T) {
 }
 
 func Test_nonBlockingLock(t *testing.T) {
-	// Fill in the redis node address and password.
 	addr := os.Getenv("REDIS_LOCK_ADDR")
 	passwd := os.Getenv("REDIS_LOCK_PASSWORD")
 	if addr == "" {
@@ -76,14 +74,12 @@ func Test_nonBlockingLock(t *testing.T) {
 }
 
 func Test_redLock(t *testing.T) {
-	// Fill in the addresses and passwords of three redis nodes.
 	addrs := strings.Split(os.Getenv("REDIS_LOCK_ADDRS"), ",")
 	passwd := os.Getenv("REDIS_LOCK_PASSWORD")
 	if len(addrs) < 3 || addrs[0] == "" {
 		t.Skip("set REDIS_LOCK_ADDRS (comma separated, at least 3 nodes) and optional REDIS_LOCK_PASSWORD to run this test against real redis nodes")
 	}
 
-	// Three locks, one per direct redis node.
 	confs := make([]*SingleNodeConf, 0, len(addrs))
 	for _, addr := range addrs {
 		confs = append(confs, &SingleNodeConf{

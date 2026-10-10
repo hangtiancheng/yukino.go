@@ -8,7 +8,6 @@ import (
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 )
 
-// CorsHandler returns a CORS middleware.
 func CorsHandler() yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
 		h := ctx.Writer.Header()

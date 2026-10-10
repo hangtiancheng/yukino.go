@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* daisyui 5 as tailwind v4 plugin; custom light-only theme */
 @plugin "daisyui" {
   themes: taskflow --default;
 }

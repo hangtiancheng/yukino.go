@@ -83,8 +83,6 @@ func (r *ToolRuntime) Definitions() []openai.ChatCompletionToolParam {
 	}
 }
 
-// Execute dispatches a model-issued tool call and returns the JSON text that
-// goes back to the conversation.
 func (r *ToolRuntime) Execute(ctx context.Context, name string, argsJSON string) (string, bool) {
 	switch name {
 	case ToolMySQL:
@@ -315,8 +313,6 @@ func (r *ToolRuntime) execRedis(ctx context.Context, argsJSON string) (string, b
 		}
 		return jsonOK(map[string]any{"added_fields": n}), false
 	case "hgetall":
-		// HSCAN avoids loading an unbounded hash. Compact encodings may return
-		// more than COUNT; the returned fields and values are capped as well.
 		fields := make(map[string]string)
 		var cursor uint64
 		truncated := false

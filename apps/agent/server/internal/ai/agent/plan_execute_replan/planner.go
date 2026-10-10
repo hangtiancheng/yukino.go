@@ -13,16 +13,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// structuredOutputModel wraps a ToolCallingChatModel so that it behaves as a
-// BaseChatModel emitting clean JSON content. It is needed because some models
-// (e.g. Qwen3.7) don't properly support Anthropic's tool_choice: forced, so the
-// planner/replanner fall back to prompt-based structured output. In practice
-// such models sometimes wrap the JSON in ```json fences or prepend reasoning;
-// Generate strips those by running extractJSONObject over the raw content so
-// that the downstream plan.UnmarshalJSON always sees a clean object.
-//
-// ToolCallingChatModel already satisfies BaseChatModel; the wrapper exists only
-// to post-process the content (a transparent pass-through would be dead code).
 type structuredOutputModel struct {
 	model.ToolCallingChatModel
 }
@@ -34,25 +24,19 @@ func (m *structuredOutputModel) Generate(ctx context.Context, input []*schema.Me
 	}
 	clean, extractErr := extractJSONObject(resp.Content)
 	if extractErr != nil {
-		// Surface the parse failure with the raw content for debugging.
 		return nil, fmt.Errorf("extract plan JSON: %w (raw output: %q)", extractErr, resp.Content)
 	}
 	return schema.AssistantMessage(clean, resp.ToolCalls), nil
 }
 
-// NewPlanner creates the planning agent that decomposes a complex query
-// into a sequence of executable steps. It uses structured output instead of
-// tool calling for better compatibility with different LLM providers.
 func NewPlanner(ctx context.Context, cfg *config.Config) (adk.Agent, error) {
 	planModel, err := models.NewThinkChatModel(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create a wrapper that uses structured output format
 	wrappedModel := &structuredOutputModel{ToolCallingChatModel: planModel}
 
-	// Create a custom GenInputFn that includes instructions for JSON output
 	genInputFn := func(ctx context.Context, userInput []adk.Message) ([]adk.Message, error) {
 		var query string
 		for _, msg := range userInput {
@@ -88,7 +72,6 @@ Do not include any other text, explanations, or markdown formatting. Only output
 	})
 }
 
-// customPlan implements the Plan interface for structured output parsing.
 type customPlan struct {
 	Steps []string `json:"steps"`
 }

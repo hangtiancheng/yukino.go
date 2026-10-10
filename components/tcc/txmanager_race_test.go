@@ -9,15 +9,10 @@ import (
 	"time"
 )
 
-// Runs many concurrent transactions while the monitor goroutine polls hanging
-// transactions at a high frequency. This overlaps the monitor's reads of
-// transaction records with the try phase's concurrent status updates, which is
-// where unsynchronized shared state would be reported by `go test -race`.
 func Test_txmanager_transaction_concurrent_with_monitor(t *testing.T) {
 	txmanager := NewTXManager(newMockTXStore(), WithMonitorTick(5*time.Millisecond))
 	defer txmanager.Stop()
 
-	// Register 10 components
 	componentsCnt := 10
 	for i := range componentsCnt {
 		componentID := strconv.Itoa(i)
@@ -27,7 +22,6 @@ func Test_txmanager_transaction_concurrent_with_monitor(t *testing.T) {
 		}
 	}
 
-	// 50 concurrent transactions, each randomly picking 3 components
 	ctx := context.Background()
 	concurrentTXs := 50
 	componentReqCnt := 3
@@ -70,9 +64,6 @@ func Test_txmanager_transaction_concurrent_with_monitor(t *testing.T) {
 	wg.Wait()
 }
 
-// One component rejects immediately while another one is still slow in the try
-// phase. The transaction must end up failed and the component whose try
-// succeeded must receive the second-phase cancel.
 func Test_txmanager_transaction_mixed_slow_try(t *testing.T) {
 	txmanager := NewTXManager(newMockTXStore(), WithMonitorTick(time.Second))
 	defer txmanager.Stop()
@@ -120,7 +111,6 @@ func Test_txmanager_transaction_invalid_args(t *testing.T) {
 	defer txmanager.Stop()
 
 	ctx := context.Background()
-	// Empty request list
 	if _, _, err := txmanager.Transaction(ctx); err == nil {
 		t.Error("expected error for empty reqs, got nil")
 	}
@@ -129,14 +119,12 @@ func Test_txmanager_transaction_invalid_args(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	// Repeated component id
 	if _, _, err := txmanager.Transaction(ctx,
 		&RequestEntity{ComponentID: "dup"},
 		&RequestEntity{ComponentID: "dup"},
 	); err == nil {
 		t.Error("expected error for repeated component, got nil")
 	}
-	// Unregistered component id
 	if _, _, err := txmanager.Transaction(ctx,
 		&RequestEntity{ComponentID: "missing"},
 	); err == nil {
@@ -144,8 +132,6 @@ func Test_txmanager_transaction_invalid_args(t *testing.T) {
 	}
 }
 
-// Registers and looks up components concurrently; duplicates must be rejected
-// and every registered id must resolve to exactly one component.
 func Test_registryCenter_concurrent_register_and_get(t *testing.T) {
 	rc := newRegistryCenter()
 
@@ -157,7 +143,6 @@ func Test_registryCenter_concurrent_register_and_get(t *testing.T) {
 	for i := range goroutines {
 		wg.Go(func() {
 			componentID := strconv.Itoa(i % components)
-			// Duplicate registrations may fail, which is expected
 			_ = rc.register(newMockComponent(componentID))
 			_, _ = rc.getComponents(componentID)
 		})

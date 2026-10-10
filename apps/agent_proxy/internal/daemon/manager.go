@@ -1,4 +1,3 @@
-// Package daemon manages the persistent proxy process shared by CLI and MCP.
 package daemon
 
 import (
@@ -28,7 +27,6 @@ type Options struct {
 	ExpectedProvider                                   string
 }
 
-// Defaults resolves per-agent defaults; the caller selects the agent first.
 func Defaults(a agent.Agent) (Options, error) {
 	path, err := config.DefaultPath()
 	if err != nil {
@@ -72,7 +70,6 @@ type Manager struct {
 	Agent   agent.Agent
 }
 
-// NewManager validates Options.Agent and resolves the selected agent.
 func NewManager(options Options) (*Manager, error) {
 	a, err := agent.Get(options.Agent)
 	if err != nil {
@@ -81,7 +78,6 @@ func NewManager(options Options) (*Manager, error) {
 	return &Manager{Options: options, Agent: a}, nil
 }
 
-// agent resolves the selected agent lazily for directly constructed managers.
 func (m *Manager) agent() (agent.Agent, error) {
 	if m.Agent == nil {
 		a, err := agent.Get(m.Options.Agent)
@@ -117,7 +113,6 @@ func (m *Manager) writeState(value *state) error {
 }
 
 func fingerprint(p config.Provider) string {
-	// APIKey is excluded from Provider's public JSON representation.
 	data, _ := json.Marshal(struct {
 		Provider config.Provider
 		Key      string

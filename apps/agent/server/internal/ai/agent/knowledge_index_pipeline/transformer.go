@@ -8,9 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// newDocumentTransformer creates a Markdown header-based document splitter.
-// It splits documents at header boundaries and assigns a title metadata field
-// based on the header text. Each chunk gets a unique UUID as its ID.
 func newDocumentTransformer(ctx context.Context) (document.Transformer, error) {
 	return markdown.NewHeaderSplitter(ctx, &markdown.HeaderConfig{
 		Headers: map[string]string{

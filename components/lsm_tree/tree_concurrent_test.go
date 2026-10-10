@@ -15,9 +15,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/lsm_tree/wal"
 )
 
-// waitGoroutinesBack polls until the goroutine count drops back to baseline so
-// asynchronous cleanup goroutines (compaction exit, node destroy) finish before
-// the tree directory is reused.
 func waitGoroutinesBack(baseline int) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -29,9 +26,6 @@ func waitGoroutinesBack(baseline int) {
 }
 
 func Test_Tree_levelBinarySearch(t *testing.T) {
-	// Three sorted nodes covering ("`", "c"], ("d", "g"], ("h", "k"].
-	// startKey is the index separator, one byte below the real first key,
-	// so it is exclusive while endKey is inclusive.
 	tree := Tree{nodes: make([][]*Node, 1)}
 	tree.nodes[0] = []*Node{
 		{startKey: []byte("`"), endKey: []byte("c")},
@@ -41,7 +35,7 @@ func Test_Tree_levelBinarySearch(t *testing.T) {
 
 	cases := []struct {
 		key  string
-		want int // expected node index; -1 = not found
+		want int
 	}{
 		{"a", 0}, {"b", 0}, {"c", 0},
 		{"d", -1},
@@ -70,9 +64,6 @@ func Test_Tree_levelBinarySearch(t *testing.T) {
 }
 
 func Test_Tree_levelBinarySearch_BoundaryKey(t *testing.T) {
-	// Regression: the next node's startKey may equal the previous node's
-	// endKey (separator "c" = first key "d" minus one). A key equal to the
-	// shared boundary belongs to the LEFT node, whose endKey is inclusive.
 	tree := Tree{nodes: make([][]*Node, 1)}
 	tree.nodes[0] = []*Node{
 		{startKey: []byte("`"), endKey: []byte("c")},
@@ -92,10 +83,10 @@ func Test_Tree_levelBinarySearch_BoundaryKey(t *testing.T) {
 
 func Test_Tree_ConcurrentPutGet(t *testing.T) {
 	conf, err := NewConfig(t.TempDir(),
-		WithMaxLevel(4),           // 4-level lsm tree
-		WithSSTSize(4*1024),       // tiny sst size to force memtable rotations
-		WithSSTDataBlockSize(256), // tiny block size to force multi-block sstables
-		WithSSTNumPerLevel(2),     // few sstables per level to force compactions
+		WithMaxLevel(4),
+		WithSSTSize(4*1024),
+		WithSSTDataBlockSize(256),
+		WithSSTNumPerLevel(2),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +111,6 @@ func Test_Tree_ConcurrentPutGet(t *testing.T) {
 		return []byte(fmt.Sprintf("val-%d-%06d", w, i))
 	}
 
-	// Writers rotate memtables, flush sstables and trigger compactions.
 	var writerWG sync.WaitGroup
 	for w := 0; w < writers; w++ {
 		writerWG.Add(1)
@@ -135,7 +125,6 @@ func Test_Tree_ConcurrentPutGet(t *testing.T) {
 		}(w)
 	}
 
-	// Readers race with writes, flushes and compactions.
 	stop := make(chan struct{})
 	var readerWG sync.WaitGroup
 	for r := 0; r < readers; r++ {
@@ -156,7 +145,6 @@ func Test_Tree_ConcurrentPutGet(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				// The key may not be written yet; a found value must be the latest one.
 				if ok && !bytes.Equal(got, value(w, i)) {
 					t.Errorf("key: %s, expect value: %s, got: %s", key(w, i), value(w, i), got)
 					return
@@ -169,7 +157,6 @@ func Test_Tree_ConcurrentPutGet(t *testing.T) {
 	close(stop)
 	readerWG.Wait()
 
-	// Every written key must be readable with its exact value once all writes return.
 	for w := 0; w < writers; w++ {
 		for i := 0; i < perWriter; i++ {
 			got, ok, err := lsmTree.Get(key(w, i))
@@ -189,7 +176,7 @@ func Test_Tree_ConcurrentPutGet(t *testing.T) {
 func Test_Tree_ConcurrentClose(t *testing.T) {
 	conf, err := NewConfig(t.TempDir(),
 		WithMaxLevel(4),
-		WithSSTSize(128), // tiny sst size: nearly every write rotates the memtable
+		WithSSTSize(128),
 		WithSSTDataBlockSize(64),
 		WithSSTNumPerLevel(2),
 	)
@@ -204,7 +191,6 @@ func Test_Tree_ConcurrentClose(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Close the tree from multiple goroutines at once; only the first run must execute.
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func() {
@@ -213,7 +199,6 @@ func Test_Tree_ConcurrentClose(t *testing.T) {
 		}()
 	}
 
-	// Keep writing while the tree closes: Put may fail, but must not panic.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -224,7 +209,6 @@ func Test_Tree_ConcurrentClose(t *testing.T) {
 
 	wg.Wait()
 
-	// Reads after close must not panic either.
 	_, _, _ = lsmTree.Get([]byte("key-000001"))
 	_, _, _ = lsmTree.Get([]byte("missing"))
 }
@@ -234,7 +218,7 @@ func Test_Tree_CloseNoGoroutineLeak(t *testing.T) {
 
 	conf, err := NewConfig(t.TempDir(),
 		WithMaxLevel(4),
-		WithSSTSize(256), // tiny sst size: many memtable rotations and queued senders
+		WithSSTSize(256),
 		WithSSTDataBlockSize(64),
 		WithSSTNumPerLevel(2),
 	)
@@ -247,7 +231,6 @@ func Test_Tree_CloseNoGoroutineLeak(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Force memtable rotations so the compaction hand-off goroutines queue up.
 	for i := 0; i < 500; i++ {
 		if err := lsmTree.Put([]byte(fmt.Sprintf("key-%06d", i)), bytes.Repeat([]byte("v"), 64)); err != nil {
 			t.Fatal(err)
@@ -273,8 +256,6 @@ func Test_Tree_RestoreWals(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Hand-write two wal files: 0.wal is restored as a read-only memtable,
-	// 1.wal becomes the active memtable.
 	writeWal := func(name string, kvs ...[2]string) {
 		walWriter, err := wal.NewWALWriter(path.Join(dir, "walfile", name))
 		if err != nil {
@@ -296,7 +277,6 @@ func Test_Tree_RestoreWals(t *testing.T) {
 	}
 	defer lsmTree.Close()
 
-	// k1/k2 were restored into a read-only memtable (possibly already flushed).
 	for _, key := range []string{"k1", "k2", "k3"} {
 		got, ok, err := lsmTree.Get([]byte(key))
 		if err != nil {
@@ -310,7 +290,6 @@ func Test_Tree_RestoreWals(t *testing.T) {
 		}
 	}
 
-	// New writes must land in a wal file continuing the index sequence.
 	if err := lsmTree.Put([]byte("k4"), []byte("v4")); err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +302,7 @@ func Test_Tree_RestoreRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	conf, err := NewConfig(dir,
 		WithMaxLevel(4),
-		WithSSTSize(2*1024), // tiny sst size to rotate the memtable many times
+		WithSSTSize(2*1024),
 		WithSSTDataBlockSize(256),
 		WithSSTNumPerLevel(4),
 	)
@@ -334,7 +313,6 @@ func Test_Tree_RestoreRoundTrip(t *testing.T) {
 	const total = 400
 	baseline := runtime.NumGoroutine()
 
-	// First tree: write enough data to rotate the memtable several times.
 	tree1, err := NewTree(conf)
 	if err != nil {
 		t.Fatal(err)
@@ -348,10 +326,8 @@ func Test_Tree_RestoreRoundTrip(t *testing.T) {
 	}
 	tree1.Close()
 
-	// Wait for node-destroy goroutines before reusing the directory.
 	waitGoroutinesBack(baseline)
 
-	// Second tree: restore sstables and wal files from the directory.
 	tree2, err := NewTree(conf)
 	if err != nil {
 		t.Fatal(err)
@@ -386,19 +362,14 @@ func Test_Tree_Put_WalRotateError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Remove the wal directory so creating the next wal file fails.
 	if err := os.Rename(path.Join(dir, "walfile"), path.Join(dir, "walfile-bak")); err != nil {
 		t.Fatal(err)
 	}
 
-	// A big write exceeds the sst size threshold and rotates the memtable;
-	// failing to create the new wal file must fail the Put instead of leaving
-	// a nil wal writer that panics on the next Put.
 	if err := lsmTree.Put([]byte("key"), bytes.Repeat([]byte("v"), 4096)); err == nil {
 		t.Error("expect Put to fail when the wal file cannot be created")
 	}
 
-	// A subsequent Put must not panic either.
 	_ = lsmTree.Put([]byte("key2"), []byte("v2"))
 
 	lsmTree.Close()
@@ -411,7 +382,6 @@ func Test_Tree_NewTree_WalDirError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Replace the wal directory with a regular file so reading it fails.
 	if err := os.Remove(path.Join(dir, "walfile")); err != nil {
 		t.Fatal(err)
 	}

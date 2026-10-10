@@ -1,25 +1,19 @@
 package raft
 
 type ReadState struct {
-	// Commit index captured when the read request was received
-	Index uint64
-	// Unique identifier for the read request
+	Index      uint64
 	RequestCtx []byte
 }
 
 type readIndexStatus struct {
-	req Message
-	// Commit index at the time the read request was received
+	req   Message
 	index uint64
-	// Set of nodes that acknowledged this read request
-	acks map[uint64]struct{}
+	acks  map[uint64]struct{}
 }
 
 type readOnly struct {
-	// Pending read requests keyed by request ID
 	pendingReadIndex map[string]*readIndexStatus
-	// Ordered queue of read request IDs
-	readIndexQueue []string
+	readIndexQueue   []string
 }
 
 func newReadOnly() *readOnly {
@@ -28,9 +22,6 @@ func newReadOnly() *readOnly {
 	}
 }
 
-// addRequest tracks a read-index request keyed by its context. readIndex is
-// the commit index captured when the leader received the request. It reports
-// whether the request was newly added (duplicate contexts are ignored).
 func (ro *readOnly) addRequest(ctx string, readIndex uint64, m Message) bool {
 	if _, ok := ro.pendingReadIndex[ctx]; ok {
 		return false
@@ -45,9 +36,6 @@ func (ro *readOnly) addRequest(ctx string, readIndex uint64, m Message) bool {
 	return true
 }
 
-// recvAck records a heartbeat acknowledgment for the pending read request
-// identified by ctx from the given node, and returns the ack set collected so
-// far.
 func (ro *readOnly) recvAck(ctx string, from uint64) map[uint64]struct{} {
 	rs, ok := ro.pendingReadIndex[ctx]
 	if !ok {
@@ -58,8 +46,6 @@ func (ro *readOnly) recvAck(ctx string, from uint64) map[uint64]struct{} {
 	return rs.acks
 }
 
-// advance completes the read requests queued before and including the one
-// identified by ctx and returns their statuses in queue order.
 func (ro *readOnly) advance(ctx string) []*readIndexStatus {
 	var (
 		i     int

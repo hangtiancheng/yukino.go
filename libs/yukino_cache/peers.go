@@ -55,8 +55,6 @@ func (p *ClientPicker) PrintPeers() {
 }
 
 func NewClientPicker(addr string, opts ...PickerOption) (*ClientPicker, error) {
-	// Normalize ":port" the same way Register does before writing to etcd,
-	// otherwise the local node would treat its own registration as a remote peer.
 	if strings.HasPrefix(addr, ":") {
 		localIP, err := getLocalIP()
 		if err != nil {
@@ -89,8 +87,6 @@ func NewClientPicker(addr string, opts ...PickerOption) (*ClientPicker, error) {
 	}
 	picker.etcdCli = cli
 
-	// The local node always owns part of the ring so that keys hashing to
-	// this node are loaded locally instead of round-tripping through gRPC.
 	picker.consHash.Add(addr)
 
 	if err := picker.startServiceDiscovery(); err != nil {
@@ -106,8 +102,6 @@ func (p *ClientPicker) servicePrefix() string {
 	return "/services/" + p.svcName + "/"
 }
 
-// addrFromEventKey extracts the peer address from an etcd key. DELETE events
-// carry an empty value, so the key is the only reliable source.
 func (p *ClientPicker) addrFromEventKey(key []byte) string {
 	return strings.TrimPrefix(string(key), p.servicePrefix())
 }
@@ -140,8 +134,6 @@ func (p *ClientPicker) watchServiceChanges() {
 	}
 }
 
-// watchOnce watches the service prefix until the channel breaks.
-// It returns true when the picker is closing.
 func (p *ClientPicker) watchOnce(fromRev int64) bool {
 	watcher := client_v3.NewWatcher(p.etcdCli)
 	defer watcher.Close()
@@ -195,8 +187,6 @@ func (p *ClientPicker) handleWatchEvents(events []*client_v3.Event) {
 	}
 }
 
-// fetchAllServices reconciles the peer set with etcd and returns the
-// revision the snapshot was taken at, so the watch can resume from it.
 func (p *ClientPicker) fetchAllServices() (int64, error) {
 	ctx, cancel := context.WithTimeout(p.ctx, 3*time.Second)
 	defer cancel()
@@ -248,8 +238,6 @@ func (p *ClientPicker) remove(addr string) {
 	delete(p.clients, addr)
 }
 
-// PickPeer returns the peer owning key. When the local node owns the key it
-// returns (nil, true, true) so callers load locally without a network hop.
 func (p *ClientPicker) PickPeer(key string) (Peer, bool, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

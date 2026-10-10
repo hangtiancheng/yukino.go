@@ -9,19 +9,11 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
 
-// ChatTemplateConfig defines the prompt template structure for the chat agent.
 type ChatTemplateConfig struct {
 	FormatType schema.FormatType
 	Templates  []schema.MessagesTemplate
 }
 
-// newChatTemplate creates a chat prompt template that includes:
-// - A system prompt with role definition and context information
-// - A placeholder for conversation history
-// - A user message template with the current query
-//
-// The log topic line is injected only when both LogTopicRegion and LogTopicID
-// are configured; otherwise it is omitted.
 func newChatTemplate(ctx context.Context, cfg *config.Config) (prompt.ChatTemplate, error) {
 	tplCfg := &ChatTemplateConfig{
 		FormatType: schema.FString,
@@ -34,8 +26,6 @@ func newChatTemplate(ctx context.Context, cfg *config.Config) (prompt.ChatTempla
 	return prompt.FromMessages(tplCfg.FormatType, tplCfg.Templates...), nil
 }
 
-// buildSystemPrompt assembles the system prompt string. The log topic line is
-// conditionally included based on configuration.
 func buildSystemPrompt(cfg *config.Config) string {
 	logTopicLine := ""
 	if cfg.LogTopicRegion != "" && cfg.LogTopicID != "" {

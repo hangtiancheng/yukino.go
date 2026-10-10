@@ -13,7 +13,6 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 )
 
-// PrometheusAlert represents a single alert from the Prometheus alerts API.
 type PrometheusAlert struct {
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`
@@ -22,7 +21,6 @@ type PrometheusAlert struct {
 	Value       string            `json:"value"`
 }
 
-// PrometheusAlertsResult holds the raw response from Prometheus /api/v1/alerts.
 type PrometheusAlertsResult struct {
 	Status string `json:"status"`
 	Data   struct {
@@ -32,7 +30,6 @@ type PrometheusAlertsResult struct {
 	ErrorType string `json:"errorType,omitempty"`
 }
 
-// SimplifiedAlert is a human-friendly representation of a Prometheus alert.
 type SimplifiedAlert struct {
 	AlertName   string `json:"alert_name" jsonschema:"description=Alert name from Prometheus labels.alertname"`
 	Description string `json:"description" jsonschema:"description=Alert description from annotations.description"`
@@ -41,10 +38,8 @@ type SimplifiedAlert struct {
 	Duration    string `json:"duration" jsonschema:"description=Time since activation, e.g. 2h30m15s"`
 }
 
-// PrometheusAlertsInput is empty as no input parameters are needed.
 type PrometheusAlertsInput struct{}
 
-// PrometheusAlertsOutput is the tool's output structure.
 type PrometheusAlertsOutput struct {
 	Success bool              `json:"success"`
 	Alerts  []SimplifiedAlert `json:"alerts,omitempty"`
@@ -52,9 +47,6 @@ type PrometheusAlertsOutput struct {
 	Error   string            `json:"error,omitempty"`
 }
 
-// queryPrometheusAlerts queries the Prometheus alerts API at the given base URL.
-// An empty baseURL disables the query and returns an empty result, so the tool
-// degrades gracefully when Prometheus is not configured.
 func queryPrometheusAlerts(baseURL string) (PrometheusAlertsResult, error) {
 	if baseURL == "" {
 		return PrometheusAlertsResult{}, nil
@@ -83,7 +75,6 @@ func queryPrometheusAlerts(baseURL string) (PrometheusAlertsResult, error) {
 	return result, nil
 }
 
-// calculateDuration computes the elapsed time from activeAtStr to now.
 func calculateDuration(activeAtStr string) string {
 	activeAt, err := time.Parse(time.RFC3339Nano, activeAtStr)
 	if err != nil {
@@ -105,13 +96,6 @@ func calculateDuration(activeAtStr string) string {
 	}
 }
 
-// NewPrometheusAlertsQueryTool creates a tool that queries active Prometheus alerts.
-// For alerts with the same alertname, only the first occurrence is returned.
-// prometheusURL is the base URL (e.g. "http://127.0.0.1:9090"); empty disables queries.
-// Construction errors are returned to the caller instead of terminating the process.
-//
-// The tool input is parameter-less, so TolerateEmptyArguments is used to handle
-// models that return an empty Arguments string (see empty_arguments.go).
 func NewPrometheusAlertsQueryTool(prometheusURL string) (tool.InvokableTool, error) {
 	t, err := utils.InferOptionableTool(
 		"query_prometheus_alerts",
@@ -121,8 +105,6 @@ func NewPrometheusAlertsQueryTool(prometheusURL string) (tool.InvokableTool, err
 
 			result, err := queryPrometheusAlerts(prometheusURL)
 			if err != nil {
-				// Return a JSON error payload to the LLM instead of a tool error, so
-				// the agent can reason about the failure rather than aborting.
 				out := PrometheusAlertsOutput{
 					Success: false,
 					Error:   err.Error(),
@@ -132,7 +114,6 @@ func NewPrometheusAlertsQueryTool(prometheusURL string) (tool.InvokableTool, err
 				return string(b), nil
 			}
 
-			// Deduplicate by alertname, keeping only the first occurrence.
 			seen := make(map[string]bool)
 			var simplified []SimplifiedAlert
 			for _, alert := range result.Data.Alerts {

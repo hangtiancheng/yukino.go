@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// Cache wraps the underlying store implementation with lazy initialization and stats.
 type Cache struct {
 	mu          sync.RWMutex
 	store       Store
@@ -19,7 +18,6 @@ type Cache struct {
 	closed      atomic.Int32
 }
 
-// CacheOptions configures the underlying cache store.
 type CacheOptions struct {
 	MaxBytes      int64
 	BucketCount   uint16
@@ -30,7 +28,6 @@ type CacheOptions struct {
 	DashboardAddr string
 }
 
-// DefaultCacheOptions returns the default cache settings.
 func DefaultCacheOptions() CacheOptions {
 	return CacheOptions{
 		MaxBytes:     8 * 1024 * 1024,
@@ -42,7 +39,6 @@ func DefaultCacheOptions() CacheOptions {
 	}
 }
 
-// NewCache creates a lazily initialized cache wrapper.
 func NewCache(opts CacheOptions) *Cache {
 	return &Cache{opts: opts}
 }
@@ -73,7 +69,6 @@ func (c *Cache) ensureInitialized() {
 	}
 }
 
-// Add stores a key-value pair.
 func (c *Cache) Add(key string, value ByteView) {
 	if c.closed.Load() == 1 {
 		log.Printf("Attempted to add to a closed cache: %s", key)
@@ -92,7 +87,6 @@ func (c *Cache) Add(key string, value ByteView) {
 	}
 }
 
-// Get returns a cached value when it exists and has not expired.
 func (c *Cache) Get(ctx context.Context, key string) (ByteView, bool) {
 	if c.closed.Load() == 1 {
 		return ByteView{}, false
@@ -127,7 +121,6 @@ func (c *Cache) Get(ctx context.Context, key string) (ByteView, bool) {
 	return bv, true
 }
 
-// AddWithExpiration stores a key-value pair with an absolute expiration time.
 func (c *Cache) AddWithExpiration(key string, value ByteView, expirationTime time.Time) {
 	if c.closed.Load() == 1 {
 		log.Printf("Attempted to add to a closed cache: %s", key)
@@ -152,7 +145,6 @@ func (c *Cache) AddWithExpiration(key string, value ByteView, expirationTime tim
 	}
 }
 
-// Delete removes a key from the cache.
 func (c *Cache) Delete(key string) bool {
 	if c.closed.Load() == 1 || c.initialized.Load() == 0 {
 		return false
@@ -166,7 +158,6 @@ func (c *Cache) Delete(key string) bool {
 	return c.store.Delete(key)
 }
 
-// Clear removes all cached values and resets hit/miss counters.
 func (c *Cache) Clear() {
 	if c.closed.Load() == 1 || c.initialized.Load() == 0 {
 		return
@@ -183,7 +174,6 @@ func (c *Cache) Clear() {
 	c.misses.Store(0)
 }
 
-// Len returns the number of stored entries.
 func (c *Cache) Len() int {
 	if c.closed.Load() == 1 || c.initialized.Load() == 0 {
 		return 0
@@ -197,7 +187,6 @@ func (c *Cache) Len() int {
 	return c.store.Len()
 }
 
-// Close releases cache resources. It is safe to call more than once.
 func (c *Cache) Close() {
 	if !c.closed.CompareAndSwap(0, 1) {
 		return
@@ -214,12 +203,10 @@ func (c *Cache) Close() {
 	log.Printf("Cache closed, hits: %d, misses: %d", c.hits.Load(), c.misses.Load())
 }
 
-// DashboardEnabled reports whether the dashboard is enabled for this cache.
 func (c *Cache) DashboardEnabled() bool {
 	return c.opts.DashboardAddr != ""
 }
 
-// Entries returns all live cache entries.
 func (c *Cache) Entries() []Entry {
 	if c.closed.Load() == 1 || c.initialized.Load() == 0 {
 		return nil
@@ -240,7 +227,6 @@ func (c *Cache) Entries() []Entry {
 	return entries
 }
 
-// Stats returns a cache statistics snapshot.
 func (c *Cache) Stats() map[string]any {
 	stats := map[string]any{
 		"initialized": c.initialized.Load() == 1,

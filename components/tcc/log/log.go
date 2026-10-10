@@ -26,21 +26,18 @@ func init() {
 	defaultLogger = NewSugarLogger(NewOptions())
 }
 
-// Options configuration
 type Options struct {
-	LogName    string // Log name
-	LogLevel   string // Log level
-	FileName   string // File name
-	MaxAge     int    // Log retention time in days
-	MaxSize    int    // Log retention size in MB
-	MaxBackups int    // Number of backup files to keep
-	Compress   bool   // Whether to compress
+	LogName    string
+	LogLevel   string
+	FileName   string
+	MaxAge     int
+	MaxSize    int
+	MaxBackups int
+	Compress   bool
 }
 
-// Option is a functional option type
 type Option func(*Options)
 
-// NewOptions initializes with defaults
 func NewOptions(opts ...Option) Options {
 
 	options := Options{
@@ -58,21 +55,18 @@ func NewOptions(opts ...Option) Options {
 	return options
 }
 
-// WithLogLevel sets the log level
 func WithLogLevel(level string) Option {
 	return func(o *Options) {
 		o.LogLevel = level
 	}
 }
 
-// WithFileName sets the log file name
 func WithFileName(filename string) Option {
 	return func(o *Options) {
 		o.FileName = filename
 	}
 }
 
-// Levels log level
 var Levels = map[string]int{
 	"":      0,
 	"debug": 0,
@@ -146,62 +140,50 @@ func (w *stdLoggerWrapper) Errorf(format string, v ...any) {
 	}
 }
 
-// GetDefaultLogger returns the default logger
 func GetDefaultLogger() Logger {
 	return defaultLogger
 }
 
-// Debugf logs a message at Debug level
 func Debugf(format string, args ...any) {
 	GetDefaultLogger().Debugf(format, args...)
 }
 
-// Infof logs a message at Info level
 func Infof(format string, args ...any) {
 	GetDefaultLogger().Infof(format, args...)
 }
 
-// Warnf logs a message at Warn level
 func Warnf(format string, args ...any) {
 	GetDefaultLogger().Warnf(format, args...)
 }
 
-// Errorf logs a message at Error level
 func Errorf(format string, args ...any) {
 	GetDefaultLogger().Errorf(format, args...)
 }
 
-// DebugContext logs at Debug level with context
 func DebugContext(ctx context.Context, args ...any) {
 	GetDefaultLogger().Debug(args...)
 }
 
-// DebugContextf logs at Debug level with context
 func DebugContextf(ctx context.Context, format string, args ...any) {
 	GetDefaultLogger().Debugf(format, args...)
 }
 
-// InfoContext logs at Info level with context
 func InfoContext(ctx context.Context, args ...any) {
 	GetDefaultLogger().Info(args...)
 }
 
-// InfoContextf logs at Info level with context
 func InfoContextf(ctx context.Context, format string, args ...any) {
 	GetDefaultLogger().Infof(format, args...)
 }
 
-// WarnContext logs at Warn level with context
 func WarnContext(ctx context.Context, args ...any) {
 	GetDefaultLogger().Warn(args...)
 }
 
-// WarnContextf logs at Warn level with context
 func WarnContextf(ctx context.Context, format string, args ...any) {
 	GetDefaultLogger().Warnf(format, args...)
 }
 
-// ErrorContext logs at Error level with context
 func ErrorContext(ctx context.Context, args ...any) {
 	GetDefaultLogger().Error(args...)
 }

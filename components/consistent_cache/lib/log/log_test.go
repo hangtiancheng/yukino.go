@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// TestLoggerConcurrentOutput checks that the logger is safe for concurrent use
-// (run with -race) and that concurrent messages are not lost.
 func TestLoggerConcurrentOutput(t *testing.T) {
 	var buf bytes.Buffer
 	l := NewLogger(Options{Writer: &buf, LogLevel: "info"})
@@ -29,7 +27,6 @@ func TestLoggerConcurrentOutput(t *testing.T) {
 	}
 }
 
-// TestLoggerLevelFiltering checks the leveled filtering and unknown-level fallback.
 func TestLoggerLevelFiltering(t *testing.T) {
 	var buf bytes.Buffer
 	l := NewLogger(Options{Writer: &buf, LogLevel: "error"})
@@ -46,7 +43,6 @@ func TestLoggerLevelFiltering(t *testing.T) {
 		t.Fatalf("error level must be logged, got %q", buf.String())
 	}
 
-	// Unknown level names fall back to DebugLevel (zero value): everything logs.
 	var all bytes.Buffer
 	l2 := NewLogger(Options{Writer: &all, LogLevel: "nonsense"})
 	l2.Debugf("still visible")

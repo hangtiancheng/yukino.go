@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-// ReadSSE handles arbitrary byte boundaries, CRLF, multiline data and a final
-// event without a trailing blank line. A false callback result stops reading.
 func ReadSSE(r io.Reader, handle func(event, data string) (bool, error)) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -153,8 +151,6 @@ func (e *emitter) thinkingItem(item Object) error {
 	return e.closeText()
 }
 
-// Buffer each tool independently. Emit complete blocks in creation order so
-// clients that accumulate the current Anthropic block cannot mix parallel calls.
 func (e *emitter) tool(key, id, name, args string, complete bool) error {
 	if err := e.start(); err != nil {
 		return err
@@ -293,7 +289,6 @@ func MessageSSE(message Object, sink Sink) error {
 	return sink("message_stop", Object{"type": "message_stop"})
 }
 
-// Collector rebuilds a nonstreaming Messages response from translated SSE.
 type Collector struct {
 	Message   Object
 	blocks    map[int]Object

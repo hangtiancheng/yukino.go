@@ -11,7 +11,6 @@ import (
 
 var ErrScoreNotExist = errors.New("score not exist")
 
-// Client wraps a github.com/redis/go-redis/v9 client.
 type Client struct {
 	opts   *ClientOptions
 	client go_redis.UniversalClient
@@ -45,7 +44,6 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	}
 }
 
-// ZAdd runs the Redis ZADD command.
 func (c *Client) ZAdd(ctx context.Context, table string, score int64, value string) error {
 	return c.client.ZAdd(ctx, table, go_redis.Z{Score: float64(score), Member: value}).Err()
 }
@@ -55,7 +53,6 @@ type ScoreEntity struct {
 	Val   string
 }
 
-// ZRangeByScore runs the Redis ZRANGE ... BYSCORE WITHSCORES command.
 func (c *Client) ZRangeByScore(ctx context.Context, table string, score1, score2 int64) ([]*ScoreEntity, error) {
 	members, err := c.client.ZRangeArgsWithScores(ctx, go_redis.ZRangeArgs{
 		Key:     table,
@@ -78,7 +75,6 @@ func (c *Client) ZRangeByScore(ctx context.Context, table string, score1, score2
 	return scoreEntities, nil
 }
 
-// Ceiling returns the first member with score >= the given score.
 func (c *Client) Ceiling(ctx context.Context, table string, score int64) (*ScoreEntity, error) {
 	members, err := c.client.ZRangeArgsWithScores(ctx, go_redis.ZRangeArgs{
 		Key:     table,
@@ -102,7 +98,6 @@ func (c *Client) Ceiling(ctx context.Context, table string, score int64) (*Score
 	}, nil
 }
 
-// Floor returns the first member with score <= the given score (descending).
 func (c *Client) Floor(ctx context.Context, table string, score int64) (*ScoreEntity, error) {
 	members, err := c.client.ZRangeArgsWithScores(ctx, go_redis.ZRangeArgs{
 		Key:     table,
@@ -127,7 +122,6 @@ func (c *Client) Floor(ctx context.Context, table string, score int64) (*ScoreEn
 	}, nil
 }
 
-// FirstOrLast returns the member with the smallest (first=true) or largest (first=false) score.
 func (c *Client) FirstOrLast(ctx context.Context, table string, first bool) (*ScoreEntity, error) {
 	args := go_redis.ZRangeArgs{
 		Key:     table,
@@ -187,7 +181,6 @@ func (c *Client) Del(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key).Err()
 }
 
-// Eval runs the given Lua script. The first keyCount entries of keysAndArgs are KEYS, the rest are ARGV.
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
 	keys := make([]string, 0, keyCount)
 	args := make([]any, 0, len(keysAndArgs)-keyCount)
@@ -201,7 +194,6 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	return c.client.Eval(ctx, src, keys, args...).Result()
 }
 
-// SetNEX runs SET key value NX EX expireSeconds. Returns 1 on success, 0 if the key already exists.
 func (c *Client) SetNEX(ctx context.Context, key, value string, expireSeconds int64) (int64, error) {
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
@@ -228,8 +220,6 @@ func toString(v any) string {
 	}
 }
 
-// NewUniversalClient shares the caller-owned connection pool, including Sentinel
-// and Cluster routing. The caller is responsible for closing the pool.
 func NewUniversalClient(client go_redis.UniversalClient) *Client {
 	if client == nil {
 		panic("nil redis client")

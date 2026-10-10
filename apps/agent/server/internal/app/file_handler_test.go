@@ -17,17 +17,14 @@ func TestSafeUploadName(t *testing.T) {
 		{in: "notes.txt", want: "notes.txt"},
 		{in: "doc.markdown", want: "doc.markdown"},
 		{in: "UPPER.MD", want: "UPPER.MD"},
-		// Directory components are stripped to the final element.
-		{in: "../../etc/passwd", want: "passwd", wantErr: true}, // .md/.txt gate rejects "passwd"
+		{in: "../../etc/passwd", want: "passwd", wantErr: true},
 		{in: "../../etc/passwd.md", want: "passwd.md"},
 		{in: `..\..\evil.md`, want: "evil.md"},
 		{in: "/abs/dir/file.md", want: "file.md"},
-		// Bare traversal targets and empty names are rejected outright.
 		{in: "..", wantErr: true},
 		{in: ".", wantErr: true},
 		{in: "", wantErr: true},
 		{in: "   ", wantErr: true},
-		// Unsupported extensions are rejected.
 		{in: "malware.exe", wantErr: true},
 		{in: "image.png", wantErr: true},
 		{in: "noext", wantErr: true},
@@ -62,7 +59,6 @@ func TestConfinedPath(t *testing.T) {
 		t.Errorf("confinedPath = %q, want %q", got, want)
 	}
 
-	// A name that would escape the directory must be rejected.
 	if _, err := confinedPath(dir, ".."); err == nil {
 		t.Error("confinedPath(dir, \"..\") = nil error, want escape rejection")
 	}

@@ -12,19 +12,15 @@ const (
 	summary monitorComponentType = "summary"
 	gauge   monitorComponentType = "gauge"
 
-	// Total count of timer executions.
 	timerExecTotalCnt        = "timer_exec_total_cnt"
 	timerExecTotalCntSummary = "Total count of timer executions"
 
-	// Timer execution delay.
 	timerDelayCnt        = "timer_delay_cnt"
 	timerDelayCntSummary = "Timer execution delay"
 
-	// Total number of enabled timers.
 	timerEnabledCnt        = "timer_enabled_cnt"
 	timerEnabledCntSummary = "Total number of enabled timers"
 
-	// Number of unexecuted timers.
 	timerNoExceedCnt        = "timer_no_exceed_cnt"
 	timerNoExceedCntSummary = "Number of unexecuted timers"
 
@@ -36,7 +32,6 @@ const (
 	timer = "timer"
 )
 
-// Reporter is the monitoring metrics reporter.
 type Reporter struct {
 	timerExecRecorder     *prometheus.CounterVec
 	timeDelayRecorder     prometheus.ObserverVec
@@ -46,7 +41,6 @@ type Reporter struct {
 
 var reporter = newReporter()
 
-// GetReporter returns the singleton reporter instance.
 func GetReporter() *Reporter {
 	return reporter
 }

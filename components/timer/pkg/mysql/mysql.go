@@ -12,12 +12,10 @@ import (
 
 const DuplicateEntryErrCode = 1062
 
-// Client is a MySQL database client wrapping gorm.DB.
 type Client struct {
 	*gorm.DB
 }
 
-// GetClient creates a new database client from configuration.
 func GetClient(confProvider *conf.MysqlConfProvider) (*Client, error) {
 	conf := confProvider.Get()
 	db, err := gorm.Open(mysql.Open(conf.DSN), &gorm.Config{TranslateError: true})

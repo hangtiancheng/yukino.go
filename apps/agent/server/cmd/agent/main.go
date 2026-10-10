@@ -1,9 +1,3 @@
-// Yukino Chatbot is an AI-powered intelligent operations assistant.
-// It provides chat-based interaction with RAG (Retrieval-Augmented Generation),
-// knowledge base indexing, and automated alert analysis capabilities.
-//
-// The application uses the yukino_http framework for HTTP serving and the
-// Eino framework for AI pipeline orchestration.
 package main
 
 import (

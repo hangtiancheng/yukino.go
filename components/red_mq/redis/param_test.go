@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// unreachableAddr is a port where nothing listens, so every network call
-// fails fast without touching a real redis.
 const unreachableAddr = "127.0.0.1:1"
 
 func newLocalTestClient(t *testing.T) *Client {
@@ -40,7 +38,6 @@ func TestCloseIdempotentEnough(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("first Close: %v", err)
 	}
-	// A second Close reports the client as closed instead of panicking.
 	if err := c.Close(); err != nil && err.Error() != "redis: client is closed" {
 		t.Fatalf("second Close: %v", err)
 	}
@@ -85,8 +82,6 @@ func TestCommandParamGuards(t *testing.T) {
 	}
 }
 
-// TestEvalKeyCountBounds guards the make() calls in Eval: a keyCount beyond
-// the supplied args (or negative) used to panic with a negative capacity.
 func TestEvalKeyCountBounds(t *testing.T) {
 	c := newLocalTestClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)

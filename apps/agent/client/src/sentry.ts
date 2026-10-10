@@ -2,16 +2,8 @@ import { enablePlugin, init, isInitialized } from "@yukino.js/sentry";
 import { ExposurePlugin, PerformancePlugin } from "@yukino.js/sentry/plugins";
 import { startErrorSeeder } from "./crash/seeder.js";
 
-// dsn goes through the Vite dev proxy (/api → Go server :8123), which
-// converts the reports into Prometheus metrics at GET /api/metrics.
-//
-// Oversized single events (rrweb ScreenRecord payloads, ResourceList on dev
-// pages that load hundreds of modules) push the batch past the 64KB
-// fetch-keepalive body limit, permanently wedging every retry — drop them.
 const MAX_EVENT_BYTES = 50 * 1024;
 
-// Framework-agnostic setup: unlike the React app there is no error-boundary
-// wrapper — the SDK's global error/unhandledrejection capture covers Lit.
 export function setupSentry() {
   if (isInitialized()) return;
   init({

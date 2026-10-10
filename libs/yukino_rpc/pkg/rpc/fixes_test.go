@@ -22,7 +22,6 @@ func (s *fixService) BadReturn(ctx context.Context, req *streamRequest) (int, er
 	return 0, nil
 }
 
-// Slow streams must not block unary calls multiplexed on the same connection (H-2).
 func (s *fixService) SlowStream(req *streamRequest, stream ServerStream) error {
 	for i := 0; i < req.Count; i++ {
 		time.Sleep(50 * time.Millisecond)
@@ -45,7 +44,6 @@ func startFixServer(t *testing.T) (string, *Server) {
 	return lis.Addr().String(), server
 }
 
-// H-1: GracefulStop must return even while a client keeps an idle pooled connection open.
 func TestGracefulStopWithIdleConnection(t *testing.T) {
 	addr, server := startFixServer(t)
 
@@ -72,7 +70,6 @@ func TestGracefulStopWithIdleConnection(t *testing.T) {
 	}
 }
 
-// H-2: a slow stream on the shared connection must not starve unary calls.
 func TestStreamDoesNotBlockUnary(t *testing.T) {
 	addr, server := startFixServer(t)
 	defer server.Stop()
@@ -99,7 +96,6 @@ func TestStreamDoesNotBlockUnary(t *testing.T) {
 	}
 }
 
-// H-3: handler panics and non-pointer results must surface as errors, not crash the server.
 func TestPanicAndBadSignatureDoNotCrashServer(t *testing.T) {
 	addr, server := startFixServer(t)
 	defer server.Stop()
@@ -121,7 +117,6 @@ func TestPanicAndBadSignatureDoNotCrashServer(t *testing.T) {
 		t.Fatalf("BadReturn invoke error = %v, want unsupported signature", err)
 	}
 
-	// Server must still be functional after both failures.
 	if err := client.Invoke(context.Background(), "Fix", "Echo", &streamRequest{Count: 9}, &reply); err != nil {
 		t.Fatalf("Invoke after panic: %v", err)
 	}
@@ -130,7 +125,6 @@ func TestPanicAndBadSignatureDoNotCrashServer(t *testing.T) {
 	}
 }
 
-// G-1: the async API must be reachable through the public surface.
 func TestInvokeAsyncStatic(t *testing.T) {
 	addr, server := startFixServer(t)
 	defer server.Stop()

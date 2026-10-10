@@ -12,7 +12,6 @@ func Test_Producer(t *testing.T) {
 	skipWithoutRedis(t)
 	client := redis.NewClient(network, address, password)
 	defer client.Close()
-	// Keep at most 10 messages in the stream.
 	producer := red_mq.NewProducer(client, red_mq.WithMsgQueueLen(10))
 	ctx := context.Background()
 	msgID, err := producer.SendMsg(ctx, topic, "test_kk", "test_vv")

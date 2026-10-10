@@ -25,15 +25,12 @@ func (c *Client) InvokeAsync(ctx context.Context, service string, method string,
 		select {
 		case <-future.DoneChan():
 		case <-timer.C:
-			// Resolving the future here also fires OnComplete, so the
-			// timeout is recorded on the circuit breaker exactly once.
 			future.Done(nil, context.DeadlineExceeded)
 		}
 	}()
 	return future, nil
 }
 
-// Invoke runs one RPC call and applies the client timeout to both send and wait.
 func (c *Client) Invoke(ctx context.Context, service string, method string, args any, reply any) error {
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -44,8 +41,6 @@ func (c *Client) Invoke(ctx context.Context, service string, method string, args
 	}
 	err = future.GetResultWithContext(callCtx, reply)
 	if err != nil && callCtx.Err() != nil {
-		// Resolve the future on timeout/cancel so the breaker records the
-		// failure; a late server response then becomes a no-op.
 		future.Done(nil, callCtx.Err())
 	}
 	return err
@@ -97,8 +92,6 @@ func (c *Client) InvokeStream(ctx context.Context, service string, method string
 	return &observedStream{inner: s, br: br}, nil
 }
 
-// observedStream feeds the stream outcome back into the circuit breaker:
-// a clean EOF counts as success, any other terminal error as failure.
 type observedStream struct {
 	inner stream.ClientStream
 	br    *breaker.CircuitBreaker
@@ -112,7 +105,6 @@ func (o *observedStream) Recv(msg any) error {
 	case errors.Is(err, io.EOF):
 		o.once.Do(o.br.RecordSuccess)
 	case errors.Is(err, context.Canceled):
-		// Caller-initiated cancellation is not a service failure.
 	default:
 		o.once.Do(o.br.RecordFailure)
 	}

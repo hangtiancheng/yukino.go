@@ -6,10 +6,6 @@ import (
 	"testing"
 )
 
-// TestMysqlCrudToolSchema locks in parity
-// zod schema (lib/ai/tools/schemas.ts mysqlCrudSchema): full descriptions
-// (eino truncates jsonschema-tag descriptions at commas when the wrong tag is
-// used), all three params required, and operate_type as a real enum.
 func TestMysqlCrudToolSchema(t *testing.T) {
 	tool, err := NewMysqlCrudTool()
 	if err != nil {
@@ -68,8 +64,6 @@ func TestMysqlCrudToolSchema(t *testing.T) {
 	}
 }
 
-// TestNormalizeDsn covers the DSN formats the model may emit: both the
-// go-sql-driver and mysql:// URL forms, plus the parseTime requirement.
 func TestNormalizeDsn(t *testing.T) {
 	cases := []struct {
 		in   string

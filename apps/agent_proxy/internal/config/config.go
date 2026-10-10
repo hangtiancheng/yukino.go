@@ -1,4 +1,3 @@
-// Package config loads the shared Yukino provider configuration.
 package config
 
 import (
@@ -33,7 +32,6 @@ type Config struct {
 	DefaultProvider int        `yaml:"default_provider"`
 }
 
-// Reject fractional, quoted, null, and nonnumeric default_provider values.
 func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if node.Content[i].Value == "default_provider" && node.Content[i+1].Tag != "!!int" {
@@ -62,9 +60,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read provider configuration: %w", err)
 	}
 	var cfg Config
-	// Other Yukino settings are intentionally ignored.
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		// A YAML error may contain a line with an API key.
 		return nil, fmt.Errorf("invalid YAML in provider configuration %s", path)
 	}
 	if len(cfg.Providers) == 0 {

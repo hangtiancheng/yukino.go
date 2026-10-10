@@ -7,19 +7,11 @@ import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/**
- * @typedef {object} Target
- * @property {'linux' | 'darwin' | 'win32'} platform Node platform and artifact label.
- * @property {'x64' | 'arm64'} arch Node architecture and artifact label.
- * @property {'linux' | 'darwin' | 'windows'} goos Go target operating system.
- * @property {'amd64' | 'arm64'} goarch Go target architecture.
- */
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const bin = path.join(root, "bin");
 const binaryName = "yukino-agent-proxy";
 
-/** @type {readonly Target[]} */
 const targets = [
   { platform: "linux", arch: "x64", goos: "linux", goarch: "amd64" },
   { platform: "linux", arch: "arm64", goos: "linux", goarch: "arm64" },
@@ -29,25 +21,14 @@ const targets = [
   { platform: "win32", arch: "arm64", goos: "windows", goarch: "arm64" },
 ];
 
-/**
- * @param {unknown} error
- * @param {string} code
- * @returns {boolean}
- */
 function hasCode(error, code) {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
-/** @param {Target} target @returns {string} */
 function artifactName(target) {
   return `${binaryName}-${target.platform}-${target.arch}`;
 }
 
-/**
- * Build to a temporary file so failed compiles leave existing artifacts intact.
- * @param {Target} target
- * @returns {Promise<void>}
- */
 async function build(target) {
   const name = artifactName(target);
   const output = path.join(bin, name);
@@ -73,7 +54,6 @@ async function build(target) {
             GOOS: target.goos,
             GOARCH: target.goarch,
             GOWORK: process.env.GOWORK ?? "off",
-            // Bound each Go compiler as well as the number of concurrent builds.
             GOMAXPROCS: process.env.GOMAXPROCS ?? "2",
           },
           stdio: "inherit",
@@ -97,11 +77,6 @@ async function build(target) {
   }
 }
 
-/**
- * Use a relative symlink; on Windows, use a hard link if symlinks need privileges.
- * @param {Target} native
- * @returns {Promise<void>}
- */
 async function createNativeLink(native) {
   const name = artifactName(native);
   const output = path.join(bin, binaryName);
@@ -117,7 +92,6 @@ async function createNativeLink(native) {
         throw error;
       await link(path.join(bin, name), temporary);
     }
-    // Rename atomically replaces the existing link or native binary on POSIX.
     await rename(temporary, output);
     console.log(`Linked ${binaryName} -> ${name}`);
   } finally {
@@ -125,7 +99,6 @@ async function createNativeLink(native) {
   }
 }
 
-/** @returns {Promise<void>} */
 async function main() {
   const native = targets.find(
     (target) =>
@@ -144,9 +117,7 @@ async function main() {
     throw new Error("BUILD_CONCURRENCY must be a positive integer.");
   await mkdir(bin, { recursive: true });
   let next = 0;
-  /** @type {Error[]} */
   const failures = [];
-  /** @returns {Promise<void>} */
   async function worker() {
     for (;;) {
       const target = targets[next++];

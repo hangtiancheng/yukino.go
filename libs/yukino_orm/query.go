@@ -22,18 +22,12 @@ type Query struct {
 	err         error
 }
 
-// setErr records the first builder error; it is surfaced by execution methods.
 func (q *Query) setErr(err error) {
 	if q.err == nil {
 		q.err = err
 	}
 }
 
-// Where adds AND conditions. Supported forms:
-//
-//	Where(bson.M{"a": 1, "b": 2})    object form, one equality per key
-//	Where("field", value)            equality; nil value becomes a null check
-//	Where("field", op, value)        operator form; see opAliases and "$" ops
 func (q *Query) Where(args ...any) *Query {
 	conditions, err := parseWhere(args...)
 	if err != nil {
@@ -44,7 +38,6 @@ func (q *Query) Where(args ...any) *Query {
 	return q
 }
 
-// WhereNot adds a "field != value" condition.
 func (q *Query) WhereNot(field string, value any) *Query {
 	q.conditions = append(q.conditions, condition{field: field, op: "$ne", value: value})
 	return q
@@ -80,20 +73,16 @@ func (q *Query) WhereNotBetween(field string, low any, high any) *Query {
 	return q
 }
 
-// WhereLike matches a SQL LIKE pattern (% and _ wildcards), case-sensitive.
 func (q *Query) WhereLike(field string, pattern string) *Query {
 	q.conditions = append(q.conditions, condition{field: field, op: "like", value: pattern})
 	return q
 }
 
-// WhereILike matches a SQL LIKE pattern (% and _ wildcards), case-insensitive.
 func (q *Query) WhereILike(field string, pattern string) *Query {
 	q.conditions = append(q.conditions, condition{field: field, op: "ilike", value: pattern})
 	return q
 }
 
-// OrWhere appends an $or branch. The object form Where(bson.M{...}) produces
-// a single branch whose keys are combined with AND, matching knex semantics.
 func (q *Query) OrWhere(args ...any) *Query {
 	conditions, err := parseWhere(args...)
 	if err != nil {
@@ -101,7 +90,6 @@ func (q *Query) OrWhere(args ...any) *Query {
 		return q
 	}
 	if len(conditions) == 0 {
-		// An empty branch ({}) would match every document; treat as no-op.
 		return q
 	}
 	q.orGroups = append(q.orGroups, conditions)
@@ -138,8 +126,6 @@ func (q *Query) OrWhereBetween(field string, low any, high any) *Query {
 	return q
 }
 
-// OrderBy appends a sort key. Direction is case-insensitive; "desc" sorts
-// descending, anything else ascending.
 func (q *Query) OrderBy(field string, direction ...string) *Query {
 	dir := 1
 	if len(direction) > 0 && strings.EqualFold(strings.TrimSpace(direction[0]), "desc") {
@@ -159,16 +145,11 @@ func (q *Query) Offset(n int64) *Query {
 	return q
 }
 
-// Select sets the projection, replacing any previous one. Fields are included
-// by default; a "-" prefix excludes a field (MongoDB only allows mixing
-// inclusion with the exclusion of "_id").
 func (q *Query) Select(fields ...string) *Query {
 	q.fields = fields
 	return q
 }
 
-// Clone returns an independent copy of the Query. Mutating the clone never
-// affects the original and vice versa.
 func (q *Query) Clone() *Query {
 	if q == nil {
 		return nil

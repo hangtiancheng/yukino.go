@@ -11,14 +11,12 @@ import (
 	"github.com/hangtiancheng/yukino.go/components/lsm_tree/memtable"
 )
 
-// WALReader reads a write-ahead log file.
 type WALReader struct {
-	file   string        // absolute path to the WAL file
-	src    *os.File      // underlying file handle
-	reader *bufio.Reader // buffered reader wrapping the file
+	file   string
+	src    *os.File
+	reader *bufio.Reader
 }
 
-// NewWALReader opens the WAL file for reading. The file must already exist.
 func NewWALReader(file string) (*WALReader, error) {
 	src, err := os.OpenFile(file, os.O_RDONLY, 0644)
 	if err != nil {
@@ -32,26 +30,21 @@ func NewWALReader(file string) (*WALReader, error) {
 	}, nil
 }
 
-// RestoreToMemtable reads the entire WAL and replays all entries into the given memtable.
 func (w *WALReader) RestoreToMemtable(memTable memtable.MemTable) error {
-	// Read the full WAL content.
 	body, err := io.ReadAll(w.reader)
 	if err != nil {
 		return err
 	}
 
-	// Reset the file offset to the start as a safety net.
 	defer func() {
 		_, _ = w.src.Seek(0, io.SeekStart)
 	}()
 
-	// Parse the raw content into a list of key-value pairs.
 	kvs, err := w.readAll(bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 
-	// Replay each pair into the memtable.
 	for _, kv := range kvs {
 		memTable.Put(kv.Key, kv.Value)
 	}
@@ -59,14 +52,10 @@ func (w *WALReader) RestoreToMemtable(memTable memtable.MemTable) error {
 	return nil
 }
 
-// readAll parses the raw WAL content into a list of key-value pairs.
 func (w *WALReader) readAll(reader *bytes.Reader) ([]*memtable.KV, error) {
 	var kvs []*memtable.KV
-	// Loop reading key-value pairs until EOF.
 	for {
-		// Read the first uvarint as the key length.
 		keyLen, err := binary.ReadUvarint(reader)
-		// EOF means the file has been fully consumed.
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -74,19 +63,16 @@ func (w *WALReader) readAll(reader *bytes.Reader) ([]*memtable.KV, error) {
 			return nil, err
 		}
 
-		// Read the next uvarint as the value length.
 		valLen, err := binary.ReadUvarint(reader)
 		if err != nil {
 			return nil, err
 		}
 
-		// Read keyLen bytes as the key.
 		keyBuf := make([]byte, keyLen)
 		if _, err = io.ReadFull(reader, keyBuf); err != nil {
 			return nil, err
 		}
 
-		// Read valLen bytes as the value.
 		valBuf := make([]byte, valLen)
 		if _, err = io.ReadFull(reader, valBuf); err != nil {
 			return nil, err

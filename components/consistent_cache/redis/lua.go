@@ -1,7 +1,6 @@
 package redis
 
 const (
-	// LuaCheckEnableAndWriteCache writes the key/value pair only when the disable marker is absent.
 	LuaCheckEnableAndWriteCache = `
 	local disable_key = KEYS[1];
 	local disable_flag = redis.call("get",disable_key);

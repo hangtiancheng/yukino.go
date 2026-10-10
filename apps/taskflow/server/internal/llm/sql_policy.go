@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-// sqlTokens rejects comments, unterminated literals and stacked statements.
-// Quoted payloads stay data; quoted identifiers remain visible to the policy.
 func sqlTokens(sql string) ([]string, error) {
 	var tokens []string
 	for i := 0; i < len(sql); {

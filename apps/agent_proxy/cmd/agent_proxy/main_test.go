@@ -19,8 +19,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Exercise the production entry point from the test executable, including the
-// detached child and MCP stdio transport.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -40,9 +38,6 @@ func TestBackgroundCLIAndMCP(t *testing.T) {
 	}
 }
 
-// agentExpectation captures the per-agent settings file, backup prefix, the
-// mode used for a native Anthropic selection, and the canned upstream replies
-// that each agent's connection check accepts.
 type agentExpectation struct {
 	settingsFile   string
 	backupGlob     string
@@ -325,7 +320,6 @@ func TestMCPSelectsAgentPerCall(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, executable, "mcp", "--config", configPath, "--listen", "127.0.0.1:0")
-	// Isolate the child process's standard configuration locations for both agents.
 	cmd.Env = append(os.Environ(), "HOME="+root, "CLAUDE_CONFIG_DIR="+filepath.Join(root, "claude"), "CODEX_HOME="+filepath.Join(root, "codex"))
 	client := mcp.NewClient(&mcp.Implementation{Name: "agent-selection-test", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)

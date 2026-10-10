@@ -12,12 +12,10 @@ import (
 	go_redis "github.com/redis/go-redis/v9"
 )
 
-// Client is a Redis client backed by go-redis/v9.
 type Client struct {
 	client go_redis.UniversalClient
 }
 
-// GetClient creates a new Redis client from configuration.
 func GetClient(confProvider *conf.RedisConfigProvider) *Client {
 	config := confProvider.Get()
 	client := go_redis.NewClient(&go_redis.Options{
@@ -30,7 +28,6 @@ func GetClient(confProvider *conf.RedisConfigProvider) *Client {
 	return &Client{client: client}
 }
 
-// SetEx executes the Redis SET command with an expiration in seconds.
 func (c *Client) SetEx(ctx context.Context, key, value string, expireSeconds int64) error {
 	if key == "" || value == "" {
 		return errors.New("redis SET key or value can't be empty")
@@ -38,7 +35,6 @@ func (c *Client) SetEx(ctx context.Context, key, value string, expireSeconds int
 	return c.client.Set(ctx, key, value, time.Duration(expireSeconds)*time.Second).Err()
 }
 
-// SetNX executes the Redis SETNX command and sets expiration on success.
 func (c *Client) SetNX(ctx context.Context, key, value string, expireSeconds int64) (any, error) {
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
@@ -53,7 +49,6 @@ func (c *Client) SetNX(ctx context.Context, key, value string, expireSeconds int
 	return int64(0), nil
 }
 
-// Eval executes a Lua script.
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
 	if keyCount < 0 || keyCount > len(keysAndArgs) {
 		return nil, fmt.Errorf("redis Eval invalid keyCount: %d, len of keysAndArgs: %d", keyCount, len(keysAndArgs))
@@ -71,7 +66,6 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	return c.client.Eval(ctx, src, keys, args...).Result()
 }
 
-// Get executes the Redis GET command.
 func (c *Client) Get(ctx context.Context, key string) (string, error) {
 	val, err := c.client.Get(ctx, key).Result()
 	if err == go_redis.Nil {
@@ -80,7 +74,6 @@ func (c *Client) Get(ctx context.Context, key string) (string, error) {
 	return val, err
 }
 
-// Exists executes the Redis EXISTS command.
 func (c *Client) Exists(ctx context.Context, keys ...string) (bool, error) {
 	if len(keys) == 0 {
 		return false, errors.New("redis Exists args can't be nil or empty")
@@ -92,7 +85,6 @@ func (c *Client) Exists(ctx context.Context, keys ...string) (bool, error) {
 	return n > 0, nil
 }
 
-// HGet executes the Redis HGET command.
 func (c *Client) HGet(ctx context.Context, table, key string) (string, error) {
 	val, err := c.client.HGet(ctx, table, key).Result()
 	if err == go_redis.Nil {
@@ -101,12 +93,10 @@ func (c *Client) HGet(ctx context.Context, table, key string) (string, error) {
 	return val, err
 }
 
-// HSet executes the Redis HSET command.
 func (c *Client) HSet(ctx context.Context, table, key string, value any) error {
 	return c.client.HSet(ctx, table, key, value).Err()
 }
 
-// ZrangeByScore executes the Redis ZRANGEBYSCORE command.
 func (c *Client) ZrangeByScore(ctx context.Context, table string, score1, score2 int64) ([]string, error) {
 	return c.client.ZRangeArgs(ctx, go_redis.ZRangeArgs{
 		Key:     table,
@@ -116,12 +106,10 @@ func (c *Client) ZrangeByScore(ctx context.Context, table string, score1, score2
 	}).Result()
 }
 
-// ZAdd executes the Redis ZADD command.
 func (c *Client) ZAdd(ctx context.Context, table string, score int64, value any) error {
 	return c.client.ZAdd(ctx, table, go_redis.Z{Score: float64(score), Member: value}).Err()
 }
 
-// Expire executes the Redis EXPIRE command.
 func (c *Client) Expire(ctx context.Context, key string, expireSeconds int64) error {
 	return c.client.Expire(ctx, key, time.Duration(expireSeconds)*time.Second).Err()
 }
@@ -159,7 +147,6 @@ type Command struct {
 	Args []any
 }
 
-// Transaction executes a pipeline of commands atomically.
 func (c *Client) Transaction(ctx context.Context, commands ...*Command) ([]any, error) {
 	if len(commands) == 0 {
 		return nil, nil
@@ -201,7 +188,6 @@ func (c *Client) Transaction(ctx context.Context, commands ...*Command) ([]any, 
 	return res, nil
 }
 
-// SetBit executes the Redis SETBIT command, setting the bit at offset to 1.
 func (c *Client) SetBit(ctx context.Context, key string, offset int32) (bool, error) {
 	prev, err := c.client.SetBit(ctx, key, int64(offset), 1).Result()
 	if err != nil {
@@ -210,7 +196,6 @@ func (c *Client) SetBit(ctx context.Context, key string, offset int32) (bool, er
 	return prev == 1, nil
 }
 
-// GetBit executes the Redis GETBIT command.
 func (c *Client) GetBit(ctx context.Context, key string, offset int32) (bool, error) {
 	val, err := c.client.GetBit(ctx, key, int64(offset)).Result()
 	if err != nil {
@@ -219,7 +204,6 @@ func (c *Client) GetBit(ctx context.Context, key string, offset int32) (bool, er
 	return val == 1, nil
 }
 
-// MGet executes the Redis MGET command.
 func (c *Client) MGet(ctx context.Context, keys ...string) ([]string, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("redis MGET args can't be nil or empty")
@@ -262,8 +246,6 @@ func toInt64(v any) int64 {
 	}
 }
 
-// NewUniversalClient shares the caller-owned connection pool, including Sentinel
-// and Cluster routing. The caller is responsible for closing the pool.
 func NewUniversalClient(client go_redis.UniversalClient) *Client {
 	if client == nil {
 		panic("nil redis client")

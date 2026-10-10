@@ -1,8 +1,6 @@
-# taskflow config for the Docker image. Secrets come from environment
-# variables supplied by docker-compose (${VAR} expansion supported).
 
 server:
-  host: 0.0.0.0 # wildcard bind; the fire callback rewrites it to loopback
+  host: 0.0.0.0
   port: 8090
   cors_allow_all: false
   api_token_env: TASKFLOW_API_TOKEN
@@ -11,7 +9,7 @@ server:
   write_timeout_seconds: 600
 
 node:
-  id: "" # empty = hostname-pid (container hostname)
+  id: ""
 
 mysql:
   host: mysql
@@ -73,7 +71,7 @@ reports:
   dir: /app/reports
 
 journal:
-  dir: /app/data/journal # lsm_tree audit ledger (persistent volume)
+  dir: /app/data/journal
 
 consensus:
   id: 1

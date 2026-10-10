@@ -22,8 +22,6 @@ func (q *Query) Distinct(ctx context.Context, field string) ([]any, error) {
 	return values, nil
 }
 
-// CountDistinct returns the number of distinct values of the field among
-// matching documents.
 func (q *Query) CountDistinct(ctx context.Context, field string) (int64, error) {
 	values, err := q.Distinct(ctx, field)
 	if err != nil {
@@ -32,10 +30,6 @@ func (q *Query) CountDistinct(ctx context.Context, field string) (int64, error) 
 	return int64(len(values)), nil
 }
 
-// Pluck collects the value of a single field from all matching documents into
-// out, which must be a pointer to a slice of the value type (e.g. *[]string).
-// Documents missing the field contribute the zero value. Sort, limit, and
-// offset are honored; the Query's projection is not mutated.
 func (q *Query) Pluck(ctx context.Context, field string, out any) error {
 	if err := q.preflight(); err != nil {
 		return err

@@ -17,8 +17,6 @@ import (
 
 const tccStoreLockKey = "taskflow:tcc:txstore:lock"
 
-// TXStore is the durable transaction log behind tcc.TXManager, backed by
-// the tcc_tx_records table plus a redis_lock guarding the recovery monitor.
 type TXStore struct {
 	db          *gorm.DB
 	lockFactory func(expireSeconds int64) *redis_lock.RedisLock

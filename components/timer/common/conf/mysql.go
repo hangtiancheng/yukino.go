@@ -1,12 +1,9 @@
 package conf
 
-// MySQLConfig holds database configuration.
 type MySQLConfig struct {
-	DSN string `yaml:"dsn"`
-	// Maximum number of open connections
-	MaxOpenConns int `yaml:"maxOpenConns"`
-	// Maximum number of idle connections
-	MaxIdleConns int `yaml:"maxIdleConns"`
+	DSN          string `yaml:"dsn"`
+	MaxOpenConns int    `yaml:"maxOpenConns"`
+	MaxIdleConns int    `yaml:"maxIdleConns"`
 }
 
 type MysqlConfProvider struct {

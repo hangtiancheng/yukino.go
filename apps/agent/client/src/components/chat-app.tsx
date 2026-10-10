@@ -20,7 +20,6 @@ const NOTIFY_COLORS: Record<NotificationType, string> = {
 export class ChatApp extends LitElement {
   #chat = new ChatStore(this);
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }

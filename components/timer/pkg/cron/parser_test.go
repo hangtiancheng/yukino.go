@@ -15,8 +15,8 @@ func TestIsValidCronExpr(t *testing.T) {
 		"30 4 1,15 * 5",
 		"1-30/2 * * * *",
 		"5,10,15 * * * *",
-		"30 8 * * 0", // Sunday
-		"@daily",     // robfig/cron descriptor
+		"30 8 * * 0",
+		"@daily",
 	}
 	for _, expr := range valid {
 		if !p.IsValidCronExpr(expr) {
@@ -32,7 +32,7 @@ func TestIsValidCronExpr(t *testing.T) {
 		"* 24 * * *",
 		"* * 0 * *",
 		"* * * 13 *",
-		"* * * * 7", // robfig/cron standard parser: dow is 0-6
+		"* * * * 7",
 		"* * * * 8",
 		"*/0 * * * *",
 		"a * * * *",
@@ -63,8 +63,6 @@ func TestNextAfter(t *testing.T) {
 func TestNextAfterIsStrictlyAfter(t *testing.T) {
 	p := NewCronParser()
 
-	// Querying exactly at a fire time must return the next fire, not the
-	// current one.
 	at := time.Date(2026, 9, 10, 10, 5, 0, 0, time.Local)
 	next, err := p.NextAfter("*/5 * * * *", at)
 	if err != nil {
@@ -79,7 +77,6 @@ func TestNextAfterIsStrictlyAfter(t *testing.T) {
 func TestNextsBetween(t *testing.T) {
 	p := NewCronParser()
 
-	// The window excludes both endpoints: [start, end).
 	start := time.Date(2026, 9, 10, 0, 0, 0, 0, time.Local)
 	end := time.Date(2026, 9, 10, 2, 30, 0, 0, time.Local)
 	nexts, err := p.NextsBetween("0 * * * *", start, end)
@@ -99,15 +96,11 @@ func TestNextsBetween(t *testing.T) {
 		}
 	}
 
-	// end == start must yield no fire times.
 	if nexts, err := p.NextsBetween("* * * * *", start, start); err != nil || len(nexts) != 0 {
 		t.Fatalf("NextsBetween with end == start = (%v, %v), want (empty, nil)", nexts, err)
 	}
 }
 
-// TestNextsBetweenInsideScheduledMinute guards against the regression where a
-// query landing inside a scheduled minute matched on every following second
-// (e.g. 10:05:31..10:05:59 for "*/5 * * * *" queried at 10:05:30).
 func TestNextsBetweenInsideScheduledMinute(t *testing.T) {
 	p := NewCronParser()
 
@@ -150,7 +143,6 @@ func TestNextsBetweenEndBeforeStart(t *testing.T) {
 func TestNextDayOfWeekAndMonth(t *testing.T) {
 	p := NewCronParser()
 
-	// 2026-09-10 is a Thursday; the next Friday is 2026-09-11.
 	after := time.Date(2026, 9, 10, 12, 0, 0, 0, time.Local)
 	next, err := p.NextAfter("0 8 * * 5", after)
 	if err != nil {
@@ -161,7 +153,6 @@ func TestNextDayOfWeekAndMonth(t *testing.T) {
 		t.Fatalf("NextAfter = %v (%s), want %v", next, next.Weekday(), want)
 	}
 
-	// Only February: the next fire must land in February 2027.
 	next, err = p.NextAfter("0 0 1 2 *", after)
 	if err != nil {
 		t.Fatalf("NextAfter returned err: %v", err)
@@ -175,8 +166,6 @@ func TestNextDayOfWeekAndMonth(t *testing.T) {
 func TestSundayZeroAndDescriptor(t *testing.T) {
 	p := NewCronParser()
 
-	// 2026-09-10 is a Thursday; "0" is Sunday, so the next fire is
-	// Sunday 2026-09-13 08:30.
 	after := time.Date(2026, 9, 10, 12, 0, 0, 0, time.Local)
 	next, err := p.NextAfter("30 8 * * 0", after)
 	if err != nil {
@@ -190,7 +179,6 @@ func TestSundayZeroAndDescriptor(t *testing.T) {
 		t.Fatalf("NextAfter weekday = %s, want Sunday", next.Weekday())
 	}
 
-	// robfig/cron descriptors are supported by the professional library.
 	if !p.IsValidCronExpr("@daily") || !p.IsValidCronExpr("@hourly") {
 		t.Fatal("descriptor expressions should be valid")
 	}
@@ -199,7 +187,6 @@ func TestSundayZeroAndDescriptor(t *testing.T) {
 func TestNextNeverMatchingExprBounded(t *testing.T) {
 	p := NewCronParser()
 
-	// Feb 31 never exists; Next must give up instead of looping forever.
 	after := time.Date(2026, 9, 10, 12, 0, 0, 0, time.Local)
 	done := make(chan struct{})
 	var next time.Time

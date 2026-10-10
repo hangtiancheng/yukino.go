@@ -22,7 +22,6 @@ export class MsgList extends LitElement {
   @query("[data-scroller]")
   private _scroller?: HTMLDivElement;
 
-  /* Render into light DOM so global Tailwind utilities apply. */
   createRenderRoot() {
     return this;
   }

@@ -29,7 +29,6 @@ type TXRecordDAO struct {
 	db *gorm.DB
 }
 
-// TXRecordUpdater is the subset of TXRecordDAO used inside LockAndDo callbacks.
 type TXRecordUpdater interface {
 	UpdateTXRecord(ctx context.Context, record *TXRecordPO) error
 }
@@ -86,7 +85,6 @@ func (t *TXRecordDAO) UpdateTXRecord(ctx context.Context, record *TXRecordPO) er
 
 func (t *TXRecordDAO) LockAndDo(ctx context.Context, id uint, do func(ctx context.Context, dao TXRecordUpdater, record *TXRecordPO) error) error {
 	return t.db.Transaction(func(tx *gorm.DB) error {
-		// Acquire write lock
 		var record TXRecordPO
 
 		if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, id).Error; err != nil {

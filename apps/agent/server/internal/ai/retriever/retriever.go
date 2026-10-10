@@ -1,5 +1,3 @@
-// Package retriever provides a Milvus-backed vector retriever for RAG (Retrieval-Augmented Generation).
-// It runs an ANN search over the knowledge collection using embedding-based COSINE similarity.
 package retriever
 
 import (
@@ -16,19 +14,6 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
-// NewMilvusRetriever creates a retriever that searches the Milvus knowledge
-// collection using KNN vector similarity search. It returns the top-1 most
-// relevant document for each query.
-//
-// The search runs with COSINE metric over native FloatVector fields and an
-// AUTOINDEX search param (no radius/range_filter, which the Eino defaults
-// would set from the collection dim and silently filter out every COSINE
-// result). The stored metadata JSON is parsed back into each document's
-// MetaData by the component's default converter, so downstream consumers
-// (e.g. the query_internal_docs tool) see the original key/value pairs.
-//
-// An empty knowledge base degrades to an empty document list instead of an
-// error (see emptyTolerantRetriever).
 func NewMilvusRetriever(ctx context.Context, cfg *config.Config) (retriever.Retriever, error) {
 	cli, _, err := yukino_milvus.NewClient(ctx, cfg)
 	if err != nil {
@@ -66,9 +51,6 @@ func NewMilvusRetriever(ctx context.Context, cfg *config.Config) (retriever.Retr
 	return &emptyTolerantRetriever{inner: r}, nil
 }
 
-// floatVectorConverter converts embeddings to entity.FloatVector, matching the
-// FloatVector schema of the collection. The Eino component default packs float
-// bytes into a BinaryVector, which does not match this collection's schema.
 func floatVectorConverter(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
 	out := make([]entity.Vector, 0, len(vectors))
 	for _, v := range vectors {
@@ -81,10 +63,6 @@ func floatVectorConverter(ctx context.Context, vectors [][]float64) ([]entity.Ve
 	return out, nil
 }
 
-// emptyTolerantRetriever maps the Eino Milvus retriever's "no results found"
-// error — raised whenever the collection holds no rows yet — to an empty
-// document list. Without it, chatting before the first document is indexed
-// would fail the whole pipeline with a "search result has error".
 type emptyTolerantRetriever struct {
 	inner retriever.Retriever
 }

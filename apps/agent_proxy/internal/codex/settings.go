@@ -1,4 +1,3 @@
-// Package codex projects the local Responses gateway into Codex configuration.
 package codex
 
 import (
@@ -25,8 +24,6 @@ func DefaultDir() (string, error) {
 	return filepath.Join(home, ".codex"), nil
 }
 
-// Configure retains an exact byte backup and leaves auth.json untouched.
-// Shutdown never restores or removes either the config or its backups.
 func Configure(dir string, p config.Provider, gateway string) (string, error) {
 	var err error
 	dir, err = filepath.Abs(dir)
@@ -54,7 +51,6 @@ func Configure(dir string, p config.Provider, gateway string) (string, error) {
 	if providers == nil {
 		providers = map[string]any{}
 	}
-	// Newer Codex rejects custom entries shadowing reserved built-in IDs.
 	for _, id := range []string{"openai", "ollama", "lmstudio"} {
 		delete(providers, id)
 	}
@@ -142,7 +138,6 @@ func modelCatalog(p config.Provider) map[string]any {
 	}}}
 }
 
-// WritePrivate atomically replaces a private file, including on initial creation.
 func WritePrivate(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".yukino-*")
 	if err != nil {

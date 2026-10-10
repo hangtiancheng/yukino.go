@@ -10,7 +10,6 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
-// stubRetriever returns a canned result/error pair.
 type stubRetriever struct {
 	docs []*schema.Document
 	err  error
@@ -23,8 +22,6 @@ func (s *stubRetriever) Retrieve(ctx context.Context, query string, opts ...retr
 func TestEmptyTolerantRetriever(t *testing.T) {
 	ctx := context.Background()
 
-	// The Eino Milvus retriever surfaces an empty collection as this error;
-	// it must degrade to an empty document list.
 	empty := &emptyTolerantRetriever{inner: &stubRetriever{
 		err: errors.New("[milvus retriever] no results found"),
 	}}
@@ -36,14 +33,12 @@ func TestEmptyTolerantRetriever(t *testing.T) {
 		t.Errorf("want empty docs, got %d", len(docs))
 	}
 
-	// Any other error must pass through untouched.
 	boom := errors.New("connection refused")
 	passthrough := &emptyTolerantRetriever{inner: &stubRetriever{err: boom}}
 	if _, err := passthrough.Retrieve(ctx, "q"); !errors.Is(err, boom) {
 		t.Errorf("want pass-through error, got %v", err)
 	}
 
-	// Successful results pass through.
 	want := []*schema.Document{{ID: "1", Content: "c"}}
 	ok := &emptyTolerantRetriever{inner: &stubRetriever{docs: want}}
 	got, err := ok.Retrieve(ctx, "q")

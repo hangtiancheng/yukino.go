@@ -1,16 +1,8 @@
 # syntax=docker/dockerfile:1
-#
-# taskflow server image. Build from the repository root so the local modules
-# referenced by services/taskflow/server/go.mod replace directives are present:
-#
-#   docker build -f services/taskflow/server/Dockerfile -t taskflow-server .
-#
-# or simply: docker compose up --build   (see services/taskflow/docker-compose.yml)
 
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 
-# Local modules required by the replace directives (yukino family + components).
 COPY components/consistent_cache/ ./components/consistent_cache/
 COPY components/consistent_hash/ ./components/consistent_hash/
 COPY components/lsm_tree/ ./components/lsm_tree/
@@ -23,7 +15,6 @@ COPY components/timer/ ./components/timer/
 COPY libs/yukino_cache/ ./libs/yukino_cache/
 COPY libs/yukino_http/ ./libs/yukino_http/
 
-# Server sources; module mode (no go.work) so the go.mod replaces apply.
 COPY services/taskflow/server/go.mod services/taskflow/server/go.sum ./services/taskflow/server/
 WORKDIR /src/services/taskflow/server
 ENV GOWORK=off CGO_ENABLED=0

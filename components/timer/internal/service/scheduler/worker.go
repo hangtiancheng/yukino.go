@@ -56,46 +56,12 @@ func (w *Worker) handleSlices(ctx context.Context) {
 	}
 }
 
-// Dynamic bucketing is disabled.
 func (w *Worker) getValidBucket(ctx context.Context) int {
 	return w.appConfProvider.Get().BucketsNum
-	// now := time.Now()
-	// // Delete data from the previous minute
-	// delete(w.minuteBuckets, now.Add(-time.Minute).Format(consts.MinuteFormat))
 
-	// // Reuse data within the same minute
-	// bucket, ok := w.minuteBuckets[now.Format(consts.MinuteFormat)]
-	// if ok {
-	// 	return bucket
-	// }
-
-	// // Store in map for reuse
-	// defer func() {
-	// 	w.minuteBuckets[now.Format(consts.MinuteFormat)] = bucket
-	// }()
-
-	// bucket = w.appConfProvider.Get().BucketsNum
-	// bucketKey := utils.GetBucketCntKey(now.Format(consts.MinuteFormat))
-	// res, err := w.bucketGetter.Get(ctx, bucketKey)
-	// if err != nil {
-	// 	log.ErrorContextf(ctx, "[scheduler] get bucket failed, key: %s, err:%v", bucketKey, err)
-	// 	return bucket
-	// }
-
-	// _bucket, err := strconv.Atoi(res)
-	// if err != nil {
-	// 	log.ErrorContextf(ctx, "[scheduler] get invalid bucket, key: %s, got:%v", bucketKey, res)
-	// 	return bucket
-	// }
-
-	// bucket = _bucket
-	// log.InfoContextf(ctx, "[scheduler] get valid bucket success, bucket: %d, cur: %v", _bucket, time.Now())
-
-	// return bucket
 }
 
 func (w *Worker) handleSlice(ctx context.Context, bucketID int) {
-	// log.InfoContextf(ctx, "scheduler_1 start: %v", time.Now())
 	now := time.Now()
 	if err := w.pool.Submit(func() {
 		w.asyncHandleSlice(ctx, now.Add(-time.Minute), bucketID)
@@ -107,18 +73,12 @@ func (w *Worker) handleSlice(ctx context.Context, bucketID int) {
 	}); err != nil {
 		log.ErrorContextf(ctx, "[handle slice] submit task failed, err: %v", err)
 	}
-	// log.InfoContextf(ctx, "scheduler_1 end: %v", time.Now())
 }
 
 func (w *Worker) asyncHandleSlice(ctx context.Context, t time.Time, bucketID int) {
-	// log.InfoContextf(ctx, "scheduler_2 start: %v", time.Now())
-	// defer func() {
-	// 	log.InfoContextf(ctx, "scheduler_2 end: %v", time.Now())
-	// }()
 
 	locker := w.lockService.GetDistributionLock(utils.GetTimeBucketLockKey(t, bucketID))
 	if err := locker.Lock(ctx, int64(w.appConfProvider.Get().TryLockSeconds)); err != nil {
-		// log.WarnContextf(ctx, "get lock failed, err: %v, key: %s", err, utils.GetTimeBucketLockKey(t, bucketID))
 		return
 	}
 

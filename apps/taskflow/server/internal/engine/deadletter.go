@@ -10,8 +10,6 @@ import (
 	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
 )
 
-// DeadLetterMailbox persists poison messages (retry limit exceeded) into the
-// mq_dead_letters table so nothing is silently dropped.
 type DeadLetterMailbox struct {
 	dao   *dao.DAO
 	topic string

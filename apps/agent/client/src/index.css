@@ -9,8 +9,7 @@
   --font-mono:
     "Yukino", "Maple Mono", Menlo, "Cascadia Code", "Sarasa Gothic SC",
     "PingFang SC", "Microsoft YaHei", monospace;
-  
-  /* Warm blush palette anchored on rgb(236 194 179) = --color-blush-300 */
+
   --color-blush-50: #fbf5f1;
   --color-blush-100: #f7e9e1;
   --color-blush-200: #f1d5c7;
@@ -43,7 +42,6 @@
   }
 }
 
-/* Warm thin scrollbars */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-blush-300) transparent;
@@ -63,7 +61,6 @@
   background-color: var(--color-blush-400);
 }
 
-/* Markdown output of md-render (rendered via markdown-it into light DOM). */
 .md-content > :first-child {
   margin-top: 0;
 }
@@ -129,8 +126,6 @@
   color: inherit;
   padding: 0;
 }
-/* highlight.js theme tokens sit on top of the blush code-block background;
-   drop the theme's own opaque .hljs box so the two do not fight. */
 .md-content pre code.hljs {
   background-color: transparent;
   color: inherit;

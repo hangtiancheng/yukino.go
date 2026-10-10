@@ -1,6 +1,3 @@
-// Package log_callback provides a callback handler for the Eino framework
-// that logs pipeline component lifecycle events (start/end) via the unified
-// slog logger.
 package log_callback
 
 import (
@@ -11,16 +8,11 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 )
 
-// Config controls the verbosity of the log callback handler.
 type Config struct {
-	// Detail enables logging of input/output payloads.
 	Detail bool
-	// Debug enables pretty-printed (indented) JSON output.
-	Debug bool
+	Debug  bool
 }
 
-// NewHandler creates an Eino callback handler that logs component start/end events.
-// If config is nil, a default configuration with Detail=true is used.
 func NewHandler(config *Config) callbacks.Handler {
 	if config == nil {
 		config = &Config{Detail: true}

@@ -1,4 +1,3 @@
-// Package mcpserver exposes the same persistent service lifecycle as the CLI.
 package mcpserver
 
 import (
@@ -48,7 +47,6 @@ func agentOptions(options daemon.Options, input *string) (daemon.Options, error)
 	if err != nil {
 		return daemon.Options{}, err
 	}
-	// Rebase only agent-specific defaults; retain explicit runtime overrides.
 	options.Agent = name
 	if options.AgentDir == "" || options.AgentDir == previous.AgentDir {
 		options.AgentDir = defaults.AgentDir

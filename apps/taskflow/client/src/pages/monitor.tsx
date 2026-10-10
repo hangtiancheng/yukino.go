@@ -192,9 +192,7 @@ export class MonitorPage extends LightDomElement {
               let parsed: { status?: string; fire_key?: string } = {};
               try {
                 parsed = JSON.parse(raw);
-              } catch {
-                /* keep empty */
-              }
+              } catch {}
               return (
                 <div class="bg-base-200/70 flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px]">
                   <span class="text-base-content/50 font-mono">exec #{id}</span>

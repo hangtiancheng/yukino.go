@@ -1,5 +1,3 @@
-// Package server assembles the yukino_http application: middleware chain,
-// public API under /api/v1 and internal callbacks under /internal/v1.
 package server
 
 import (

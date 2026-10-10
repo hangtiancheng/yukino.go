@@ -47,8 +47,8 @@ func (c *Client) getBreaker(service, addr string) *breaker.CircuitBreaker {
 
 	newBreaker := breaker.NewCircuitBreaker(
 		10,
-		0.6,           // 60% 错误率熔断
-		5*time.Second, // 熔断 5 秒
+		0.6,
+		5*time.Second,
 	)
 	actual, _ := c.breaker.LoadOrStore(key, newBreaker)
 	return actual.(*breaker.CircuitBreaker)

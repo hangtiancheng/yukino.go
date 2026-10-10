@@ -10,19 +10,16 @@ import (
 	go_redis "github.com/redis/go-redis/v9"
 )
 
-// LockClient is the redis surface used by RedisLock.
 type LockClient interface {
 	SetNEX(ctx context.Context, key, value string, expireSeconds int64) (int64, error)
 	Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error)
 }
 
-// Client wraps a github.com/redis/go-redis/v9 client.
 type Client struct {
 	ClientOptions
 	client go_redis.UniversalClient
 }
 
-// NewClient builds a Client against the given redis endpoint.
 func NewClient(network, address, password string, opts ...ClientOption) *Client {
 	c := Client{
 		ClientOptions: ClientOptions{
@@ -74,13 +71,10 @@ func (c *Client) Set(ctx context.Context, key, value string) (int64, error) {
 	return 0, nil
 }
 
-// SetNEX runs SET key value NX EX expireSeconds. Returns 1 on success, 0 if the key already exists.
 func (c *Client) SetNEX(ctx context.Context, key, value string, expireSeconds int64) (int64, error) {
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
 	}
-	// expireSeconds <= 0 would create a key that never expires (or is rejected),
-	// leaving a lock stuck forever after the holder crashes.
 	if expireSeconds <= 0 {
 		return -1, errors.New("redis SET NX expireSeconds must be positive")
 	}
@@ -124,9 +118,7 @@ func (c *Client) Incr(ctx context.Context, key string) (int64, error) {
 	return c.client.Incr(ctx, key).Result()
 }
 
-// Eval runs the given Lua script. The first keyCount entries of keysAndArgs are KEYS, the rest are ARGV.
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
-	// Guard against keyCount out of range: a negative capacity below would panic.
 	if keyCount < 0 || keyCount > len(keysAndArgs) {
 		return nil, fmt.Errorf("redis EVAL keyCount %d out of range [0, %d]", keyCount, len(keysAndArgs))
 	}
@@ -142,8 +134,6 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	return c.client.Eval(ctx, src, keys, args...).Result()
 }
 
-// NewUniversalClient shares the caller-owned connection pool, including Sentinel
-// and Cluster routing. The caller is responsible for closing the pool.
 func NewUniversalClient(client go_redis.UniversalClient) *Client {
 	if client == nil {
 		panic("nil redis client")
