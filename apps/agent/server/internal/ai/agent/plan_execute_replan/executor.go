@@ -53,6 +53,10 @@ func NewExecutor(ctx context.Context, cfg *config.Config) (adk.Agent, error) {
 				Tools: toolList,
 			},
 		},
-		MaxIterations: 10,
+		// Legacy parity: a single plan step may fan out one tool call per alert
+		// (query_internal_docs / log queries for every active alert), so the
+		// per-step ReAct loop stays effectively unbounded. The overall loop is
+		// still capped by plan_execute.Config.MaxIterations in BuildPlanAgent.
+		MaxIterations: 999999,
 	})
 }

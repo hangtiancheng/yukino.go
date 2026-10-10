@@ -7,8 +7,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -180,4 +182,125 @@ func keys[V any](m map[string]V) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+type sentinelTool struct {
+	id string
+}
+
+func (s *sentinelTool) Info(context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{Name: s.id}, nil
+}
+
+func newThreeToolMCPServer() *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-server-3", Version: "v0.0.1"}, nil)
+	for _, name := range []string{"tool_a", "tool_b", "tool_c"} {
+		mcp.AddTool(server, &mcp.Tool{Name: name, Description: name},
+			func(ctx context.Context, req *mcp.CallToolRequest, args echoArgs) (*mcp.CallToolResult, any, error) {
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: name}},
+				}, nil, nil
+			})
+	}
+	return server
+}
+
+// Callers append their own tools (prometheus, mysql, ...) to the slice
+// returned by GetLogMcpTool. If the returned slice shared the cache's backing
+// array with spare capacity, concurrent requests would overwrite each other's
+// appended tools. The returned slice must therefore never have spare capacity
+// and two calls must yield independent slices.
+func TestGetLogMcpToolReturnsIndependentSlices(t *testing.T) {
+	ctx := context.Background()
+
+	server := newThreeToolMCPServer()
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(func() {
+		ts.CloseClientConnections()
+		ts.Close()
+	})
+	cfg := config.MCPConfig{Transport: config.MCPTransportStreamableHTTP, URL: ts.URL}
+
+	first, err := GetLogMcpTool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("GetLogMcpTool: %v", err)
+	}
+	if len(first) != 3 {
+		t.Fatalf("got %d tools, want 3", len(first))
+	}
+	if cap(first) != len(first) {
+		t.Errorf("returned slice has spare capacity (cap=%d len=%d); caller appends could alias the cache", cap(first), len(first))
+	}
+
+	second, err := GetLogMcpTool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("second GetLogMcpTool: %v", err)
+	}
+	if len(second) != len(first) {
+		t.Fatalf("second call returned %d tools, want %d", len(second), len(first))
+	}
+
+	extFirst := append(first, &sentinelTool{id: "sentinel-a"})
+	extSecond := append(second, &sentinelTool{id: "sentinel-b"})
+
+	if s, ok := extFirst[len(first)].(*sentinelTool); !ok || s.id != "sentinel-a" {
+		t.Errorf("first caller's appended tool was corrupted: %#v", extFirst[len(first)])
+	}
+	if s, ok := extSecond[len(second)].(*sentinelTool); !ok || s.id != "sentinel-b" {
+		t.Errorf("second caller's appended tool was corrupted: %#v", extSecond[len(second)])
+	}
+	if len(first) != 3 || len(second) != 3 {
+		t.Errorf("cached tool list length changed by caller appends: first=%d second=%d", len(first), len(second))
+	}
+}
+
+// GetLogMcpTool is invoked with the HTTP request context, and the session
+// behind the returned tools is cached for the process lifetime. The SSE
+// transport binds its long-lived GET stream to the Connect context, so if the
+// request context's cancellation propagated into the session, the cached
+// session would die as soon as the first request completes and every later
+// tool call would hang on the dead stream.
+func TestSSECachedSessionSurvivesRequestContextCancellation(t *testing.T) {
+	server := newTestMCPServer()
+	handler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(func() {
+		ts.CloseClientConnections()
+		ts.Close()
+	})
+	cfg := config.MCPConfig{Transport: config.MCPTransportSSE, URL: ts.URL}
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	tools, err := GetLogMcpTool(reqCtx, cfg)
+	if err != nil {
+		t.Fatalf("GetLogMcpTool: %v", err)
+	}
+	var echo tool.InvokableTool
+	for _, tl := range tools {
+		info, err := tl.Info(reqCtx)
+		if err != nil {
+			t.Fatalf("Info: %v", err)
+		}
+		if info.Name == "echo" {
+			echo = tl.(tool.InvokableTool)
+		}
+	}
+	if echo == nil {
+		t.Fatalf("echo tool not found among %d tools", len(tools))
+	}
+
+	cancel() // simulate the first HTTP request finishing
+	time.Sleep(200 * time.Millisecond)
+
+	// Bounded call context so a regression fails fast instead of hanging.
+	callCtx, callCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer callCancel()
+	out, err := echo.InvokableRun(callCtx, `{"message":"hi"}`)
+	if err != nil {
+		t.Fatalf("cached SSE tool invocation failed after request ctx cancellation: %v", err)
+	}
+	if out != "echo: hi" {
+		t.Errorf("echo output = %q, want %q", out, "echo: hi")
+	}
 }

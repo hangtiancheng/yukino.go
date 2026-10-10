@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +52,11 @@ func (a *App) handleFileUpload(ctx *yukino_http.Context, next func()) {
 		return
 	}
 
-	if err := knowledge_index_pipeline.IndexFile(ctx.Request.Context(), a.cfg, savePath); err != nil {
+	// Index with a context detached from the request: the file is already
+	// saved on disk, and IndexFile deletes stale chunks before re-indexing.
+	// Cancelling mid-way on client disconnect would leave the knowledge base
+	// with the old chunks removed and the new ones only partially inserted.
+	if err := knowledge_index_pipeline.IndexFile(context.WithoutCancel(ctx.Request.Context()), a.cfg, savePath); err != nil {
 		ctx.Throw(http.StatusInternalServerError, "build knowledge base failed: "+err.Error())
 		return
 	}

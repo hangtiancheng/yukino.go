@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 
@@ -33,7 +34,9 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 	}
 
 	if cachedKey == key && cachedTools != nil {
-		return cachedTools, nil
+		// Clone so callers appending to the returned slice can never alias (and
+		// race on) the cached backing array.
+		return slices.Clone(cachedTools), nil
 	}
 
 	tools, err := buildMcpTools(ctx, cfg)
@@ -44,7 +47,7 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 
 	cachedTools = tools
 	cachedKey = key
-	return tools, nil
+	return slices.Clone(tools), nil
 }
 
 func mcpCacheKey(cfg config.MCPConfig) (string, error) {
@@ -56,6 +59,16 @@ func mcpCacheKey(cfg config.MCPConfig) (string, error) {
 }
 
 func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, error) {
+	// GetLogMcpTool caches the session behind the returned tools for the
+	// lifetime of the process, but ctx here is typically the first HTTP
+	// request's context. The SSE transport binds its long-lived GET stream to
+	// the context passed to Connect, so inheriting the request's cancellation
+	// would kill the cached session as soon as that request completes and
+	// every later tool call would hang on the dead stream. Detach
+	// cancellation (keeping values) so the session only ends when the server
+	// closes it or the process exits.
+	ctx = context.WithoutCancel(ctx)
+
 	transport, err := newMcpTransport(cfg)
 	if err != nil {
 		return nil, err

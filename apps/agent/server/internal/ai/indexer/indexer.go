@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"unicode/utf8"
 
 	eino_milvus "github.com/cloudwego/eino-ext/components/indexer/milvus"
 	"github.com/cloudwego/eino/components/indexer"
@@ -66,10 +67,7 @@ func documentToRows(ctx context.Context, docs []*schema.Document, vectors [][]fl
 			return nil, fmt.Errorf("marshal metadata of doc %s: %w", doc.ID, err)
 		}
 
-		content := doc.Content
-		if len(content) > consts.MaxContentLength {
-			content = content[:consts.MaxContentLength]
-		}
+		content := truncateToRuneBoundary(doc.Content, consts.MaxContentLength)
 
 		vec := make([]float32, len(vectors[i]))
 		for j, v := range vectors[i] {
@@ -84,4 +82,19 @@ func documentToRows(ctx context.Context, docs []*schema.Document, vectors [][]fl
 		})
 	}
 	return rows, nil
+}
+
+// truncateToRuneBoundary cuts s to at most maxBytes bytes without splitting a
+// multi-byte UTF-8 rune. Knowledge chunks are mostly Chinese text, and a plain
+// byte cut would leave an invalid UTF-8 sequence at the end of the truncated
+// content stored in Milvus.
+func truncateToRuneBoundary(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
