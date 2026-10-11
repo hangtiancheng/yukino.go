@@ -27,8 +27,11 @@
     "url": "http://localhost:3000/mcp",
   },
   "prometheus_url": "http://127.0.0.1:9090",
-  "log_topic_region": "",
-  "log_topic_id": "",
+  // Injected into the chat system prompt so log-search tool calls carry the
+  // right region/topic. These are the values carried over from the legacy
+  // SuperBizAgent prompt and referenced by data/docs/alert-handling-guide.md.
+  "log_topic_region": "ap-guangzhou",
+  "log_topic_id": "869830db-a055-4479-963b-3c898d27e755",
   "milvus": {
     "addr": "localhost:19530",
     "username": "",

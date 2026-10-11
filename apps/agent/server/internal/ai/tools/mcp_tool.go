@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	mcpMu       sync.Mutex
-	cachedTools []tool.BaseTool
-	cachedKey   string
+	mcpMu         sync.Mutex
+	cachedTools   []tool.BaseTool
+	cachedKey     string
+	cachedSession *mcp.ClientSession
 )
 
 func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, error) {
@@ -39,15 +40,53 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 		return slices.Clone(cachedTools), nil
 	}
 
-	tools, err := buildMcpTools(ctx, cfg)
+	tools, session, err := buildMcpTools(ctx, cfg)
 	if err != nil {
 		logger.L().Warn("mcp connect failed, skipping log tools", "transport", cfg.Transport, "err", err)
 		return []tool.BaseTool{}, nil
 	}
 
+	if cachedSession != nil {
+		// The config changed; release the previous session (this also stops a
+		// stdio MCP server process we may have started).
+		cachedSession.Close()
+	}
 	cachedTools = tools
 	cachedKey = key
+	cachedSession = session
 	return slices.Clone(tools), nil
+}
+
+// invalidateMcpSession drops the cached tools when they belong to the given
+// session. It runs when the session's connection dies (watchSession) or when a
+// tool call fails at the transport level (mcpToolAdapter.InvokableRun), so the
+// next GetLogMcpTool call reconnects instead of serving tools bound to a dead
+// session for the rest of the process lifetime. The legacy implementation
+// reconnected on every request; this preserves that resilience while keeping
+// one long-lived session.
+func invalidateMcpSession(session *mcp.ClientSession) {
+	mcpMu.Lock()
+	if cachedSession == session {
+		cachedTools = nil
+		cachedKey = ""
+		cachedSession = nil
+	}
+	mcpMu.Unlock()
+
+	// Close outside the lock. Close is idempotent; for a session whose
+	// transport already died it is a no-op, and it unblocks the session's
+	// watchSession goroutine so it cannot leak.
+	session.Close()
+}
+
+// watchSession blocks until the MCP connection is closed by the server or
+// broken by a transport failure, then invalidates the cache. Transports
+// without a persistent stream (newer streamable-HTTP protocol revisions drop
+// the standalone SSE listener) never notice server death here; those are
+// covered by the CallTool-time invalidation in InvokableRun.
+func watchSession(session *mcp.ClientSession) {
+	_ = session.Wait()
+	invalidateMcpSession(session)
 }
 
 func mcpCacheKey(cfg config.MCPConfig) (string, error) {
@@ -58,7 +97,7 @@ func mcpCacheKey(cfg config.MCPConfig) (string, error) {
 	return string(raw), nil
 }
 
-func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, error) {
+func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, *mcp.ClientSession, error) {
 	// GetLogMcpTool caches the session behind the returned tools for the
 	// lifetime of the process, but ctx here is typically the first HTTP
 	// request's context. The SSE transport binds its long-lived GET stream to
@@ -71,7 +110,7 @@ func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 
 	transport, err := newMcpTransport(cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cli := mcp.NewClient(&mcp.Implementation{
@@ -81,15 +120,18 @@ func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 
 	session, err := cli.Connect(ctx, transport, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tools, err := listMcpTools(ctx, session)
 	if err != nil {
 		session.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	return tools, nil
+
+	go watchSession(session)
+
+	return tools, session, nil
 }
 
 func newMcpTransport(cfg config.MCPConfig) (mcp.Transport, error) {
@@ -178,6 +220,13 @@ func (t *mcpToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 		Arguments: args,
 	})
 	if err != nil {
+		// A request-level failure (as opposed to result.IsError, which is a
+		// tool-level failure) usually means the session's transport is gone.
+		// Drop the cache so the next agent build reconnects. Skip when our own
+		// context was cancelled: the session may be perfectly healthy.
+		if ctx.Err() == nil {
+			invalidateMcpSession(t.session)
+		}
 		return "", fmt.Errorf("call mcp tool %s: %w", t.name, err)
 	}
 	return formatCallResult(t.name, result)

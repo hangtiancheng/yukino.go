@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -299,6 +300,130 @@ func TestSSECachedSessionSurvivesRequestContextCancellation(t *testing.T) {
 	out, err := echo.InvokableRun(callCtx, `{"message":"hi"}`)
 	if err != nil {
 		t.Fatalf("cached SSE tool invocation failed after request ctx cancellation: %v", err)
+	}
+	if out != "echo: hi" {
+		t.Errorf("echo output = %q, want %q", out, "echo: hi")
+	}
+}
+
+// The legacy implementation reconnected to the MCP server on every request,
+// so an MCP server restart was invisible to callers. The migrated
+// implementation caches one session for the process lifetime; without
+// invalidation, a server restart would leave every later tool call failing
+// until the agent process itself is restarted. The cache must therefore be
+// dropped when the session dies (watchdog or failed call) and rebuilt on the
+// next GetLogMcpTool call.
+func TestGetLogMcpToolReconnectsAfterServerRestart(t *testing.T) {
+	ctx := context.Background()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	url := "http://" + addr
+
+	newHTTPServer := func() *http.Server {
+		return &http.Server{Handler: mcp.NewStreamableHTTPHandler(
+			func(*http.Request) *mcp.Server { return newTestMCPServer() }, nil)}
+	}
+
+	srv := newHTTPServer()
+	go srv.Serve(ln)
+
+	cfg := config.MCPConfig{Transport: config.MCPTransportStreamableHTTP, URL: url}
+
+	tools, err := GetLogMcpTool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("GetLogMcpTool: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("got %d tools, want 2", len(tools))
+	}
+	var echo tool.InvokableTool
+	for _, tl := range tools {
+		info, err := tl.Info(ctx)
+		if err != nil {
+			t.Fatalf("Info: %v", err)
+		}
+		if info.Name == "echo" {
+			echo = tl.(tool.InvokableTool)
+		}
+	}
+	if echo == nil {
+		t.Fatal("echo tool not found")
+	}
+
+	// Kill the MCP server. The cached session dies with it.
+	srv.Close()
+
+	// The cache must stop serving the dead session: either the watchdog
+	// notices the broken connection on its own, or the first failed tool call
+	// invalidates it. Either way GetLogMcpTool must then attempt a reconnect,
+	// which fails while the server is down and degrades to zero tools.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		got, err := GetLogMcpTool(ctx, cfg)
+		if err != nil {
+			t.Fatalf("GetLogMcpTool after server death: %v", err)
+		}
+		if len(got) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cache still serving %d tools after MCP server death", len(got))
+		}
+		callCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = echo.InvokableRun(callCtx, `{"message":"ping"}`)
+		cancel()
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Restart the server on the same address: the next call must reconnect
+	// and hand back working tools, matching the legacy per-request reconnect.
+	ln2, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("re-listen on %s: %v", addr, err)
+	}
+	srv2 := newHTTPServer()
+	go srv2.Serve(ln2)
+	defer srv2.Close()
+
+	deadline = time.Now().Add(15 * time.Second)
+	var restored []tool.BaseTool
+	for {
+		got, err := GetLogMcpTool(ctx, cfg)
+		if err != nil {
+			t.Fatalf("GetLogMcpTool after restart: %v", err)
+		}
+		if len(got) == 2 {
+			restored = got
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("tools not restored after MCP server restart, got %d", len(got))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	var echo2 tool.InvokableTool
+	for _, tl := range restored {
+		info, err := tl.Info(ctx)
+		if err != nil {
+			t.Fatalf("Info after restart: %v", err)
+		}
+		if info.Name == "echo" {
+			echo2 = tl.(tool.InvokableTool)
+		}
+	}
+	if echo2 == nil {
+		t.Fatal("echo tool not found after restart")
+	}
+	callCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := echo2.InvokableRun(callCtx, `{"message":"hi"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun after restart: %v", err)
 	}
 	if out != "echo: hi" {
 		t.Errorf("echo output = %q, want %q", out, "echo: hi")
