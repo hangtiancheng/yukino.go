@@ -56,7 +56,7 @@ services:
   server:
     build:
       context: ../../
-      dockerfile: services/taskflow/server/Dockerfile
+      dockerfile: apps/taskflow/server/Dockerfile
     image: taskflow/server:latest
     restart: unless-stopped
     environment:

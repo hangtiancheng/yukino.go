@@ -15,12 +15,12 @@ COPY components/timer/ ./components/timer/
 COPY libs/yukino_cache/ ./libs/yukino_cache/
 COPY libs/yukino_http/ ./libs/yukino_http/
 
-COPY services/taskflow/server/go.mod services/taskflow/server/go.sum ./services/taskflow/server/
-WORKDIR /src/services/taskflow/server
+COPY apps/taskflow/server/go.mod apps/taskflow/server/go.sum ./apps/taskflow/server/
+WORKDIR /src/apps/taskflow/server
 ENV GOWORK=off CGO_ENABLED=0
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-COPY services/taskflow/server/ ./
+COPY apps/taskflow/server/ ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags="-s -w" -o /out/taskflow ./cmd/taskflow
@@ -30,7 +30,7 @@ RUN apk add --no-cache ca-certificates tzdata
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 COPY --from=build /out/taskflow ./taskflow
-COPY services/taskflow/server/conf.docker.yml ./conf.yml
+COPY apps/taskflow/server/conf.docker.yml ./conf.yml
 RUN mkdir -p /app/reports /app/data /app/logs && chown -R taskflow:taskflow /app
 USER taskflow
 EXPOSE 8090

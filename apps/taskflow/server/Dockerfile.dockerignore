@@ -10,13 +10,13 @@
 !components/timer
 !libs/yukino_cache
 !libs/yukino_http
-!services/taskflow/server
+!apps/taskflow/server
 
 **/.git
 **/node_modules
 **/*.log
-services/taskflow/server/data
-services/taskflow/server/logs
-services/taskflow/server/reports
-services/taskflow/server/.env
-services/taskflow/server/taskflow
+apps/taskflow/server/data
+apps/taskflow/server/logs
+apps/taskflow/server/reports
+apps/taskflow/server/.env
+apps/taskflow/server/taskflow

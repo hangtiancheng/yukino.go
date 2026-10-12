@@ -1,5 +1,5 @@
 packages:
-  - services/agent/client
-  - services/taskflow/client
+  - apps/agent/client
+  - apps/taskflow/client
 
 minimumReleaseAge: 0

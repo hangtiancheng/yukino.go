@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOTES =
   "Standalone executables for Linux, macOS, and Windows on x64 and arm64.";
 const PROJECTS = [
-  { name: "yukino-agent-proxy", directory: "services/agent_proxy" },
+  { name: "yukino-agent-proxy", directory: "apps/agent_proxy" },
 ];
 const PLATFORMS = [
   "linux-x64",
