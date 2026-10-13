@@ -17,15 +17,12 @@ type SSEWriter struct {
 
 func (ctx *Context) SSE() *SSEWriter {
 	flusher, _ := ctx.Writer.(http.Flusher)
-	ctx.flushed = true
 	ctx.Status = http.StatusOK
 	ctx.statusSet = true
 	ctx.Writer.Header().Set("Content-Type", "text/event-stream")
 	ctx.Writer.Header().Set("Cache-Control", "no-cache")
 	ctx.Writer.Header().Set("Connection", "keep-alive")
-	for k, v := range ctx.headers {
-		ctx.Writer.Header().Set(k, v)
-	}
+	ctx.TakeOver()
 	ctx.Writer.WriteHeader(http.StatusOK)
 	return &SSEWriter{ctx: ctx, flusher: flusher}
 }

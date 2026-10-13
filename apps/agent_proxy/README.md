@@ -165,6 +165,8 @@ Optional flags:
 | `--state-dir`  | `$HOME/.yukino/claude-proxy` or `$HOME/.yukino/codex-proxy`                       | Process state, lock, and log directory             |
 | `--listen`     | `127.0.0.1:17861` (claude), `127.0.0.1:17862` (codex)                             | Loopback IP and port; port `0` chooses a free port |
 | `--foreground` | `false`                                                                           | Run in the foreground; stop with Ctrl-C            |
+| `--transport`  | `stdio`                                                                           | MCP only: `stdio`, `http`, or legacy `sse`          |
+| `--mcp-listen` | `127.0.0.1:17863`                                                                 | MCP HTTP loopback IP and port                      |
 
 Flags may appear before or after a subcommand. Use the same `--agent` and
 `--state-dir` for commands controlling the same service. A state directory
@@ -260,6 +262,22 @@ yukino-agent-proxy --agent=claude mcp
 yukino-agent-proxy --agent=codex mcp
 ```
 
+Stdio is the default. To serve MCP over HTTP in the foreground:
+
+```sh
+# Streamable HTTP: http://127.0.0.1:17863/mcp
+yukino-agent-proxy mcp --transport=http --mcp-listen=127.0.0.1:17863
+# Legacy HTTP+SSE: http://127.0.0.1:17863/sse
+yukino-agent-proxy mcp --transport=sse --mcp-listen=127.0.0.1:17863
+```
+
+Configure HTTP clients with the corresponding endpoint URL. `--mcp-listen`
+defaults to `127.0.0.1:17863` and accepts loopback IP addresses only. It is
+independent of `--listen`, which controls the agent proxy started by MCP tools.
+Stop the MCP HTTP listener with Ctrl+C; agent proxy daemons continue running.
+The official SDK's HTTP handlers run inside `yukino_http` using
+`Context.TakeOver()`, preserving their status codes and streaming Flush behavior.
+
 Example MCP client configuration:
 
 ```json
@@ -299,8 +317,8 @@ settings directories, state directories, and listen ports follow that agent.
 Custom `--agent-dir`, `--state-dir`, and `--listen` values are retained across
 calls; use the default state directories to run both agents concurrently.
 The proxy survives the MCP session ending. Status and tool results exclude API
-keys. Standard output carries MCP messages only; diagnostics go to standard
-error or the daemon log.
+keys. In stdio mode, standard output carries MCP messages only; diagnostics go
+to standard error or the daemon log. HTTP mode logs its endpoint to standard error.
 
 ## Protocol bridges
 
@@ -353,6 +371,10 @@ go vet ./...
 # Optional: small billable requests to real providers; never changes agent settings.
 YUKINO_PROXY_LIVE_TEST=1 go test ./internal/claude/proxy -run '^TestLiveProviders$' -v -count=1
 
+# Optional: MCP HTTP start/status/shutdown plus real Chat Completions JSON/SSE;
+# uses temporary settings and cleans up its test daemons.
+go test ./cmd/agent_proxy -run '^TestLiveMCPHTTP$' -v -count=1 -args -live-mcp-http
+
 # Optional: run the installed Codex CLI against an isolated proxy and temporary
 # configuration (requires the `codex` binary and real providers).
 go test ./cmd/agent_proxy -run '^TestLiveCodex$' -args -live-codex -v -count=1
@@ -361,8 +383,9 @@ go test ./cmd/agent_proxy -run '^TestLiveCodex$' -args -live-codex -v -count=1
 Tests cover provider selection, duplicate names, default indices, startup
 connection failures, retained settings and services on failure, backups, real
 SDK clients through mocked endpoints, background process switching, shutdown,
-and MCP stdio for both agents. The opt-in live suites check startup
-connectivity, text, SSE, and tool round trips against configured providers.
+and MCP stdio, Streamable HTTP, and legacy SSE for both agents. The opt-in live
+suites check startup connectivity, text, SSE, and tool round trips against
+configured providers.
 
 Implementation packages:
 
@@ -373,7 +396,7 @@ internal/config           Ordered provider selection
 internal/claude           Claude Code settings, bridge, proxy, and route check
 internal/codex            Codex settings, bridge, proxy, and route check
 internal/daemon           Process lifecycle and authenticated local control
-internal/mcpserver        Official MCP SDK tools
+internal/mcpserver        Official MCP SDK tools and HTTP transports
 internal/private          Atomic private file writes
 internal/upstream         Official Anthropic and OpenAI SDK transports
 ```

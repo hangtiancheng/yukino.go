@@ -54,6 +54,23 @@ func (ctx *Context) SetStatus(status int) {
 	ctx.statusSet = true
 }
 
+// TakeOver disables deferred response rendering for this request. Call it before
+// writing directly to Writer or passing Writer to an external http.Handler.
+// Buffered headers are copied to Writer, but no status or body is written and
+// Writer is not wrapped, preserving optional interfaces such as http.Flusher.
+// Subsequent calls have no effect. The caller owns the response until its handler
+// returns; deferred body, status and header changes are no longer rendered.
+// SetStatus can still be used to record the status for logging middleware.
+func (ctx *Context) TakeOver() {
+	if ctx.flushed {
+		return
+	}
+	ctx.flushed = true
+	for k, v := range ctx.headers {
+		ctx.Writer.Header().Set(k, v)
+	}
+}
+
 func (ctx *Context) Get(header string) string {
 	return ctx.Request.Header.Get(header)
 }

@@ -25,11 +25,17 @@ func main() {
 	}
 }
 
-func parseOptions(args []string) (string, daemon.Options, bool, error) {
+type commandOptions struct {
+	foreground bool
+	transport  string
+	mcpListen  string
+}
+
+func parseOptions(args []string) (string, daemon.Options, commandOptions, error) {
 	selected, _ := agent.Get(agent.Claude)
 	opts, err := daemon.Defaults(selected)
 	if err != nil {
-		return "", opts, false, err
+		return "", opts, commandOptions{}, err
 	}
 	command := "start"
 	hasCommand := len(args) > 0 && args[0] != "" && args[0][0] != '-'
@@ -45,7 +51,10 @@ func parseOptions(args []string) (string, daemon.Options, bool, error) {
 	flags.StringVar(&opts.AgentDir, "agent-dir", opts.AgentDir, "Agent configuration directory (Claude Code or Codex)")
 	flags.StringVar(&opts.StateDir, "state-dir", opts.StateDir, "Proxy process state directory")
 	flags.StringVar(&opts.Listen, "listen", opts.Listen, "Local loopback listen address")
-	foreground := flags.Bool("foreground", false, "Run the proxy in the foreground")
+	commandOpts := commandOptions{transport: "stdio", mcpListen: "127.0.0.1:17863"}
+	flags.BoolVar(&commandOpts.foreground, "foreground", false, "Run the proxy in the foreground")
+	flags.StringVar(&commandOpts.transport, "transport", commandOpts.transport, "MCP transport: stdio, http (Streamable HTTP), or sse (legacy HTTP+SSE)")
+	flags.StringVar(&commandOpts.mcpListen, "mcp-listen", commandOpts.mcpListen, "MCP HTTP loopback listen address (separate from --listen for proxy tools)")
 	if command == "_serve" {
 		flags.StringVar(&opts.ExpectedProvider, "expected-provider", "", "Validated provider fingerprint")
 	}
@@ -61,16 +70,16 @@ func parseOptions(args []string) (string, daemon.Options, bool, error) {
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
-		return "", opts, false, err
+		return "", opts, commandOptions{}, err
 	}
 	if !hasCommand && flags.NArg() > 0 {
 		command = flags.Arg(0)
 		if err := flags.Parse(flags.Args()[1:]); err != nil {
-			return "", opts, false, err
+			return "", opts, commandOptions{}, err
 		}
 	}
 	if flags.NArg() != 0 {
-		return "", opts, false, fmt.Errorf("unexpected positional argument %q", flags.Arg(0))
+		return "", opts, commandOptions{}, fmt.Errorf("unexpected positional argument %q", flags.Arg(0))
 	}
 	var emptyFilter string
 	explicit := make(map[string]bool)
@@ -81,15 +90,26 @@ func parseOptions(args []string) (string, daemon.Options, bool, error) {
 		}
 	})
 	if emptyFilter != "" {
-		return "", opts, false, fmt.Errorf("--%s must not be empty; omit both filters to use default_provider", emptyFilter)
+		return "", opts, commandOptions{}, fmt.Errorf("--%s must not be empty; omit both filters to use default_provider", emptyFilter)
+	}
+	if command != "mcp" && (explicit["transport"] || explicit["mcp-listen"]) {
+		return "", opts, commandOptions{}, fmt.Errorf("--transport and --mcp-listen apply only to the mcp command")
+	}
+	switch commandOpts.transport {
+	case "stdio", "http", "sse":
+	default:
+		return "", opts, commandOptions{}, fmt.Errorf("unknown MCP transport %q; expected stdio, http, or sse", commandOpts.transport)
+	}
+	if commandOpts.transport == "stdio" && explicit["mcp-listen"] {
+		return "", opts, commandOptions{}, fmt.Errorf("--mcp-listen requires --transport=http or --transport=sse")
 	}
 	selected, err = agent.Get(opts.Agent)
 	if err != nil {
-		return "", opts, false, err
+		return "", opts, commandOptions{}, err
 	}
 	defaults, err := daemon.Defaults(selected)
 	if err != nil {
-		return "", opts, false, err
+		return "", opts, commandOptions{}, err
 	}
 	if !explicit["agent-dir"] {
 		opts.AgentDir = defaults.AgentDir
@@ -102,19 +122,19 @@ func parseOptions(args []string) (string, daemon.Options, bool, error) {
 	}
 	for _, value := range []*string{&opts.ConfigPath, &opts.AgentDir, &opts.StateDir} {
 		if *value == "" {
-			return "", opts, false, fmt.Errorf("configuration and state paths must not be empty")
+			return "", opts, commandOptions{}, fmt.Errorf("configuration and state paths must not be empty")
 		}
 		path, err := filepath.Abs(*value)
 		if err != nil {
-			return "", opts, false, err
+			return "", opts, commandOptions{}, err
 		}
 		*value = path
 	}
-	return command, opts, *foreground, nil
+	return command, opts, commandOpts, nil
 }
 
 func run(args []string) error {
-	command, opts, foreground, err := parseOptions(args)
+	command, opts, commandOpts, err := parseOptions(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -127,7 +147,7 @@ func run(args []string) error {
 	manager := daemon.Manager{Options: opts}
 	switch command {
 	case "start":
-		if foreground {
+		if commandOpts.foreground {
 			return manager.Serve(ctx, true)
 		}
 		status, err := manager.Start(ctx)
@@ -150,6 +170,9 @@ func run(args []string) error {
 		}
 		return printJSON(status)
 	case "mcp":
+		if commandOpts.transport != "stdio" {
+			return mcpserver.RunHTTP(ctx, opts, commandOpts.transport, commandOpts.mcpListen)
+		}
 		return mcpserver.New(opts).Run(ctx, &mcp.StdioTransport{})
 	default:
 		return fmt.Errorf("unknown command %q; expected start, shutdown, status, or mcp", command)

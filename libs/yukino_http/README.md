@@ -45,6 +45,8 @@ The response is not written during middleware execution. Middleware sets `ctx.St
 
 For WebSocket and SSE, `ctx.flushed` is set to `true` during upgrade/initialization. `ctx.respond()` checks this flag and skips writing, since the connection has already been hijacked or headers have already been sent.
 
+External HTTP handlers can take ownership of the response with `ctx.TakeOver()`.
+
 ## Application
 
 ```go
@@ -143,6 +145,28 @@ ctx.State["user"] = currentUser
 ```
 
 When `ctx.Body` is set but `ctx.Status` is not explicitly set, the framework auto-corrects the default 404 to 200, matching Koa behavior.
+
+## External HTTP handlers
+
+Call `ctx.TakeOver()` before writing directly to `ctx.Writer` or delegating to a
+standard `http.Handler`, such as an MCP HTTP transport:
+
+```go
+app.All("/mcp", func(ctx *yukino.Context, _ func()) {
+    ctx.TakeOver()
+    mcpHandler.ServeHTTP(ctx.Writer, ctx.Request)
+})
+```
+
+`TakeOver` copies headers buffered by `ctx.Set` to the existing writer and disables
+deferred rendering. It does not send a status, body, or Flush, so the external handler
+chooses the response and retains the writer's optional interfaces, including
+`http.Flusher` and `http.Hijacker`. Repeated calls have no effect.
+
+After takeover, deferred response setters and post-`next()` changes are not rendered.
+`ctx.Status` is not inferred from direct writes; use `ctx.SetStatus` when logging
+middleware needs a known status. Keep streaming handlers running until the stream
+ends or the request context is canceled; the writer is only valid during the request.
 
 ## WebSocket
 

@@ -293,10 +293,10 @@ func TestAgentDefaultsFollowParsedFlags(t *testing.T) {
 			}
 		})
 	}
-	_, opts, foreground, err := parseOptions([]string{"--agent=codex", "--config", configPath, "start", "--agent-dir", "custom-settings", "--state-dir", "custom-state", "--listen", "127.0.0.1:0", "--foreground"})
+	_, opts, commandOpts, err := parseOptions([]string{"--agent=codex", "--config", configPath, "start", "--agent-dir", "custom-settings", "--state-dir", "custom-state", "--listen", "127.0.0.1:0", "--foreground"})
 	settings, _ := filepath.Abs("custom-settings")
 	state, _ := filepath.Abs("custom-state")
-	if err != nil || !foreground || opts.AgentDir != settings || opts.StateDir != state || opts.Listen != "127.0.0.1:0" {
+	if err != nil || !commandOpts.foreground || opts.AgentDir != settings || opts.StateDir != state || opts.Listen != "127.0.0.1:0" {
 		t.Fatalf("explicit overrides were lost: %+v, %v", opts, err)
 	}
 }

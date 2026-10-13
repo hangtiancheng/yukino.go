@@ -101,11 +101,7 @@ func (r *Router) createStaticHandler(relativePath string, fs http.FileSystem) Mi
 			ctx.statusSet = true
 			return
 		}
-		header := ctx.Writer.Header()
-		for k, v := range ctx.headers {
-			header.Set(k, v)
-		}
-		ctx.flushed = true
+		ctx.TakeOver()
 		fileServer.ServeHTTP(&statusRecorder{ResponseWriter: ctx.Writer, status: &ctx.Status}, ctx.Request)
 	}
 }
