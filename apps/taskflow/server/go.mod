@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/getsentry/sentry-go v0.30.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/hangtiancheng/yukino.go/components/consistent_cache v0.0.0
 	github.com/hangtiancheng/yukino.go/components/consistent_hash v0.0.0
 	github.com/hangtiancheng/yukino.go/components/lsm_tree v0.0.0
@@ -21,7 +22,6 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
-	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.2
 )

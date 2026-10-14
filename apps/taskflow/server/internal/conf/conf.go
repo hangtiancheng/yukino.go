@@ -6,7 +6,8 @@ import (
 	"os"
 	"strconv"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 )
 
 type Config struct {
@@ -180,15 +181,17 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
-	var root yaml.Node
+	var root ast.Node
 	if err := yaml.Unmarshal(raw, &root); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
-	expandEnv(&root)
+	expandEnv(root)
 
 	var cfg Config
-	if err := root.Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode config %s: %w", path, err)
+	if root != nil {
+		if err := yaml.NodeToValue(root, &cfg); err != nil {
+			return nil, fmt.Errorf("decode config %s: %w", path, err)
+		}
 	}
 	cfg.repair()
 	if err := cfg.Validate(); err != nil {
@@ -379,18 +382,22 @@ func (c *Config) repair() {
 	}
 }
 
-func expandEnv(node *yaml.Node) {
-	if node == nil {
+func expandEnv(node ast.Node) {
+	switch n := node.(type) {
+	case nil:
 		return
-	}
-	switch node.Kind {
-	case yaml.DocumentNode, yaml.SequenceNode, yaml.MappingNode:
-		for _, child := range node.Content {
-			expandEnv(child)
+	case *ast.MappingNode:
+		for _, entry := range n.Values {
+			expandEnv(entry)
 		}
-	case yaml.ScalarNode:
-		if node.Tag == "!!str" || node.Tag == "" {
-			node.Value = os.Expand(node.Value, os.Getenv)
+	case *ast.MappingValueNode:
+		expandEnv(n.Key)
+		expandEnv(n.Value)
+	case *ast.SequenceNode:
+		for _, item := range n.Values {
+			expandEnv(item)
 		}
+	case *ast.StringNode:
+		n.Value = os.Expand(n.Value, os.Getenv)
 	}
 }

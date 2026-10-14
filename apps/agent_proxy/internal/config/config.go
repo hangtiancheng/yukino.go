@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 )
 
 const (
@@ -32,14 +33,18 @@ type Config struct {
 	DefaultProvider int        `yaml:"default_provider"`
 }
 
-func (c *Config) UnmarshalYAML(node *yaml.Node) error {
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == "default_provider" && node.Content[i+1].Tag != "!!int" {
+func (c *Config) UnmarshalYAML(node ast.Node) error {
+	mapping, ok := node.(*ast.MappingNode)
+	if !ok {
+		return fmt.Errorf("provider configuration must be a mapping")
+	}
+	for _, entry := range mapping.Values {
+		if entry.Key.String() == "default_provider" && entry.Value.Type() != ast.IntegerType {
 			return fmt.Errorf("default_provider must be an integer")
 		}
 	}
 	type plainConfig Config
-	return node.Decode((*plainConfig)(c))
+	return yaml.NodeToValue(node, (*plainConfig)(c))
 }
 
 func DefaultPath() (string, error) {
