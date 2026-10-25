@@ -4,6 +4,6 @@ packages:
   - apps/yukino-diet-agent/frontend
 
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 
 minimumReleaseAge: 0

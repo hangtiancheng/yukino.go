@@ -26,7 +26,7 @@
   "devDependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
-    "npm-run-all2": "^9.0.3"
+    "npm-run-all2": "^9.0.4"
   },
   "lint-staged": {
     "*.{go,json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
