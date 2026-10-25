@@ -1,5 +1,9 @@
 packages:
   - apps/agent/client
   - apps/task_flow/client
+  - apps/yukino-diet-agent/frontend
+
+allowBuilds:
+  esbuild: set this to true or false
 
 minimumReleaseAge: 0

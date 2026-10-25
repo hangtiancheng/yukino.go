@@ -1,0 +1,42 @@
+# ============================================================
+# diet-agent configuration template
+# Copy to config.yaml and fill in real values, or point the
+# DIET_CONFIG environment variable at your own file.
+# ============================================================
+server:
+  host: 127.0.0.1
+  port: 8080
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  # Prefer password_env over the inline password so secrets stay out of VCS.
+  password_env: MYSQL_PASSWORD
+  password: ""
+  database: diet_db
+  max_open_conns: 20
+  max_idle_conns: 5
+
+llm:
+  # OpenAI-compatible chat endpoint. Each *_env field names an environment
+  # variable (loaded from .env at startup) that wins over the inline value.
+  api_key_env: LLM_API_KEY
+  api_key: ""
+  # Empty base_url uses the DashScope compatible-mode default.
+  base_url_env: LLM_BASE_URL
+  base_url: ""
+  main_model_env: LLM_MAIN_MODEL
+  main_model: Qwen3.8-Max-DogFooding
+  light_model_env: LLM_LIGHT_MODEL
+  light_model: Qwen3.8-Max-DogFooding
+  # Per-call LLM timeout in seconds. Bounds a hung provider call so it cannot
+  # hold the per-session lock forever; 0 disables the timeout.
+  timeout_seconds: 60
+
+session:
+  max_history_turns: 10
+
+static:
+  # Built frontend assets served at /; leave empty to disable static serving.
+  dir: frontend/dist
