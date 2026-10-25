@@ -25,7 +25,7 @@ func TestMurmur3EncryptorMatchesLibrary(t *testing.T) {
 	e := NewMurmur3Encryptor()
 	alt := NewMurmur3AltEncryptor()
 
-	for _, s := range []string{"timer", "", "taskflow:bloom:exec", "<script>alert(1)</script>"} {
+	for _, s := range []string{"timer", "", "task_flow:bloom:exec", "<script>alert(1)</script>"} {
 		h1, h2 := murmur3.Sum128([]byte(s))
 		if got := e.Encrypt(s); got != h1 {
 			t.Fatalf("Murmur3Encryptor.Encrypt(%q) = %d, want %d", s, got, h1)
@@ -40,7 +40,7 @@ func TestMurmur3AltEncryptorDistinct(t *testing.T) {
 	e := NewMurmur3Encryptor()
 	alt := NewMurmur3AltEncryptor()
 
-	for _, s := range []string{"timer", "taskflow", "a"} {
+	for _, s := range []string{"timer", "task_flow", "a"} {
 		if e.Encrypt(s) == alt.Encrypt(s) {
 			t.Fatalf("primary and alt hashes collide for %q", s)
 		}

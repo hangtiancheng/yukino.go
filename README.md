@@ -182,7 +182,7 @@ yukino.go/
 ├── components/          # hand-written distributed components (time_wheel, redis_lock,
 │                        #   red_mq, consistent_hash, consistent_cache, lsm_tree, raft, tcc, timer)
 ├── apps/                # deployable servers, cmd/ + internal/ layout
-│   ├── taskflow/        # enterprise conditional & scheduled task platform (server/ + client/)
+│   ├── task_flow/       # enterprise conditional & scheduled task platform (server/ + client/)
 │   ├── agent/           # AI OnCall assistant          (client: packages/yukino-agent)
 │   ├── agent_proxy/     # coding-agent proxy, released as yukino-agent-proxy
 │   ├── chat/            # IM server                   (client: packages/yukino-chat)

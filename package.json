@@ -15,7 +15,7 @@
     "tag": "node scripts/tag.js",
     "format:go": "gofmt -w ./",
     "format:agent": "pnpm --dir ./apps/agent/client format",
-    "format:taskflow": "pnpm --dir ./apps/taskflow/client format",
+    "format:task-flow": "pnpm --dir ./apps/task_flow/client format",
     "format": "run-p format:*",
     "git:config": "git config user.name hangtiancheng && git config user.email '161043261@qq.com'",
     "git:commit": "git add -A && git commit -m \"feat: Introduce new features\"",

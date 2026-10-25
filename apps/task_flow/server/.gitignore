@@ -1,0 +1,5 @@
+reports/
+logs/
+data/
+/task_flow
+*.test

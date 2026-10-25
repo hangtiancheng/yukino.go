@@ -3,7 +3,7 @@ go 1.26.4
 use (
 	./apps/agent/server
 	./apps/agent_proxy
-	./apps/taskflow/server
+	./apps/task_flow/server
 	./components/consistent_cache
 	./components/consistent_hash
 	./components/lsm_tree
