@@ -137,3 +137,17 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace (
+	github.com/hangtiancheng/yukino.go/components/consistent_cache => ../../../components/consistent_cache
+	github.com/hangtiancheng/yukino.go/components/consistent_hash => ../../../components/consistent_hash
+	github.com/hangtiancheng/yukino.go/components/lsm_tree => ../../../components/lsm_tree
+	github.com/hangtiancheng/yukino.go/components/raft => ../../../components/raft
+	github.com/hangtiancheng/yukino.go/components/red_mq => ../../../components/red_mq
+	github.com/hangtiancheng/yukino.go/components/redis_lock => ../../../components/redis_lock
+	github.com/hangtiancheng/yukino.go/components/tcc => ../../../components/tcc
+	github.com/hangtiancheng/yukino.go/components/time_wheel => ../../../components/time_wheel
+	github.com/hangtiancheng/yukino.go/components/timer => ../../../components/timer
+	github.com/hangtiancheng/yukino.go/libs/yukino_cache => ../../../libs/yukino_cache
+	github.com/hangtiancheng/yukino.go/libs/yukino_http => ../../../libs/yukino_http
+)
