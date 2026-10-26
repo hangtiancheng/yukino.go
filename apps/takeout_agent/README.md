@@ -36,7 +36,7 @@ Every chat turn runs through an orchestrator state machine:
 │   │   ├── config/            # YAML config with env overrides
 │   │   └── takeout/           # domain: agents, orchestrator, store, services
 │   │       └── prompts/       # embedded English prompt templates
-│   ├── db/diet_db.sql         # schema + seed data (slot options, public meals)
+│   ├── db/takeout_db.sql      # schema + seed data (slot options, public meals)
 │   ├── config.example.yaml    # configuration template
 │   └── config.yaml            # local configuration (git-ignored)
 └── client/                    # React + Vite + shadcn/ui app
@@ -47,7 +47,7 @@ Every chat turn runs through an orchestrator state machine:
 ### 1. Database
 
 ```bash
-mysql -u root -p < server/db/diet_db.sql
+mysql -u root -p < server/db/takeout_db.sql
 ```
 
 This creates `takeout_db` with the schema, 93 slot options, and seeded public

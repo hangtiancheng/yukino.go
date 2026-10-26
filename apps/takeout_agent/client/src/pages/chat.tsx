@@ -131,7 +131,15 @@ export default function ChatPage() {
         return;
       }
       feedback.mutate(
-        { sessionId: message.sessionId, itemId: meal.id, action },
+        {
+          sessionId: message.sessionId,
+          itemId: meal.id,
+          action,
+          // Mirror the legacy console: a dislike rates 2/5, everything
+          // else rates 5/5, so the evaluation pipeline can score feedback
+          // from the rating column as well as the action.
+          rating: action === "DISLIKE" ? 2 : 5,
+        },
         {
           onSuccess: () => {
             setFeedbackGiven((prev) => ({

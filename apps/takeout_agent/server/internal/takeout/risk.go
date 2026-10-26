@@ -7,8 +7,8 @@ var (
 		"cure", "cures", "treatment", "treatments", "diagnose", "diagnosis",
 		"medicine", "medication", "prescription", "heal",
 	)
-	extremeTakeoutKeywords = newKeywordMatcher(
-		"starve", "starvation", "fasting", "extreme takeout", "eat nothing",
+	extremeDietingKeywords = newKeywordMatcher(
+		"starve", "starvation", "fasting", "extreme dieting", "eat nothing",
 		"only drink water", "only water",
 	)
 	absoluteClaimKeywords = newKeywordMatcher(
@@ -37,8 +37,8 @@ func (RiskGuardService) Check(userInput string, intent Intent, response Response
 	if medicalKeywords.matchesAny(allText) {
 		reasons = append(reasons, "involves medical diagnosis or treatment promises")
 	}
-	if extremeTakeoutKeywords.matchesAny(allText) {
-		reasons = append(reasons, "involves extreme takeouting advice")
+	if extremeDietingKeywords.matchesAny(allText) {
+		reasons = append(reasons, "involves extreme dieting advice")
 	}
 	if absoluteClaimKeywords.matchesAny(allText) {
 		reasons = append(reasons, "involves absolute health promises")
@@ -53,4 +53,4 @@ func (RiskGuardService) Check(userInput string, intent Intent, response Response
 }
 
 // ConservativeMessage is the fixed conservative reply for high-risk turns.
-const ConservativeMessage = "This question involves health or medical risk, and I cannot replace a doctor for diagnosis or treatment advice. From an everyday takeout perspective, choose light, balanced, and moderate meals; if symptoms are significant, or you are pregnant, nursing, or managing a chronic condition, please consult a doctor or a registered takeoutitian."
+const ConservativeMessage = "This question involves health or medical risk, and I cannot replace a doctor for diagnosis or treatment advice. From an everyday takeout perspective, choose light, balanced, and moderate meals; if symptoms are significant, or you are pregnant, nursing, or managing a chronic condition, please consult a doctor or a registered dietitian."

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +179,115 @@ func TestDurationJSON(t *testing.T) {
 	}
 	if string(out) != `{"interval":"1m30s"}` {
 		t.Fatalf("marshal = %s", out)
+	}
+}
+
+func TestMySQLDSN(t *testing.T) {
+	cfg := config.MySQLConfig{
+		Host:     "db.example.com",
+		Port:     "3306",
+		User:     "appuser",
+		Password: "secret",
+		Database: "mydb",
+	}
+	dsn := cfg.DSN()
+	for _, want := range []string{
+		"appuser:secret@tcp(db.example.com:3306)/mydb",
+		"charset=utf8mb4",
+		"parseTime=True",
+	} {
+		if !strings.Contains(dsn, want) {
+			t.Fatalf("DSN %q should contain %q", dsn, want)
+		}
+	}
+}
+
+func TestLoadLLMFromJSONAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	content := `{
+	  "llm": {
+	    "provider": "openai",
+	    "base_url": "https://api.deepseek.com/v1",
+	    "model": "deepseek-v4-flash"
+	  }
+	}`
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 从 JSON 文件加载
+	cfg := config.Defaults()
+	if err := config.MergeFile(cfg, configPath); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLM.BaseURL != "https://api.deepseek.com/v1" {
+		t.Fatalf("llm.base_url = %q", cfg.LLM.BaseURL)
+	}
+	if cfg.LLM.Model != "deepseek-v4-flash" {
+		t.Fatalf("llm.model = %q", cfg.LLM.Model)
+	}
+
+	// 环境变量覆盖
+	config.ApplyEnv(cfg, func(key string) (string, bool) {
+		switch key {
+		case "LLM_BASE_URL":
+			return "https://env.example.com/v1", true
+		case "LLM_MODEL":
+			return "env-model", true
+		}
+		return "", false
+	})
+	if cfg.LLM.BaseURL != "https://env.example.com/v1" {
+		t.Fatalf("llm.base_url = %q, want env override", cfg.LLM.BaseURL)
+	}
+	if cfg.LLM.Model != "env-model" {
+		t.Fatalf("llm.model = %q, want env override", cfg.LLM.Model)
+	}
+}
+
+func TestLoadSecretsOverridesConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	// 公开配置（无密码）
+	configPath := filepath.Join(dir, "config.json")
+	configJSON := `{
+	  "mysql": { "host": "db.local", "port": "3306" },
+	  "redis": { "host": "cache.local", "port": "6379" }
+	}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 密码文件
+	secretsPath := filepath.Join(dir, "secrets.json")
+	secretsJSON := `{
+	  "mysql": { "password": "my-secret-password" },
+	  "redis": { "password": "redis-pwd" }
+	}`
+	if err := os.WriteFile(secretsPath, []byte(secretsJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load 的合并顺序：默认值 → config.json → secrets.json → 环境变量。
+	cfg := config.Defaults()
+	if err := config.MergeFile(cfg, configPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.MergeFile(cfg, secretsPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.MySQL.Host != "db.local" {
+		t.Fatalf("mysql.host = %q, want db.local", cfg.MySQL.Host)
+	}
+	if cfg.MySQL.Password != "my-secret-password" {
+		t.Fatalf("mysql.password = %q, want secrets value", cfg.MySQL.Password)
+	}
+	if cfg.Redis.Host != "cache.local" {
+		t.Fatalf("redis.host = %q, want cache.local", cfg.Redis.Host)
+	}
+	if cfg.Redis.Password != "redis-pwd" {
+		t.Fatalf("redis.password = %q, want secrets value", cfg.Redis.Password)
 	}
 }

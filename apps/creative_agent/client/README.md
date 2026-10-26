@@ -1,6 +1,6 @@
 # yukino-creative-agent
 
-yukino-creative-agent 后端（`../yukino-creative-agent`）的前端：登录 / 注册 / 首页 / 智能对话（SSE 流式）。
+yukino-creative-agent 后端（`../server`）的前端：登录 / 注册 / 首页 / 智能对话（SSE 流式）。
 
 由 go-learn 的静态页面（`fe/*.html`）迁移而来。
 
@@ -22,11 +22,11 @@ pnpm build      # tsc -b + vite build → dist/
 pnpm lint       # eslint
 ```
 
-后端启动见 `../yukino-creative-agent/README.md`（`make run`）。
+后端启动见 `../server/README.md`（`make run`）。
 
 ## 部署（前后端分离）
 
-后端（`../yukino-creative-agent`）只提供 API，不托管前端静态产物。本项目独立构建、独立部署：
+后端（`../server`）只提供 API，不托管前端静态产物。本项目独立构建、独立部署：
 
 ```bash
 # 构建时注入后端地址（跨域由后端 CORS 中间件放行）

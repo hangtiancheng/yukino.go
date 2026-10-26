@@ -174,7 +174,7 @@ func TemplateRecommendSpeech(recommend RecommendResult) string {
 
 // DisclaimerSuffix is the health boundary note appended when the slots
 // touch weight loss or similar health goals.
-const DisclaimerSuffix = "\nThese suggestions are for everyday takeout reference only. If you have a diagnosed condition or a special physical situation, please consult a doctor or a takeoutitian."
+const DisclaimerSuffix = "\nThese suggestions are for everyday takeout reference only. If you have a diagnosed condition or a special physical situation, please consult a doctor or a dietitian."
 
 // ToDisplayBlocks flattens recommendations into frontend meal cards.
 func ToDisplayBlocks(recommend RecommendResult) []MealResponse {

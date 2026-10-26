@@ -1,6 +1,6 @@
 # yukino-creative-agent — 智能体对话 + 内容创作/风控基座
 
-go-learn（智能体对话：ReAct 引擎 + SEDA 图调度 + Streams 异步管道 + 多 Agent 子任务编排）与 base-server（creation 创作流程 / risk 风控 / points 积分 / monitor 离线任务）合并的单二进制服务。前端为独立 React 应用（`../yukino-creative-agent`），前后端分离部署：本服务只提供 API，前端独立构建托管。
+go-learn（智能体对话：ReAct 引擎 + SEDA 图调度 + Streams 异步管道 + 多 Agent 子任务编排）与 base-server（creation 创作流程 / risk 风控 / points 积分 / monitor 离线任务）合并的单二进制服务。前端为独立 React 应用（`../client`），前后端分离部署：本服务只提供 API，前端独立构建托管。
 
 ## 技术栈
 
@@ -22,7 +22,7 @@ go-learn（智能体对话：ReAct 引擎 + SEDA 图调度 + Streams 异步管�
 docker compose up -d mysql redis jaeger
 
 # 敏感配置（MySQL 密码 / LLM Key / Sentry DSN）
-cp config/secrets.json.example config/secrets.json
+cp config/secrets.example.json config/secrets.json
 
 # 然后启动服务
 make run

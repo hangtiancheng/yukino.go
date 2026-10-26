@@ -535,7 +535,7 @@ func TestParseRecommendOutputCoercesScalars(t *testing.T) {
 	}
 }
 
-func TestHealthRiskKeywordsCoverExtremeTakeoutPhrases(t *testing.T) {
+func TestHealthRiskKeywordsCoverExtremeDietingPhrases(t *testing.T) {
 	for _, input := range []string{
 		"I will eat nothing for a week",
 		"can I only drink water to slim down",

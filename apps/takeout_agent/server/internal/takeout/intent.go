@@ -15,7 +15,7 @@ var (
 		"pregnant", "pregnancy", "minor", "underage", "child", "children",
 		"hypertension", "high blood pressure", "cure", "treatment", "therapy",
 		"diagnose", "diagnosis", "prescription", "medication",
-		"extreme takeout", "starve", "starvation", "fasting",
+		"extreme dieting", "starve", "starvation", "fasting",
 		"eat nothing", "only drink water", "only water",
 	)
 	mealAdjustKeywords = newKeywordMatcher(

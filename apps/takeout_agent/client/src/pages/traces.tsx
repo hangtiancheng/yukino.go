@@ -24,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -45,7 +46,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { useLabelTrace, useTraceDetail, useTraces } from "@/hooks/queries";
+import {
+  useLabelTrace,
+  useSessionTraces,
+  useTraceDetail,
+  useTraces,
+} from "@/hooks/queries";
 import { ApiError } from "@/lib/api";
 import {
   defaultRange,
@@ -375,6 +381,7 @@ export default function TracesPage() {
   const initialRange = useMemo(() => defaultRange(), []);
   const [startAt, setStartAt] = useState(initialRange.startAt);
   const [endAt, setEndAt] = useState(initialRange.endAt);
+  const [sessionId, setSessionId] = useState("");
   const [onlyUnlabeled, setOnlyUnlabeled] = useState(false);
   const [limit, setLimit] = useState("50");
   const [applied, setApplied] = useState({
@@ -383,15 +390,24 @@ export default function TracesPage() {
     onlyUnlabeled: false,
     limit: 50,
   });
+  const [appliedSessionId, setAppliedSessionId] = useState("");
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(
     searchParams.get("traceId"),
   );
 
-  const traces = useTraces(applied);
+  // A filled session ID switches the list to the per-session endpoint;
+  // the time range and the label filter only apply to the window query.
+  const traces = useTraces(applied, appliedSessionId === "");
+  const sessionTraces = useSessionTraces(appliedSessionId, applied.limit);
+  const activeQuery = appliedSessionId ? sessionTraces : traces;
   const detail = useTraceDetail(selectedTraceId);
 
   const applyFilters = () => {
     setApplied({ startAt, endAt, onlyUnlabeled, limit: Number(limit) || 50 });
+    setAppliedSessionId(sessionId.trim());
+    // Every fresh query starts from its first trace, like the legacy console.
+    setSelectedTraceId(null);
+    setSearchParams({}, { replace: true });
   };
 
   const openTrace = (traceId: string) => {
@@ -402,7 +418,14 @@ export default function TracesPage() {
   const document = detail.data
     ? parseTraceDocument(detail.data.traceJson)
     : null;
-  const rows = traces.data ?? [];
+  const rows = activeQuery.data ?? [];
+
+  useEffect(() => {
+    if (selectedTraceId || rows.length === 0) return;
+    const first = rows[0].traceId;
+    setSelectedTraceId(first);
+    setSearchParams({ traceId: first }, { replace: true });
+  }, [rows, selectedTraceId, setSearchParams]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -422,6 +445,21 @@ export default function TracesPage() {
               value={endAt}
               onChange={setEndAt}
               className="w-52"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label
+              className="text-muted-foreground text-xs"
+              htmlFor="trace-session-filter"
+            >
+              Session ID
+            </Label>
+            <Input
+              id="trace-session-filter"
+              value={sessionId}
+              onChange={(event) => setSessionId(event.target.value)}
+              placeholder="Optional, filters by session"
+              className="h-9 w-56 font-mono text-xs"
             />
           </div>
           <div className="space-y-1.5">
@@ -458,10 +496,12 @@ export default function TracesPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void traces.refetch()}
-              disabled={traces.isFetching}
+              onClick={() => void activeQuery.refetch()}
+              disabled={activeQuery.isFetching}
             >
-              <RefreshCw className={cn(traces.isFetching && "animate-spin")} />
+              <RefreshCw
+                className={cn(activeQuery.isFetching && "animate-spin")}
+              />
               Refresh
             </Button>
             <Button size="sm" onClick={applyFilters}>
@@ -476,31 +516,39 @@ export default function TracesPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Request traces</CardTitle>
             <CardDescription>
-              {traces.isPending
+              {activeQuery.isPending
                 ? "Loading…"
-                : `${rows.length} traces in window`}
+                : appliedSessionId
+                  ? `${rows.length} traces in session`
+                  : `${rows.length} traces in window`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {traces.isPending ? (
+            {activeQuery.isPending ? (
               <div className="space-y-2">
                 {Array.from({ length: 6 }).map((_, index) => (
                   <Skeleton key={index} className="h-10" />
                 ))}
               </div>
-            ) : traces.isError ? (
+            ) : activeQuery.isError ? (
               <p className="text-muted-foreground py-8 text-center text-sm">
                 Failed to load traces:{" "}
-                {traces.error instanceof Error
-                  ? traces.error.message
+                {activeQuery.error instanceof Error
+                  ? activeQuery.error.message
                   : "unknown error"}
               </p>
             ) : rows.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <Activity className="text-muted-foreground/50 size-8" />
-                <p className="text-sm font-medium">No traces in this window</p>
+                <p className="text-sm font-medium">
+                  {appliedSessionId
+                    ? "No traces for this session"
+                    : "No traces in this window"}
+                </p>
                 <p className="text-muted-foreground text-xs">
-                  Chat with the agent or widen the time range.
+                  {appliedSessionId
+                    ? "Check the session ID, or chat with the agent first."
+                    : "Chat with the agent or widen the time range."}
                 </p>
               </div>
             ) : (
@@ -509,6 +557,7 @@ export default function TracesPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Trace</TableHead>
+                      <TableHead>Session</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Events</TableHead>
                       <TableHead className="text-right">Duration</TableHead>
@@ -540,6 +589,9 @@ export default function TracesPage() {
                               labeled
                             </Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-mono text-xs">
+                          {shortId(row.sessionId, 12)}
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={row.status} />

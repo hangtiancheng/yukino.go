@@ -199,10 +199,12 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 	testx.Contains(t, types, "task-done", "应回流 task-done 终态帧")
 	testx.Contains(t, types, "message-complete")
 
-	// 验证异步请求终态
-	finished, err := asyncRepo.GetByMessageID(ctx, msgID)
-	testx.NoError(t, err)
-	testx.Equal(t, model.AsyncStatusCompleted, finished.Status)
+	// 验证异步请求终态：EndTurn chunk 先于 MarkTerminal(Completed) 写入，
+	// worker 在独立 goroutine 中提交终态，故轮询等待而非直接断言（消除竞态）。
+	testx.Eventually(t, func() bool {
+		finished, err := asyncRepo.GetByMessageID(ctx, msgID)
+		return err == nil && finished.Status == model.AsyncStatusCompleted
+	}, 10*time.Second, 100*time.Millisecond, "异步请求应标记 Completed")
 }
 
 var _ = zap.S()

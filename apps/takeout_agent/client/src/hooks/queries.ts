@@ -65,10 +65,19 @@ export function useDeleteMeal() {
   });
 }
 
-export function useTraces(params: TraceListParams) {
+export function useTraces(params: TraceListParams, enabled = true) {
   return useQuery({
     queryKey: ["traces", "list", params],
     queryFn: () => TakeoutApi.listTraces(params),
+    enabled,
+  });
+}
+
+export function useSessionTraces(sessionId: string, limit?: number) {
+  return useQuery({
+    queryKey: ["traces", "session", sessionId, limit],
+    queryFn: () => TakeoutApi.listSessionTraces(sessionId, limit),
+    enabled: sessionId.trim() !== "",
   });
 }
 

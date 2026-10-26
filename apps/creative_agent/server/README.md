@@ -5,7 +5,7 @@
 - **go-learn**：智能体对话系统（creative-gravity 复刻）——ReAct 循环引擎 + SEDA 图调度 + Redis Streams 异步管道 + 多 Agent 子任务编排。
 - **base-server**：内容创作/风控基座——creation 创作流程（预创建/创建/后处理/回调）、risk 风控审计、points 积分记账、monitor 离线任务（超时/补偿/风控离线）。
 
-前端为独立 React 应用（`../yukino-creative-agent`），**前后端分离部署**：本服务只提供 API（CORS 已放行跨域），前端独立构建后由任意静态服务器托管（nginx / Vercel / OSS+CDN 等）。
+前端为独立 React 应用（`../client`），**前后端分离部署**：本服务只提供 API（CORS 已放行跨域），前端独立构建后由任意静态服务器托管（nginx / Vercel / OSS+CDN 等）。
 
 ## 技术栈
 
@@ -30,7 +30,7 @@
 docker compose up -d mysql redis jaeger
 
 # 2. 复制并填写 secrets（MySQL 密码 / LLM Key / Sentry DSN）
-cp config/secrets.json.example config/secrets.json
+cp config/secrets.example.json config/secrets.json
 
 # 3. 启动服务
 make run
@@ -43,7 +43,7 @@ make ping          # 探测远程 MySQL/Redis 连通性（集成测试）
 
 ```
 
-前端独立仓库 `../yukino-creative-agent`（前后端分离，不由本服务托管）：开发用 `pnpm dev`（vite proxy 转发 /api、/aigc），
+前端独立应用 `../client`（前后端分离，不由本服务托管）：开发用 `pnpm dev`（vite proxy 转发 /api、/aigc），
 生产构建 `VITE_API_BASE_URL=<后端地址> pnpm build` 后把 `dist/` 部署到任意静态服务器，见其 README。
 
 > 数据库连接见 `config/config.json` 的 mysql/redis 段，`AutoMigrate` 首次会较慢，属正常现象。
@@ -57,7 +57,7 @@ cmd/
 config/
   config.go              # 配置加载（优先级：环境变量 > secrets.json > config.json > 默认值）
   config.json            # 公开配置（主机/端口，含 MySQL/Redis/Jaeger/LLM 地址）
-  secrets.json.example   # 敏感配置模板（密码/API Key，Git 忽略）
+  secrets.example.json   # 敏感配置模板（密码/API Key，Git 忽略）
 internal/
   core/                    # 【引擎层】纯算法、零业务：SEDA 图引擎 + ReAct 循环
     seda/                  #   图引擎：Flow 图调度 + Slice 流式通道 + 注册表
