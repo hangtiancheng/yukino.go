@@ -1,12 +1,12 @@
 {
-  "server": { "port": "8080" },
+  "server": { "port": "18080" },
   "jwt": { "secret": "change-me-in-production" },
   "log": { "level": "info" },
   "mysql": {
     "host": "127.0.0.1",
-    "port": "3307",
-    "user": "root",
-    "database": "all_in_one"
+    "port": "3306",
+    "user": "user",
+    "database": "db0"
   },
   "redis": {
     "host": "127.0.0.1",
@@ -22,8 +22,8 @@
   },
   "llm": {
     "provider": "openai",
-    "base_url": "https://idealab.alibaba-inc.com/api/openai/v1",
-    "model": "Qwen3.8-Max-DogFooding"
+    "base_url": "https://api.deepseek.com/anthropic",
+    "model": "deepseek-flash"
   },
   "cron": { "poll_interval": "30s" },
   "base_server": { "base_url": "" },

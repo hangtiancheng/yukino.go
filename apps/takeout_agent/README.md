@@ -62,7 +62,8 @@ cp .env.example .env                 # fill in LLM_API_KEY and MYSQL_PASSWORD
 go run ./cmd/takeout_agent
 ```
 
-The API listens on `http://127.0.0.1:8080` by default. `.env` is loaded
+The API listens on `http://127.0.0.1:8090` by default (8080 is reserved by the
+local middleware nginx container). `.env` is loaded
 automatically at startup (real environment variables always win), and the
 `*_env` fields in the config name the variables that supply secrets and
 endpoint overrides, so they never live in the YAML file.
@@ -77,7 +78,7 @@ compatible mode.
 ```bash
 cd client
 pnpm install
-pnpm dev        # http://localhost:5173, proxies /api to 127.0.0.1:8080
+pnpm dev        # http://localhost:5173, proxies /api to 127.0.0.1:8090
 ```
 
 For production, `pnpm build` outputs `client/dist`, which the Go server
@@ -89,7 +90,7 @@ by default, relative to `server/`).
 ```bash
 cd server
 go build ./... && go vet ./... && go test ./...
-curl http://127.0.0.1:8080/healthz
+curl http://127.0.0.1:8090/healthz
 ```
 
 ## API

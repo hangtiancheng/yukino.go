@@ -5,7 +5,8 @@
 # ============================================================
 server:
   host: 127.0.0.1
-  port: 8080
+  # 8080 is taken by the local middleware nginx container; use 8090 instead.
+  port: 8090
 
 database:
   host: 127.0.0.1
