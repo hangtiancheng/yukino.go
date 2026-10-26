@@ -1,5 +1,5 @@
 # ============================================================
-# takeout-agent configuration template
+# takeout_agent configuration template
 # Copy to config.yaml and fill in real values, or point the
 # TAKEOUT_CONFIG environment variable at your own file.
 # ============================================================

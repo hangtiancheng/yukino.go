@@ -7,7 +7,7 @@ import (
 
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 
-	"github.com/hangtiancheng/yukino.go/apps/takeout-agent/internal/takeout"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/takeout"
 )
 
 // CreateSessionResponse is the POST /sessions response body.

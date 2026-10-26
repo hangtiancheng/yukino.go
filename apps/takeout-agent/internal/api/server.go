@@ -10,7 +10,7 @@ import (
 
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 
-	"github.com/hangtiancheng/yukino.go/apps/takeout-agent/internal/takeout"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/takeout"
 )
 
 // Services aggregates the takeout services consumed by the HTTP handlers.

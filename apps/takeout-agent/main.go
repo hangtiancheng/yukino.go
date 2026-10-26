@@ -1,4 +1,4 @@
-// Command takeout-agent serves the Go migration of the Java Takeout-agent:
+// Command takeout_agent serves the Go migration of the Java takeout_agent:
 // a multi-agent takeout recommendation assistant built on yukino_http and
 // AgentScope Go (DashScope).
 package main
@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/apps/takeout-agent/internal/api"
-	"github.com/hangtiancheng/yukino.go/apps/takeout-agent/internal/config"
-	"github.com/hangtiancheng/yukino.go/apps/takeout-agent/internal/takeout"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/api"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/config"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/takeout"
 )
 
 func main() {
@@ -94,7 +94,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("takeout-agent listening", "addr", server.Addr,
+		logger.Info("takeout_agent listening", "addr", server.Addr,
 			"mainModel", cfg.LLM.MainModelValue(), "lightModel", cfg.LLM.LightModelValue())
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("http server failed", "error", err)

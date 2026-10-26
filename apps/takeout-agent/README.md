@@ -1,7 +1,7 @@
-# yukino-takeout-agent
+# yukino-takeout_agent
 
 A multi-agent takeout recommendation service, migrated from the Java Spring Boot
-`Takeout-agent` to Go. The backend is built on
+`takeout_agent` to Go. The backend is built on
 [`yukino_http`](https://github.com/hangtiancheng/yukino.go/tree/main/libs/yukino_http)
 and MySQL via GORM, with LLM agents powered by DashScope (Qwen) through
 agentscope-go.

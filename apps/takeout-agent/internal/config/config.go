@@ -1,4 +1,4 @@
-// Package config loads takeout-agent runtime settings from a YAML file with
+// Package config loads takeout_agent runtime settings from a YAML file with
 // optional environment variable overrides for secrets.
 package config
 

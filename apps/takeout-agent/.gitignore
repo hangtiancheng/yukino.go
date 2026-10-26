@@ -3,7 +3,7 @@ config.yaml
 .env
 
 # Build output
-/takeout-agent
+/takeout_agent
 /dist
 
 # Frontend
