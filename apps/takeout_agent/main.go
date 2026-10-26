@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/api"
-	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/config"
-	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/takeout"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/server/internal/api"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/server/internal/config"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/server/internal/takeout"
 )
 
 func main() {

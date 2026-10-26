@@ -1,4 +1,4 @@
-module github.com/hangtiancheng/yukino.go/apps/takeout_agent
+module github.com/hangtiancheng/yukino.go/apps/takeout_agent/server
 
 go 1.26.0
 

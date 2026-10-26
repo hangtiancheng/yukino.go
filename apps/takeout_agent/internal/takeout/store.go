@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/internal/config"
+	"github.com/hangtiancheng/yukino.go/apps/takeout_agent/server/internal/config"
 )
 
 // Store is the MySQL persistence layer, replacing the MyBatis mappers of
