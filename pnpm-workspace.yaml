@@ -1,7 +1,8 @@
 packages:
   - apps/agent/client
   - apps/task_flow/client
-  - apps/takeout_agent/frontend
+  - apps/takeout_agent/client
+  - apps/creative_agent/client
 
 allowBuilds:
   esbuild: true

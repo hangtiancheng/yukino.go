@@ -5,7 +5,7 @@ A multi-agent takeout recommendation service, migrated from the Java Spring Boot
 [`yukino_http`](https://github.com/hangtiancheng/yukino.go/tree/main/libs/yukino_http)
 and MySQL via GORM, with LLM agents powered by DashScope (Qwen) through
 agentscope-go.
-The frontend is a React 19 + Vite + Tailwind CSS 4 + shadcn/ui single-page app.
+The client is a React 19 + Vite + Tailwind CSS 4 + shadcn/ui single-page app.
 
 ## How it works
 
@@ -29,16 +29,17 @@ Every chat turn runs through an orchestrator state machine:
 
 ```
 .
-├── main.go                  # wiring, config load, graceful shutdown
-├── internal/
-│   ├── api/                 # yukino_http routes, CORS, error adapter, static
-│   ├── config/              # YAML config with env overrides
-│   └── takeout/                # domain: agents, orchestrator, store, services
-│       └── prompts/         # embedded English prompt templates
-├── db/takeout_db.sql           # schema + seed data (slot options, public meals)
-├── frontend/                # React + Vite + shadcn/ui app
-├── config.example.yaml      # configuration template
-└── config.yaml              # local configuration (git-ignored)
+├── server/
+│   ├── cmd/takeout_agent/     # main.go: wiring, config load, graceful shutdown
+│   ├── internal/
+│   │   ├── api/               # yukino_http routes, CORS, error adapter, static
+│   │   ├── config/            # YAML config with env overrides
+│   │   └── takeout/           # domain: agents, orchestrator, store, services
+│   │       └── prompts/       # embedded English prompt templates
+│   ├── db/diet_db.sql         # schema + seed data (slot options, public meals)
+│   ├── config.example.yaml    # configuration template
+│   └── config.yaml            # local configuration (git-ignored)
+└── client/                    # React + Vite + shadcn/ui app
 ```
 
 ## Quick start
@@ -46,7 +47,7 @@ Every chat turn runs through an orchestrator state machine:
 ### 1. Database
 
 ```bash
-mysql -u root -p < db/takeout_db.sql
+mysql -u root -p < server/db/diet_db.sql
 ```
 
 This creates `takeout_db` with the schema, 93 slot options, and seeded public
@@ -55,9 +56,10 @@ meals.
 ### 2. Backend
 
 ```bash
+cd server
 cp config.example.yaml config.yaml   # adjust host/port if needed
 cp .env.example .env                 # fill in LLM_API_KEY and MYSQL_PASSWORD
-go run .
+go run ./cmd/takeout_agent
 ```
 
 The API listens on `http://127.0.0.1:8080` by default. `.env` is loaded
@@ -70,20 +72,22 @@ any compatible provider works — set `LLM_BASE_URL`, `LLM_API_KEY`, and the
 model names in `.env`. With an empty `LLM_BASE_URL` it defaults to DashScope
 compatible mode.
 
-### 3. Frontend
+### 3. Client
 
 ```bash
-cd frontend
+cd client
 pnpm install
 pnpm dev        # http://localhost:5173, proxies /api to 127.0.0.1:8080
 ```
 
-For production, `pnpm build` outputs `frontend/dist`, which the Go server
-serves at `/` automatically when `static.dir` points at it.
+For production, `pnpm build` outputs `client/dist`, which the Go server
+serves at `/` automatically when `static.dir` points at it (`../client/dist`
+by default, relative to `server/`).
 
 ### Verify
 
 ```bash
+cd server
 go build ./... && go vet ./... && go test ./...
 curl http://127.0.0.1:8080/healthz
 ```
@@ -116,7 +120,7 @@ at 1 MiB.
 Business errors render as `400 {"message": "..."}`; unexpected failures render
 as `500`.
 
-## Frontend
+## Client
 
 - **Stack**: React 19, Vite 7, TypeScript (strict), Tailwind CSS 4, shadcn/ui
   components, lucide-react icons, sonner toasts.

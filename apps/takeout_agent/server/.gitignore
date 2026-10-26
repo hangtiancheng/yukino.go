@@ -1,0 +1,6 @@
+# Local configuration with secrets
+config.yaml
+.env
+
+# Build output
+/takeout_agent

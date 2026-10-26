@@ -1,0 +1,34 @@
+{
+  "server": { "port": "8080" },
+  "jwt": { "secret": "change-me-in-production" },
+  "log": { "level": "info" },
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": "3307",
+    "user": "root",
+    "database": "all_in_one"
+  },
+  "redis": {
+    "host": "127.0.0.1",
+    "port": "6379",
+    "db": 0
+  },
+  "async": { "enabled": true },
+  "otel": {
+    "enabled": false,
+    "exporter_endpoint": "localhost:4317",
+    "service_name": "yukino-creative-agent",
+    "sample_rate": 1.0
+  },
+  "llm": {
+    "provider": "openai",
+    "base_url": "https://idealab.alibaba-inc.com/api/openai/v1",
+    "model": "Qwen3.8-Max-DogFooding"
+  },
+  "cron": { "poll_interval": "30s" },
+  "base_server": { "base_url": "" },
+  "ideaking": { "base_url": "" },
+  "fake_gen": { "enabled": true, "port": "8091" },
+  "sentry": { "dsn": "" },
+  "metrics": { "enabled": true }
+}
