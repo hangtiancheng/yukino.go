@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/parser"
 )
 
 // Config is the root configuration object.
@@ -145,6 +146,16 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 	cfg := Default()
+	// goccy/go-yaml decodes an empty or comment-only document as null and
+	// zeroes the target struct, while gopkg.in/yaml.v3 left it untouched.
+	// Skip decoding for content-less files so the defaults survive.
+	file, err := parser.ParseBytes(data, 0)
+	if err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	if file == nil || len(file.Docs) == 0 || file.Docs[0] == nil || file.Docs[0].Body == nil {
+		return cfg, nil
+	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
