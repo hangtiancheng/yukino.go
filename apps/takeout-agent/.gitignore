@@ -1,0 +1,16 @@
+# Local configuration with secrets
+config.yaml
+.env
+
+# Build output
+/takeout-agent
+/dist
+
+# Frontend
+frontend/node_modules
+frontend/dist
+
+# Editor/OS
+.DS_Store
+.idea
+.vscode

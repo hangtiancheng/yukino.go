@@ -4,7 +4,7 @@ use (
 	./apps/agent/server
 	./apps/agent_proxy
 	./apps/task_flow/server
-	./apps/yukino-diet-agent
+	./apps/takeout-agent
 	./components/consistent_cache
 	./components/consistent_hash
 	./components/lsm_tree

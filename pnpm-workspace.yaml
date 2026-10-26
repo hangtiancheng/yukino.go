@@ -1,7 +1,7 @@
 packages:
   - apps/agent/client
   - apps/task_flow/client
-  - apps/yukino-diet-agent/frontend
+  - apps/takeout-agent/frontend
 
 allowBuilds:
   esbuild: true

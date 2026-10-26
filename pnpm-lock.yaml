@@ -225,56 +225,7 @@ importers:
         specifier: ^8.3.5
         version: 8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
 
-  apps/task_flow/client:
-    dependencies:
-      '@lit-labs/router':
-        specifier: ^0.1.4
-        version: 0.1.4
-      jotai:
-        specifier: ^3.0.1
-        version: 3.0.1(@types/react@19.3.0)(react@19.3.1)
-      lit:
-        specifier: ^3.3.3
-        version: 3.3.3
-      lucide-static:
-        specifier: ^1.61.0
-        version: 1.61.0
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-    devDependencies:
-      '@biomejs/biome':
-        specifier: ^2.6.3
-        version: 2.6.3
-      '@playwright/test':
-        specifier: ^1.64.1
-        version: 1.64.1
-      '@tailwindcss/vite':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      '@yukino.js/lit-jsx':
-        specifier: latest
-        version: 0.0.1
-      '@yukino.js/sentry':
-        specifier: latest
-        version: 0.0.1(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      daisyui:
-        specifier: ^5.7.50
-        version: 5.7.50
-      prettier:
-        specifier: ^3.9.10
-        version: 3.9.10
-      prettier-plugin-tailwindcss:
-        specifier: ^0.8.1
-        version: 0.8.1(prettier@3.9.10)
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-      vite:
-        specifier: ^8.3.5
-        version: 8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
-
-  apps/yukino-diet-agent/frontend:
+  apps/takeout-agent/frontend:
     dependencies:
       '@base-ui/react':
         specifier: ^1.9.0
@@ -358,6 +309,55 @@ importers:
       vite:
         specifier: ^7.3.7
         version: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1)
+
+  apps/task_flow/client:
+    dependencies:
+      '@lit-labs/router':
+        specifier: ^0.1.4
+        version: 0.1.4
+      jotai:
+        specifier: ^3.0.1
+        version: 3.0.1(@types/react@19.3.0)(react@19.3.1)
+      lit:
+        specifier: ^3.3.3
+        version: 3.3.3
+      lucide-static:
+        specifier: ^1.61.0
+        version: 1.61.0
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.6.3
+        version: 2.6.3
+      '@playwright/test':
+        specifier: ^1.64.1
+        version: 1.64.1
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@yukino.js/lit-jsx':
+        specifier: latest
+        version: 0.0.1
+      '@yukino.js/sentry':
+        specifier: latest
+        version: 0.0.1(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      daisyui:
+        specifier: ^5.7.50
+        version: 5.7.50
+      prettier:
+        specifier: ^3.9.10
+        version: 3.9.10
+      prettier-plugin-tailwindcss:
+        specifier: ^0.8.1
+        version: 0.8.1(prettier@3.9.10)
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.3.5
+        version: 8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
 
 packages:
 
