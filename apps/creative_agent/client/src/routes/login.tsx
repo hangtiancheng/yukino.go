@@ -1,16 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LogIn } from "lucide-react";
-import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
 
+import { AuthLayout } from "@/components/common/auth-layout";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,9 +22,9 @@ export function LoginPage() {
   const [pending, setPending] = useState(false);
 
   // Already signed in: go straight to the home page
-  if (token) {
-    void navigate({ to: "/", replace: true });
-  }
+  useEffect(() => {
+    if (token) void navigate({ to: "/", replace: true });
+  }, [token, navigate]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,69 +41,77 @@ export function LoginPage() {
   };
 
   return (
-    <div className="bg-muted/40 flex min-h-svh items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-xl">Sign in</CardTitle>
-          <CardDescription>
-            yukino-creative-agent conversational agent system
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error ? (
-            <Alert variant="destructive" className="mb-4">
+    <AuthLayout
+      title="Sign in"
+      description="yukino-creative-agent conversational agent system"
+      footer={
+        <>
+          No account yet?{" "}
+          <Link
+            to="/register"
+            className="text-primary font-medium underline-offset-4 hover:underline"
+          >
+            Register now
+          </Link>
+        </>
+      }
+    >
+      <AnimatePresence>
+        {error ? (
+          <motion.div
+            key={error}
+            initial={{ opacity: 0, x: [0, -8, 8, -5, 5, 0] }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.4 }}
+            className="mb-4"
+          >
+            <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
-          ) : null}
-          <form onSubmit={onSubmit}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="username">Username</FieldLabel>
-                <Input
-                  id="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                />
-              </Field>
-              <Button type="submit" disabled={pending} className="w-full">
-                {pending ? (
-                  <>
-                    <Spinner data-icon="inline-start" />
-                    Signing in...
-                  </>
-                ) : (
-                  <>
-                    <LogIn data-icon="inline-start" />
-                    Sign in
-                  </>
-                )}
-              </Button>
-            </FieldGroup>
-          </form>
-          <p className="text-muted-foreground mt-4 text-center text-sm">
-            No account yet?{" "}
-            <Link
-              to="/register"
-              className="text-primary font-medium underline-offset-4 hover:underline"
-            >
-              Register now
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <form onSubmit={onSubmit}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="username">Username</FieldLabel>
+            <Input
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </Field>
+          <motion.div whileTap={{ scale: pending ? 1 : 0.98 }}>
+            <Button type="submit" disabled={pending} className="w-full">
+              {pending ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <LogIn data-icon="inline-start" />
+                  Sign in
+                </>
+              )}
+            </Button>
+          </motion.div>
+        </FieldGroup>
+      </form>
+    </AuthLayout>
   );
 }
