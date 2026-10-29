@@ -167,9 +167,16 @@ func (f *FastPath) tryFastTask(ctx context.Context, req *FastTaskRequest) (bool,
 	if _, err := f.Submitter.Submit(ctx, run); err != nil {
 		return false, fmt.Errorf("fastpath: submit: %w", err)
 	}
+	// Advance the chain position: record the agent we just dispatched. Without this the session's
+	// agent memory stays on the previous agent, so while the stage remains *_confirmed every
+	// subsequent request recomputes GetNextAgent(prevAgent) and re-dispatches the same agent forever
+	// (e.g. a stray message after video synthesis would re-trigger edit_master). Once the chain reaches
+	// its last agent, GetNextAgent returns "" and the request falls back to normal ReAct.
+	f.Memory.SetAgent(req.SessionID, agents[0].AgentID)
 	f.Logger.Info("fastpath: fast task dispatching the next agent",
 		zap.String("pipeline", pipeline),
 		zap.String("currentAgent", currentAgent),
+		zap.String("nextAgent", agents[0].AgentID),
 		zap.String("sessionID", req.SessionID))
 	return true, nil
 }

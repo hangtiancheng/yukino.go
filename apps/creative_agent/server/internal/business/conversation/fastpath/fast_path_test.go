@@ -364,3 +364,46 @@ func TestFastPath_ScriptContextMissing(t *testing.T) {
 	db.Find(&runs)
 	testx.Len(t, runs, 0, "a missing script should not dispatch a new task_run")
 }
+
+// TestFastPath_ChainEndsAfterDispatch verifies that a fast-task dispatch advances the session's
+// agent memory, so a subsequent request in the same *_confirmed stage does NOT re-dispatch the same
+// agent. mix_video's chain is idea_king → gold_scriptwriter → edit_master; after script_confirmed
+// dispatches edit_master (the last agent), the next hit must reach the chain end and hand back to ReAct.
+func TestFastPath_ChainEndsAfterDispatch(t *testing.T) {
+	ctx := context.Background()
+	db := newFastPathDB(t)
+	mem := memory.NewIntentMemory()
+	taskRunRepo := repository.NewTaskRunRepository(db)
+
+	submitter := subtaskexecutor.NewSubmitter(subtaskexecutor.SubmitterConfig{
+		TaskRunRepo: taskRunRepo, StreamQ: &stubStream{}, Logger: zap.NewNop(),
+	})
+	fp := fastpath.NewFastPath(fastpath.FastPathConfig{
+		Memory:      mem,
+		Submitter:   submitter,
+		TaskRunRepo: taskRunRepo,
+		Logger:      zap.NewNop(),
+	})
+
+	mem.SetPipeline("s1", "mix_video")
+	mem.SetStage("s1", memory.FlowStageScriptConfirmed)
+	mem.SetAgent("s1", "gold_scriptwriter")
+
+	req := &fastpath.FastTaskRequest{SessionID: "s1", UserID: 1, AgentID: "manager", Query: "继续执行视频合成"}
+
+	// First hit: dispatches edit_master and advances the agent memory to it.
+	handled, err := fp.CheckFastTask(ctx, req)
+	testx.NoError(t, err)
+	testx.True(t, handled, "script_confirmed should dispatch the next agent")
+	testx.Equal(t, "edit_master", mem.GetAgent("s1"), "the dispatched agent should be recorded")
+
+	// Second hit (e.g. the user sends another message while the stage is still script_confirmed):
+	// edit_master is the last agent → chain end → no re-dispatch, hand back to ReAct.
+	handled2, err := fp.CheckFastTask(ctx, req)
+	testx.NoError(t, err)
+	testx.False(t, handled2, "chain ended at edit_master; must not re-dispatch")
+
+	var runs []model.CGTaskRun
+	db.Find(&runs)
+	testx.Len(t, runs, 1, "exactly one task_run should be dispatched across both hits")
+}

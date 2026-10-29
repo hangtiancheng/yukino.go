@@ -104,15 +104,21 @@ export const useConversationStore = create<ConversationState>()(
       /** Shared SSE event handling: both sending messages and reconnect replay go through here. */
       const handleSseEvent = (name: SseEventName, data: unknown) => {
         const d = (data ?? {}) as Record<string, unknown>;
-        // message-start resets the cursor; every other frame increments it by 1 to stay aligned with backend chunk sequence numbers.
-        if (name !== "message-start") currentSeq += 1;
+        // currentSeq is the resume cursor sent back as lastSeq: the number of backend chunks
+        // already consumed for the current msgId. message-start is itself chunk #1; the synthetic
+        // "reconnect" frame pushed by the attach replay is NOT a persisted chunk and must not
+        // advance the cursor (otherwise the server re-delivers an already-consumed chunk).
+        if (name === "message-start") {
+          currentSeq = 1;
+        } else if (name !== "reconnect") {
+          currentSeq += 1;
+        }
 
         switch (name) {
           case "message-start": {
             if (typeof d.msgId === "string" && d.msgId) {
               currentMsgId = d.msgId;
             }
-            currentSeq = 0;
             currentTextDelta = "";
             if (!isReplaying) {
               currentAssistantId = nextId();
@@ -177,6 +183,7 @@ export const useConversationStore = create<ConversationState>()(
               resetUi();
             } else {
               isReplaying = true;
+              currentTextDelta = "";
               currentAssistantId = nextId();
               pushMessage({
                 id: currentAssistantId,
@@ -233,11 +240,23 @@ export const useConversationStore = create<ConversationState>()(
           }
 
           case "task-done": {
-            if (typeof d.output === "string" && d.output) {
-              let finalProduct: string = d.output;
+            const output = typeof d.output === "string" ? d.output : "";
+            const reason = typeof d.reason === "string" ? d.reason : "";
+            // A failed subtask arrives as task-done with status=4 (TaskRunStatusFailed) + reason and
+            // no output. Surface it instead of silently ignoring it (otherwise the user is left hanging).
+            if (d.status === 4 || (!output && reason)) {
+              pushMessage({
+                id: nextId(),
+                kind: "error",
+                content: `⚠ Task failed${reason ? `: ${reason}` : ""}`,
+              });
+              break;
+            }
+            if (output) {
+              let finalProduct: string = output;
               try {
-                const out = JSON.parse(d.output) as { final_product?: string };
-                finalProduct = out.final_product || d.output;
+                const out = JSON.parse(output) as { final_product?: string };
+                finalProduct = out.final_product || output;
               } catch {
                 // Non-JSON output is displayed as-is
               }
@@ -314,7 +333,6 @@ export const useConversationStore = create<ConversationState>()(
                 resetUi();
               }
             },
-            onClose: () => resetUi(),
           },
         );
       };

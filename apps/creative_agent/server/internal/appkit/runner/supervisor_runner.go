@@ -319,14 +319,34 @@ func (r *SupervisorRunner) extractHotCard(result *react.AgentResult) *HotCardDat
 	if v, ok := result.Ext["hot_card"].(*HotCardData); ok && v != nil {
 		return v
 	}
-	// Cross-serialization fallback: hot_card may be a JSON string or a map
-	if raw, ok := result.Ext["hot_card"].(string); ok && raw != "" {
-		var card HotCardData
-		if err := json.Unmarshal([]byte(raw), &card); err == nil && len(card.TitleData) > 0 {
-			return &card
+	// Cross-serialization fallback: hot_card may be a JSON string or a generic map.
+	var raw []byte
+	switch v := result.Ext["hot_card"].(type) {
+	case string:
+		if v == "" {
+			return nil
 		}
+		raw = []byte(v)
+	case map[string]any:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil
+		}
+		raw = b
+	default:
+		return nil
 	}
-	return nil
+	var card HotCardData
+	if err := json.Unmarshal(raw, &card); err != nil {
+		return nil
+	}
+	// A card is renderable when it carries either hotspot topics (TitleData) or server-predefined
+	// options (PromptItems, e.g. the creation-feature push_card). Checking only TitleData would
+	// silently drop push_card cards, which have no TitleData.
+	if len(card.TitleData) == 0 && len(card.PromptItems) == 0 {
+		return nil
+	}
+	return &card
 }
 
 // emitCardFrames renders the hot-card frame sequence: hotspot text-delta → ui-block-start → ui-block-complete.
