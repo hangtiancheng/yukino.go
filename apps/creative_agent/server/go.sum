@@ -145,10 +145,6 @@ github.com/gopherjs/gopherjs v1.17.2 h1:fQnZVsXk8uxXIStYb0N4bGk7jeyTalG/wsZjQ25d
 github.com/gopherjs/gopherjs v1.17.2/go.mod h1:pRRIvn/QzFLrKfvEz3qUuEhtE/zLCWfreZ6J5gM2i+k=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 h1:/Tnpcb2E0Pz/tN9s3bfEY2Q8ePCEX9iuS+cneUwncnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0/go.mod h1:zOBXOsUaBSjKgmH4OGzV1esUpR3oUSCPYVd2cUBjKYY=
-github.com/hangtiancheng/yukino.go/libs/yukino_cache v0.0.2 h1:U3orlMUmWt5v3fVRjXj9igOA5Y//oExy4fLLoFhxGtg=
-github.com/hangtiancheng/yukino.go/libs/yukino_cache v0.0.2/go.mod h1:6kp79V0bGimnkZ+EcnZlV31fw1u+TNUEYjs8H87CBl0=
-github.com/hangtiancheng/yukino.go/libs/yukino_http v0.0.2 h1:HI0MoAFgBmV2agcjJ7gWR0X7+IWnArT90SZ9+pjHjnU=
-github.com/hangtiancheng/yukino.go/libs/yukino_http v0.0.2/go.mod h1:3bkysXaeJtfwsp3vJR4Zhgn0vZ8gYXFmjTBj9MfA6c4=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
