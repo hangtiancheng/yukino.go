@@ -9,7 +9,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// ---------- MemoryChunkStore（yukino_cache Group 底座） ----------
+// ---------- MemoryChunkStore (yukino_cache Group backend) ----------
 
 func TestChunkStore_Write_After_EndToEnd(t *testing.T) {
 	cs := infra.NewMemoryChunkStore()
@@ -90,7 +90,7 @@ func TestChunkStore_After_NotificationChannel(t *testing.T) {
 
 	select {
 	case <-notify:
-		// 收到通知
+		// Notification received
 	case <-time.After(3 * time.Second):
 		t.Fatal("notification channel did not fire after write")
 	}
@@ -163,7 +163,7 @@ func TestStreamQueue_Push_Receive_Ack(t *testing.T) {
 func TestStreamQueue_Receive_Empty(t *testing.T) {
 	sq := infra.NewMemoryStreamQueue("test:stream:empty", "g2", "c2")
 
-	// 空队列 + 短超时：返回 nil 消息（超时）或 ctx 错误，均视为"无消息"。
+	// Empty queue + short timeout: a nil message (timeout) or a ctx error both count as "no message".
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
@@ -210,17 +210,17 @@ func TestMemoryLocker_SetNX_Exclusive(t *testing.T) {
 
 	ok, err := locker.SetNX(ctx, "lock-1", "owner-a", time.Minute)
 	testx.NoError(t, err)
-	testx.True(t, ok, "首次 SetNX 应抢到锁")
+	testx.True(t, ok, "the first SetNX should acquire the lock")
 
 	ok2, err := locker.SetNX(ctx, "lock-1", "owner-b", time.Minute)
 	testx.NoError(t, err)
-	testx.False(t, ok2, "锁未释放时第二次 SetNX 应失败")
+	testx.False(t, ok2, "a second SetNX should fail while the lock is held")
 
 	testx.NoError(t, locker.Del(ctx, "lock-1"))
 
 	ok3, err := locker.SetNX(ctx, "lock-1", "owner-b", time.Minute)
 	testx.NoError(t, err)
-	testx.True(t, ok3, "Del 后应可重新抢锁")
+	testx.True(t, ok3, "the lock should be acquirable again after Del")
 }
 
 func TestMemoryLocker_ExpireAndTTL(t *testing.T) {
@@ -234,8 +234,8 @@ func TestMemoryLocker_ExpireAndTTL(t *testing.T) {
 	testx.NoError(t, locker.Expire(ctx, "lock-ttl", time.Minute))
 	time.Sleep(50 * time.Millisecond)
 
-	// TTL 已被 Expire 续到 1 分钟，50ms 后锁仍有效。
+	// The TTL was renewed to 1 minute by Expire; the lock is still valid after 50ms.
 	ok2, err := locker.SetNX(ctx, "lock-ttl", "other", time.Minute)
 	testx.NoError(t, err)
-	testx.False(t, ok2, "续期后锁不应过期")
+	testx.False(t, ok2, "the lock should not expire after renewal")
 }

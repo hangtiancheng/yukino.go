@@ -8,19 +8,19 @@ import (
 	creationdomain "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/domain"
 )
 
-// MaxCompensationRetry 补偿重试上限：超过则放弃（可能需退积分兜底，见 §5.3）。
+// MaxCompensationRetry is the compensation retry cap: beyond it the record is abandoned (a points-refund fallback may be needed, see §5.3).
 const MaxCompensationRetry = 3
 
-// RunCompensationJob 补偿重试 job：扫描 status=0 的补偿记录，按 BizType 分类重试。
+// RunCompensationJob is the compensation-retry job: it scans status=0 compensation records and retries them by BizType.
 //
-// 重试语义（对齐 §5.3）：
-//   - 成功 → MarkDone（status=1）
-//   - 失败 → IncrRetryCount；若 RetryCount >= MaxCompensationRetry → 放弃（MarkDone）
+// Retry semantics (aligned with §5.3):
+//   - Success → MarkDone (status=1)
+//   - Failure → IncrRetryCount; if RetryCount >= MaxCompensationRetry → abandon (MarkDone)
 //
-// 返回错误仅表示扫描本身失败（DB 查询异常）；单条记录重试失败不回滚整个 job。
+// A returned error only means the scan itself failed (DB query error); a single record's retry failure does not roll back the whole job.
 func RunCompensationJob(ctx context.Context, deps Deps) error {
 	if deps.Compensations == nil {
-		return nil // 未注入补偿仓储（装配缺省场景），跳过
+		return nil // no compensation repository injected (default assembly scenario); skip
 	}
 	pending, err := deps.Compensations.GetPending(ctx, 100)
 	if err != nil {
@@ -37,10 +37,10 @@ func RunCompensationJob(ctx context.Context, deps Deps) error {
 			_ = deps.Compensations.MarkDone(ctx, comp.ID)
 			continue
 		}
-		// 重试失败：计数 +1，超上限则放弃
+		// Retry failed: count +1; abandon beyond the cap
 		_ = deps.Compensations.IncrRetryCount(ctx, comp.ID)
 		if comp.RetryCount+1 >= MaxCompensationRetry {
-			// 放弃前兜底：async_audit 类退积分 + 置 fail（钱不悬空）
+			// Fallback before abandoning: async_audit records refund points + set fail (money never hangs)
 			abandonCompensation(ctx, deps, comp.BizType, comp.Payload)
 			_ = deps.Compensations.MarkDone(ctx, comp.ID)
 		}
@@ -48,39 +48,39 @@ func RunCompensationJob(ctx context.Context, deps Deps) error {
 	return nil
 }
 
-// retryCompensation 按 BizType 分发重试。
+// retryCompensation dispatches the retry by BizType.
 //
-//   - BizTypeAsyncAudit(1) → riskAuditApp.RetryAsyncAudit（复用原始 auditing 记录重新提交）
-//   - BizTypeCallbackAgent(2) → dispatcher.RetryCallbackAgent（重构 extend_params 同步重放）
+//   - BizTypeAsyncAudit(1) → riskAuditApp.RetryAsyncAudit (reusing the original auditing record to resubmit)
+//   - BizTypeCallbackAgent(2) → dispatcher.RetryCallbackAgent (rebuilding extend_params and replaying synchronously)
 func retryCompensation(ctx context.Context, deps Deps, bizType int, payload string) error {
 	var p map[string]any
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
-		return fmt.Errorf("解析补偿 payload 失败: %w", err)
+		return fmt.Errorf("parse compensation payload: %w", err)
 	}
 	switch bizType {
 	case creationdomain.BizTypeAsyncAudit:
 		if deps.RiskAudit == nil {
-			return fmt.Errorf("risk audit app 未注入")
+			return fmt.Errorf("risk audit app not injected")
 		}
 		return deps.RiskAudit.RetryAsyncAudit(ctx, p)
 	case creationdomain.BizTypeCallbackAgent:
 		if deps.Dispatcher == nil {
-			return fmt.Errorf("callback dispatcher 未注入")
+			return fmt.Errorf("callback dispatcher not injected")
 		}
 		return deps.Dispatcher.RetryCallbackAgent(ctx, p)
 	default:
-		return fmt.Errorf("未知补偿类型: %d", bizType)
+		return fmt.Errorf("unknown compensation type: %d", bizType)
 	}
 }
 
-// abandonCompensation 补偿重试被放弃时的兜底：async_audit 类退积分 + 置 fail。
+// abandonCompensation is the fallback when a compensation retry is abandoned: async_audit records refund points + set fail.
 //
-// 对齐 §5.3「补偿被放弃时的兜底」：异步风控提交彻底失败时，作品可能一直停在
-// running/audit 占用积分。用 payload 里的 third_id 查作品，若仍可处理则退积分 + 置 fail，
-// 保证用户的钱能回来。
+// Aligned with §5.3 "fallback when compensation is abandoned": when async risk submission fails completely, the work may stay
+// in running/audit forever, holding points. Look up the work by the payload's third_id; if still processable, refund points + set fail,
+// guaranteeing the user's money comes back.
 func abandonCompensation(ctx context.Context, deps Deps, bizType int, payload string) {
 	if bizType != creationdomain.BizTypeAsyncAudit {
-		return // callback_agent 只是推卡失败，不影响钱，交给超时 job 兜底
+		return // callback_agent is only a card-push failure; money is unaffected — the timeout job covers it
 	}
 	var p map[string]any
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {

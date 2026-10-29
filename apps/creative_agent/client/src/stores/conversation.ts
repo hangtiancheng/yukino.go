@@ -4,7 +4,7 @@ import { persist } from "zustand/middleware";
 import { api, openSse, type SseEventName } from "@/lib/api";
 import { currentClaims } from "@/stores/auth";
 
-// ---------- 类型 ----------
+// ---------- Types ----------
 
 export interface PromptItem {
   title: string;
@@ -40,7 +40,7 @@ interface ClarificationResponse {
   topicTitle?: string;
 }
 
-// ---------- sessionId（sessionStorage，按标签页隔离） ----------
+// ---------- sessionId (sessionStorage, isolated per tab) ----------
 
 export function sessionId(): string {
   let sid = sessionStorage.getItem("convSessionId");
@@ -62,13 +62,13 @@ function nextId(): string {
 interface ConversationState {
   messages: ChatMessage[];
   streaming: boolean;
-  /** 点卡确认后后端返回的 originMsgId（fastpath 追溯前序脚本用）。 */
+  /** originMsgId returned by the backend after a card confirmation (fastpath uses it to trace the preceding script). */
   originMsgId: string | null;
-  /** 热点卡选中的选题标题。 */
+  /** Topic title selected on the hot-topic card. */
   topicTitle: string | null;
-  /** 脚本确认卡关联的 msgId。 */
+  /** msgId associated with the script confirmation card. */
   scriptMsgId: string | null;
-  /** 同一会话只渲染一次脚本确认卡。 */
+  /** The script confirmation card is rendered only once per conversation. */
   scriptCardShown: boolean;
 
   sendMessage: (text: string) => void;
@@ -78,7 +78,7 @@ interface ConversationState {
   clearMessages: () => void;
 }
 
-// 非持久化的运行时状态（EventSource / 游标 / 当前流式消息）。
+// Non-persisted runtime state (EventSource / cursor / current streaming message).
 let es: EventSource | null = null;
 let currentMsgId: string | null = null;
 let currentSeq = 0;
@@ -101,10 +101,10 @@ export const useConversationStore = create<ConversationState>()(
 
       const resetUi = () => set({ streaming: false });
 
-      /** 共享的 SSE 事件处理：发消息与重连回放都走这里。 */
+      /** Shared SSE event handling: both sending messages and reconnect replay go through here. */
       const handleSseEvent = (name: SseEventName, data: unknown) => {
         const d = (data ?? {}) as Record<string, unknown>;
-        // message-start 会重置游标；其余帧每收到一个就 +1，保证与后端 chunk 序号对齐。
+        // message-start resets the cursor; every other frame increments it by 1 to stay aligned with backend chunk sequence numbers.
         if (name !== "message-start") currentSeq += 1;
 
         switch (name) {
@@ -171,7 +171,8 @@ export const useConversationStore = create<ConversationState>()(
               pushMessage({
                 id: nextId(),
                 kind: "error",
-                content: "⚠ 生成中断（Worker 异常），已显示已生成的部分",
+                content:
+                  "⚠ Generation interrupted (worker failure); the partial output is shown",
               });
               resetUi();
             } else {
@@ -180,7 +181,7 @@ export const useConversationStore = create<ConversationState>()(
               pushMessage({
                 id: currentAssistantId,
                 kind: "assistant",
-                content: "（正在补全上次未完成的回答…）",
+                content: "(Completing the previous unfinished answer…)",
               });
             }
             break;
@@ -223,9 +224,9 @@ export const useConversationStore = create<ConversationState>()(
 
           case "task-step": {
             if (typeof d.stepName === "string" && d.stepName) {
-              let text = `🔧 子任务: ${d.stepName}`;
-              if (d.status === 1) text += "（执行中）";
-              else if (d.status === 3) text += "（完成）";
+              let text = `🔧 Subtask: ${d.stepName}`;
+              if (d.status === 1) text += " (running)";
+              else if (d.status === 3) text += " (done)";
               pushMessage({ id: nextId(), kind: "tool", content: text });
             }
             break;
@@ -238,15 +239,15 @@ export const useConversationStore = create<ConversationState>()(
                 const out = JSON.parse(d.output) as { final_product?: string };
                 finalProduct = out.final_product || d.output;
               } catch {
-                // 非 JSON 输出直接展示
+                // Non-JSON output is displayed as-is
               }
               pushMessage({
                 id: nextId(),
                 kind: "tool",
-                content: `✅ 任务完成: ${finalProduct}`,
+                content: `✅ Task done: ${finalProduct}`,
               });
 
-              // 脚本确认卡：子任务产出脚本（stepName 为脚本角色）时渲染确认按钮。
+              // Script confirmation card: rendered when a subtask produces a script (stepName is the scriptwriter role).
               const stepName = typeof d.stepName === "string" ? d.stepName : "";
               const msgId = typeof d.msgId === "string" ? d.msgId : "";
               if (
@@ -268,7 +269,7 @@ export const useConversationStore = create<ConversationState>()(
               set((s) => ({
                 messages: s.messages.map((m) =>
                   m.id === id && m.kind === "assistant"
-                    ? { ...m, content: "(空响应)" }
+                    ? { ...m, content: "(empty response)" }
                     : m,
                 ),
               }));
@@ -276,7 +277,7 @@ export const useConversationStore = create<ConversationState>()(
             currentAssistantId = null;
             currentTextDelta = "";
             isReplaying = false;
-            // 消息流结束立即恢复可交互（热点卡/HIL 卡需要此时可点击）。
+            // Restore interactivity as soon as the message stream ends (hot-topic/HIL cards must be clickable at this point).
             resetUi();
             break;
 
@@ -305,7 +306,7 @@ export const useConversationStore = create<ConversationState>()(
           {
             onEvent: handleSseEvent,
             onDisconnect: () => {
-              // 断线：若当前有未完成的 msgId，自动重连回放（断点续拉）。
+              // Disconnected: if there is an unfinished msgId, auto-reconnect and replay (resume from the breakpoint).
               if (currentMsgId && currentSeq > 0) {
                 set({ streaming: false });
                 replay(currentMsgId, currentSeq);
@@ -318,7 +319,7 @@ export const useConversationStore = create<ConversationState>()(
         );
       };
 
-      /** 断线重连：携带上次的 msgId + lastSeq 重新订阅，服务端从断点续拉回放。 */
+      /** Reconnect after a drop: resubscribe with the last msgId + lastSeq so the server replays from the breakpoint. */
       const replay = (msgId: string, lastSeq: number) => {
         if (get().streaming) return;
         set({ streaming: true });
@@ -352,6 +353,7 @@ export const useConversationStore = create<ConversationState>()(
         resume: (msgId: string) => {
           if (get().streaming) return;
           set({ streaming: true });
+          // The query text is a protocol string consumed by the backend resume fast path (kept in Chinese).
           startStream({ query: "继续", resume: "1", msgId });
         },
 
@@ -376,10 +378,12 @@ export const useConversationStore = create<ConversationState>()(
             pushMessage({
               id: nextId(),
               kind: "tool",
-              content: `已选择「${title}」`,
+              content: `Selected "${title}"`,
             });
-            // 显式恢复 streaming，确保 sendMessage 能发（不依赖 message-complete 时机）。
+            // Explicitly clear streaming so sendMessage can proceed (does not rely on message-complete timing).
             set({ streaming: false });
+            // The follow-up queries are protocol strings: the backend manager prompt matches
+            // these exact Chinese patterns to advance the creation flow, so they stay in Chinese.
             if (cardType === "category") {
               const topic = get().topicTitle || title;
               get().sendMessage(`根据「${topic}」用${title}开始创作`);
@@ -391,7 +395,7 @@ export const useConversationStore = create<ConversationState>()(
             pushMessage({
               id: nextId(),
               kind: "error",
-              content: `⚠ 选择确认失败: ${err instanceof Error ? err.message : String(err)}`,
+              content: `⚠ Selection confirmation failed: ${err instanceof Error ? err.message : String(err)}`,
             });
           }
         },
@@ -404,7 +408,7 @@ export const useConversationStore = create<ConversationState>()(
               {
                 sessionId: sessionId(),
                 cardType: "script",
-                value: "确认脚本",
+                value: "Confirm script",
                 agentId: "gold_scriptwriter",
                 pipeline: "mix_video",
                 msgId: scriptMsgId || "",
@@ -414,14 +418,16 @@ export const useConversationStore = create<ConversationState>()(
             pushMessage({
               id: nextId(),
               kind: "tool",
-              content: "✅ 脚本已确认，正在投递视频合成任务…",
+              content:
+                "✅ Script confirmed; dispatching the video synthesis task…",
             });
+            // Protocol string matched by the backend manager prompt (kept in Chinese).
             get().sendMessage("继续执行视频合成");
           } catch (err) {
             pushMessage({
               id: nextId(),
               kind: "error",
-              content: `⚠ 脚本确认失败: ${err instanceof Error ? err.message : String(err)}`,
+              content: `⚠ Script confirmation failed: ${err instanceof Error ? err.message : String(err)}`,
             });
           }
         },

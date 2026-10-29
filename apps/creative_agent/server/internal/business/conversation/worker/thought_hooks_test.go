@@ -11,8 +11,8 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestThoughtHooks_OnAfterLLM 验证 OnAfterLLM 每轮落一条 thought 记录：
-// model_input（分离 system prompt）/ model_output / tool_calls / 身份字段。
+// TestThoughtHooks_OnAfterLLM verifies that OnAfterLLM persists one thought record per round:
+// model_input (system prompt separated) / model_output / tool_calls / identity fields.
 func TestThoughtHooks_OnAfterLLM(t *testing.T) {
 	db := newTestDB(t)
 	testx.NoError(t, db.AutoMigrate(&model.CGAgentThought{}))
@@ -26,7 +26,7 @@ func TestThoughtHooks_OnAfterLLM(t *testing.T) {
 	}
 	hooks := worker.NewThoughtHooksForTest(repo, payload, "deepseek-chat", nil)
 
-	// 构造 AgentContext：引擎会在 OnAfterLLM 前塞 LLMInputMessagesKey + LLMStepStartKey
+	// Build the AgentContext: the engine stores LLMInputMessagesKey + LLMStepStartKey before OnAfterLLM
 	c := react.NewAgentContext("生成海报")
 	inputMsgs := []react.Message{
 		{Role: "system", Content: "你是管家"},
@@ -43,10 +43,10 @@ func TestThoughtHooks_OnAfterLLM(t *testing.T) {
 
 	hooks.OnAfterLLM(c)
 
-	// 查 thought 记录
+	// Query the thought record
 	var count int64
 	testx.NoError(t, db.Model(&model.CGAgentThought{}).Count(&count).Error)
-	testx.Equal(t, int64(1), count, "每轮应落一条 thought")
+	testx.Equal(t, int64(1), count, "one thought should be persisted per round")
 
 	var rows []model.CGAgentThought
 	testx.NoError(t, db.Find(&rows).Error)
@@ -59,14 +59,14 @@ func TestThoughtHooks_OnAfterLLM(t *testing.T) {
 	testx.Equal(t, "deepseek-chat", row.Model)
 	testx.Equal(t, model.ThoughtStatusCompleted, row.Status)
 
-	// model_input 应分离 system prompt
+	// model_input should separate the system prompt
 	testx.NotNil(t, row.ModelInput)
 	var inputMsgsOut []react.Message
 	testx.NoError(t, json.Unmarshal([]byte(*row.ModelInput), &inputMsgsOut))
-	testx.Len(t, inputMsgsOut, 1, "model_input 应只含非 system 消息")
+	testx.Len(t, inputMsgsOut, 1, "model_input should contain only non-system messages")
 	testx.Equal(t, "user", inputMsgsOut[0].Role)
 
-	// model_output 含 tool_calls
+	// model_output contains tool_calls
 	testx.NotNil(t, row.ModelOutput)
 	var outputMsg react.Message
 	testx.NoError(t, json.Unmarshal([]byte(*row.ModelOutput), &outputMsg))
@@ -74,17 +74,17 @@ func TestThoughtHooks_OnAfterLLM(t *testing.T) {
 	testx.Len(t, outputMsg.ToolCalls, 1)
 	testx.Equal(t, "generate_response", outputMsg.ToolCalls[0].Name)
 
-	// start_time 用引擎塞的轮级时间戳
+	// start_time uses the round-level timestamp stored by the engine
 	testx.Equal(t, int64(1000), row.StartTime)
 }
 
-// TestThoughtHooks_NilRepo_NoOp 验证 repo 为 nil 时不落表（no-op）。
+// TestThoughtHooks_NilRepo_NoOp verifies that no rows are written when repo is nil (no-op).
 func TestThoughtHooks_NilRepo_NoOp(t *testing.T) {
 	hooks := worker.NewThoughtHooksForTest(nil, &worker.TestPayload{}, "", nil)
 	c := react.NewAgentContext("hi")
 	c.Set(react.LLMInputMessagesKey, []react.Message{{Role: "user", Content: "hi"}})
 	c.Runtime.LastResponse = &react.LLMResponse{Content: "ok"}
 
-	// 不 panic 即可
+	// Not panicking is enough
 	hooks.OnAfterLLM(c)
 }

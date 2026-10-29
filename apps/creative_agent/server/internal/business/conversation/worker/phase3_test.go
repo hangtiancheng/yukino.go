@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// newPhase3TestDB 创建内存 sqlite，注册 Phase 3 全部表。
+// newPhase3TestDB creates an in-memory sqlite DB with all Phase 3 tables registered.
 func newPhase3TestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -38,9 +38,9 @@ func newPhase3TestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestPhase3_EndToEnd_PlanToPoll 验证 Phase 3 完整链路：
-// 管家产出 new_agents_plan → Submitter 投递 → Consumer 消费 →
-// TaskExecutor 执行 → Poller 轮询 cg_task_step 回流。
+// TestPhase3_EndToEnd_PlanToPoll verifies the full Phase 3 chain:
+// the manager produces new_agents_plan → Submitter dispatches → Consumer consumes →
+// TaskExecutor executes → Poller polls cg_task_step for backflow.
 func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 	ctx := context.Background()
 	zlog := logger.New("info")
@@ -51,13 +51,13 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 	taskRunRepo := repository.NewTaskRunRepository(db)
 	taskStepRepo := repository.NewTaskStepRepository(db)
 
-	// 两条 stream：对话 + 子任务
+	// Two streams: conversation + subtask
 	convStream := infra.NewMemoryStreamQueue("cg:stream:conversation", "cg:workers", "w1")
 	taskStream := infra.NewMemoryStreamQueue("cg:stream:task", "cg:executors", "e1")
 	chunkStore := infra.NewMemoryChunkStore()
 	defer chunkStore.Close()
 
-	// 组装 Phase 3 组件
+	// Assemble the Phase 3 components
 	tools := appkittools.NewSubAgentToolRegistry()
 	taskExec := subtaskexecutor.NewTaskExecutor(subtaskexecutor.TaskExecutorConfig{
 		TaskRunRepo: taskRunRepo,
@@ -83,7 +83,7 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 		Logger:      zlog,
 	})
 
-	// 对话 worker（接 submitter + poller）
+	// Conversation worker (wired with submitter + poller)
 	convConsumer := worker.NewConsumer(worker.ConsumerConfig{
 		StreamQ:       convStream,
 		ChunkStore:    chunkStore,
@@ -104,7 +104,7 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 	defer taskCancel()
 	go taskConsumer.Start(taskCtx)
 
-	// 预建异步请求（Pending）+ 投递对话 stream，模拟 con_reader
+	// Pre-create the async request (Pending) + push to the conversation stream, simulating con_reader
 	msgID := "msg-phase3"
 	asyncReq := &model.CGAsyncRequest{
 		AsyncRequestID: "ar-phase3",
@@ -117,7 +117,7 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 	}
 	testx.NoError(t, asyncRepo.InsertPending(ctx, asyncReq))
 
-	// con_reader 还会先建 message_record（flushChatTextToDB 依赖它存在）
+	// con_reader also creates message_record first (flushChatTextToDB depends on it existing)
 	ct := model.NewChatText("生成一张海报")
 	ctJSON, _ := json.Marshal(ct)
 	testx.NoError(t, msgRepo.Insert(ctx, &model.CGMessageRecord{
@@ -139,15 +139,15 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 	})
 	testx.NoError(t, convStream.Push(ctx, msgID, convBody))
 
-	// 等待管家产出 plan → task_run 落库
+	// Wait for the manager to produce the plan → task_run persisted
 	testx.Eventually(t, func() bool {
-		// 有任意 task_run 即说明 plan 链路打通
+		// Any task_run means the plan chain works
 		var count int64
 		db.Model(&model.CGTaskRun{}).Count(&count)
 		return count > 0
-	}, 10*time.Second, 100*time.Millisecond, "管家应产出 task_run")
+	}, 10*time.Second, 100*time.Millisecond, "the manager should produce a task_run")
 
-	// 等待子任务执行完成 → task_run Finished
+	// Wait for the subtask to finish → task_run Finished
 	testx.Eventually(t, func() bool {
 		var runs []model.CGTaskRun
 		db.Find(&runs)
@@ -157,16 +157,16 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 			}
 		}
 		return false
-	}, 10*time.Second, 100*time.Millisecond, "子任务应执行完成")
+	}, 10*time.Second, 100*time.Millisecond, "the subtask should finish")
 
-	// 验证 task_step 落库（agent step + tool step）
+	// Verify task_step persistence (agent step + tool step)
 	var steps []model.CGTaskStep
 	db.Find(&steps)
-	testx.NotEmpty(t, steps, "应至少有 agent step")
+	testx.NotEmpty(t, steps, "there should be at least the agent step")
 	testx.Equal(t, model.TaskStepStatusFinished, steps[0].Status)
 	testx.Contains(t, steps[0].StepOutput, "final_product")
 
-	// 验证 chunk 回流（含 task-step / task-done 帧 + EndTurn 收尾）
+	// Verify the chunk backflow (task-step / task-done frames + EndTurn closing)
 	testx.Eventually(t, func() bool {
 		chunks, _, _, err := chunkStore.After(ctx, msgID, 0)
 		testx.NoError(t, err)
@@ -177,9 +177,9 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 			}
 		}
 		return hasEnd
-	}, 10*time.Second, 100*time.Millisecond, "应有 EndTurn chunk")
+	}, 10*time.Second, 100*time.Millisecond, "an EndTurn chunk should exist")
 
-	// 校验回流帧类型：应包含 task-step 与 task-done（Phase 3 milestone 核心）
+	// Check backflow frame types: task-step and task-done must be present (the core of the Phase 3 milestone)
 	chunks, _, _, err := chunkStore.After(ctx, msgID, 0)
 	testx.NoError(t, err)
 	var types []string
@@ -195,16 +195,16 @@ func TestPhase3_EndToEnd_PlanToPoll(t *testing.T) {
 			types = append(types, f.Type)
 		}
 	}
-	testx.Contains(t, types, "task-step", "应回流 task-step 进度帧")
-	testx.Contains(t, types, "task-done", "应回流 task-done 终态帧")
+	testx.Contains(t, types, "task-step", "task-step progress frames should flow back")
+	testx.Contains(t, types, "task-done", "the task-done terminal frame should flow back")
 	testx.Contains(t, types, "message-complete")
 
-	// 验证异步请求终态：EndTurn chunk 先于 MarkTerminal(Completed) 写入，
-	// worker 在独立 goroutine 中提交终态，故轮询等待而非直接断言（消除竞态）。
+	// Verify the async request's terminal state: the EndTurn chunk is written before MarkTerminal(Completed);
+	// the worker commits the terminal state in a separate goroutine, so poll instead of asserting directly (eliminating the race).
 	testx.Eventually(t, func() bool {
 		finished, err := asyncRepo.GetByMessageID(ctx, msgID)
 		return err == nil && finished.Status == model.AsyncStatusCompleted
-	}, 10*time.Second, 100*time.Millisecond, "异步请求应标记 Completed")
+	}, 10*time.Second, 100*time.Millisecond, "the async request should be marked Completed")
 }
 
 var _ = zap.S()

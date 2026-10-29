@@ -2,21 +2,21 @@ package domain
 
 import "context"
 
-// BlacklistChecker 风控治理黑名单判定接口（应用层依赖注入，实现位于 infrastructure）。
+// BlacklistChecker is the risk-governance blacklist check interface (application-layer dependency injection; the implementation lives in infrastructure).
 //
-// 设计意图：黑名单以 Redis 实现（risk:blacklist:{userID}:{subProduct}），但应用层保持
-// 纯依赖倒置——不直接持有 redis.Client、不 import infrastructure；由基础设施层实现本接口
-// 并注入。nil 注入时 RiskAuditApp 视为"未启用黑名单检查"，直接放行。
+// Design intent: the blacklist is Redis-backed (risk:blacklist:{userID}:{subProduct}), but the application layer keeps
+// pure dependency inversion — it holds no redis.Client and imports no infrastructure; the infrastructure layer implements this interface
+// and injects it. With nil injection, RiskAuditApp treats it as "blacklist checks disabled" and passes directly.
 type BlacklistChecker interface {
-	// IsBlacklisted 查询 userID 在 subProduct 下是否命中黑名单。
+	// IsBlacklisted checks whether userID hits the blacklist under subProduct.
 	IsBlacklisted(ctx context.Context, userID int64, subProduct string) bool
 }
 
-// BlacklistWriter 风控治理黑名单写入接口（评估 job 依赖注入，实现位于 infrastructure）。
+// BlacklistWriter is the risk-governance blacklist write interface (evaluation-job dependency injection; the implementation lives in infrastructure).
 //
-// 与 BlacklistChecker 对称：评估 job 通过接口写黑名单，不直接持有 redis.Client。
-// nil 注入时 RiskOfflineJob 视为"未启用黑名单写入"，跳过写黑名单（评估不中断）。
+// Symmetric with BlacklistChecker: the evaluation job writes the blacklist through the interface, holding no redis.Client directly.
+// With nil injection, RiskOfflineJob treats it as "blacklist writes disabled" and skips writing (evaluation is not interrupted).
 type BlacklistWriter interface {
-	// SetBlacklisted 写入 userID 在 subProduct 下的黑名单。
+	// SetBlacklisted writes the blacklist entry of userID under subProduct.
 	SetBlacklisted(ctx context.Context, userID int64, subProduct string) error
 }

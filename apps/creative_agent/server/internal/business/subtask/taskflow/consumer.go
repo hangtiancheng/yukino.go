@@ -17,23 +17,23 @@ import (
 	"go.uber.org/zap"
 )
 
-// Consumer 是子任务消费者（对应真实系统 executor/consumer.go）。
+// Consumer is the subtask consumer (corresponding to the reference system's executor/consumer.go).
 //
-// 可靠性比对话管道（③）轻——子任务是纯后台任务，没有连接在等：
-//   - MsgID 锁去重（同一消息只有一个 worker 处理）
-//   - CAS 抢占 cg_task_run（Pending→Running）
-//   - 超时/异常不 ACK → stream 消息 pending → 由任务 stream 的 recovery 兜底重投
+// Reliability is lighter than the conversation pipeline (③) — subtasks are pure background tasks with no connection waiting:
+//   - MsgID lock dedup (only one worker processes a given message)
+//   - CAS claim of cg_task_run (Pending→Running)
+//   - Timeout/exception without ACK → the stream message stays pending → the task stream's recovery redispatches it
 //
-// 无心跳、无僵尸扫描（对话管道的 RecoveryScanner 只扫 cg_async_request，不扫 task_run）。
+// No heartbeat, no zombie scan (the conversation pipeline's RecoveryScanner only scans cg_async_request, not task_run).
 type Consumer struct {
 	streamQ     infra.StreamQueue
 	taskRunRepo repository.TaskRunRepository
-	executor    *subtaskexecutor.TaskExecutor // 执行体（Step 3.4），nil 时只做抢占验证
-	executorID  string                        // 本 consumer 唯一标识（CAS 抢占的 owner 记录）
+	executor    *subtaskexecutor.TaskExecutor // executor (Step 3.4); when nil only claim validation runs
+	executorID  string                        // unique identifier of this consumer (the owner recorded by the CAS claim)
 	logger      *zap.Logger
 }
 
-// ConsumerConfig 持有 Consumer 的依赖。
+// ConsumerConfig holds the Consumer's dependencies.
 type ConsumerConfig struct {
 	StreamQ     infra.StreamQueue
 	TaskRunRepo repository.TaskRunRepository
@@ -42,7 +42,7 @@ type ConsumerConfig struct {
 	Logger      *zap.Logger
 }
 
-// NewConsumer 创建子任务消费者。
+// NewConsumer creates the subtask consumer.
 func NewConsumer(cfg ConsumerConfig) *Consumer {
 	if cfg.ExecutorID == "" {
 		cfg.ExecutorID = "executor-1"
@@ -56,7 +56,7 @@ func NewConsumer(cfg ConsumerConfig) *Consumer {
 	}
 }
 
-// Start 开始消费循环。阻塞直到 ctx 取消。
+// Start runs the consumption loop. It blocks until ctx is canceled.
 func (c *Consumer) Start(ctx context.Context) {
 	c.logger.Info("task consumer started", zap.String("executorID", c.executorID))
 	for {
@@ -79,12 +79,12 @@ func (c *Consumer) Start(ctx context.Context) {
 			continue
 		}
 
-		// 并发处理，慢任务不阻塞轮询
+		// Process concurrently; slow tasks do not block polling
 		go c.handleTask(ctx, msg)
 	}
 }
 
-// handleTask 处理单条子任务消息。
+// handleTask processes one subtask message.
 func (c *Consumer) handleTask(ctx context.Context, msg *infra.StreamMessage) {
 	var payload subtaskexecutor.TaskPayload
 	if err := json.Unmarshal(msg.Body, &payload); err != nil {
@@ -93,49 +93,49 @@ func (c *Consumer) handleTask(ctx context.Context, msg *infra.StreamMessage) {
 		return
 	}
 
-	// 从 stream 恢复 trace（跨进程透传）。
+	// Restore the trace from the stream (cross-process propagation).
 	ctx = tracex.ContextFromCarrier(ctx, map[string]string{
 		tracex.TraceParentKey: payload.TraceParent,
 	})
 
-	// 包 task.process span：把子任务处理（抢占/执行/落库）挂进 HTTP 恢复出的 trace。
+	// Wrap the task.process span: hang subtask processing (claim/execute/persist) under the trace restored from HTTP.
 	ctx, span := otel.Tracer("github.com/hangtiancheng/yukino.go/apps/creative_agent/server/executor").Start(ctx, "task.process")
 	defer span.End()
 	span.SetAttributes(
 		attribute.Int64("task_run_id", payload.TaskRunID),
 		attribute.String("msg_id", payload.MsgID),
 	)
-	// 入口派生 logger 放在开 span 之后：日志的 trace_id/span_id 指向 task.process 本身。
+	// Derive the entry logger after starting the span: log trace_id/span_id then point at task.process itself.
 	logger := tracex.Logger(c.logger, ctx)
 	logger.Info("task consumer: processing message",
 		zap.Int64("taskRunID", payload.TaskRunID),
 		zap.String("msgID", payload.MsgID),
 		zap.String("executorID", c.executorID))
 
-	// Step 1: 主从延迟重试——Submitter 刚 INSERT 完就 Push，避免读到 nil。
+	// Step 1: replica-lag retry — the Submitter Pushes right after INSERT; avoid reading nil.
 	run, err := c.getRunWithRetry(ctx, payload.TaskRunID)
 	if err != nil {
 		logger.Error("task consumer: get task_run error",
 			zap.Int64("taskRunID", payload.TaskRunID), zap.Error(err))
-		return // 不 ACK，等重投
+		return // no ACK; wait for redispatch
 	}
 
-	// Step 2: 状态机 + CAS 抢占
+	// Step 2: state machine + CAS claim
 	acquired, skip := c.preempt(ctx, run)
 	if skip {
 		_ = c.streamQ.Ack(ctx, msg.ID)
 		return
 	}
 	if !acquired {
-		logger.Warn("task consumer: CAS 抢占失败（已有执行者）",
+		logger.Warn("task consumer: CAS claim failed (an executor already holds it)",
 			zap.Int64("taskRunID", payload.TaskRunID))
 		_ = c.streamQ.Ack(ctx, msg.ID)
 		return
 	}
 
-	// Step 3: 交给 TaskExecutor 执行（含 NeedWait 分流 + 结果落库）
+	// Step 3: hand off to the TaskExecutor (including NeedWait branching + result persistence)
 	if c.executor == nil {
-		// 未接线执行体：仅验证抢占后直接终态（供 Step 3.3 单元测试使用）
+		// No executor wired: only validate the claim and terminate directly (used by the Step 3.3 unit tests)
 		_ = c.taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFinished, "")
 		_ = c.streamQ.Ack(ctx, msg.ID)
 		return
@@ -145,12 +145,12 @@ func (c *Consumer) handleTask(ctx context.Context, msg *infra.StreamMessage) {
 	if shouldAck {
 		_ = c.streamQ.Ack(ctx, msg.ID)
 	} else {
-		logger.Warn("task consumer: 执行未完成（需重投），不 ACK",
+		logger.Warn("task consumer: execution incomplete (needs redispatch), not ACKing",
 			zap.Int64("taskRunID", payload.TaskRunID))
 	}
 }
 
-// getRunWithRetry 最多重试 3 次 ×200ms，防读到 nil（Submitter 刚建表就投递）。
+// getRunWithRetry retries up to 3 times × 200ms to avoid reading nil (the Submitter dispatches right after inserting).
 func (c *Consumer) getRunWithRetry(ctx context.Context, taskRunID int64) (*model.CGTaskRun, error) {
 	var lastErr error
 	for i := 0; i < 3; i++ {
@@ -164,36 +164,36 @@ func (c *Consumer) getRunWithRetry(ctx context.Context, taskRunID int64) (*model
 	return nil, fmt.Errorf("get task_run after 3 retries: %w", lastErr)
 }
 
-// preempt 对 task_run 做 CAS 抢占。返回 (是否抢到, 是否应跳过)。
+// preempt CAS-claims the task_run. Returns (claimed, shouldSkip).
 //
 //	switch status:
-//	  Pending          → 继续抢占（Pending→Running）
-//	  Finished/Failed  → 幂等返回，跳过
-//	  Running          → 判 zombie：更新耗时过长视为崩溃，重置为 Pending 重新抢占；
-//	                     否则认为有活跃执行者，跳过
+//	  Pending          → proceed with the claim (Pending→Running)
+//	  Finished/Failed  → idempotent return, skip
+//	  Running          → zombie check: an overly old update counts as a crash; reset to Pending and re-claim;
+//	                     otherwise assume an active executor and skip
 func (c *Consumer) preempt(ctx context.Context, run *model.CGTaskRun) (acquired bool, skip bool) {
 	switch run.Status {
 	case model.TaskRunStatusFinished, model.TaskRunStatusFailed:
-		return false, true // 幂等返回
+		return false, true // idempotent return
 
 	case model.TaskRunStatusRunning:
-		// zombie 判据：距 UpdateTime 超过 workerTimeout（此处 5min）认为执行者崩溃
+		// Zombie criterion: UpdateTime older than workerTimeout (5min here) counts as a crashed executor
 		workerTimeout := 5 * time.Minute
 		if time.Since(time.UnixMilli(run.UpdateTime)) < workerTimeout {
-			return false, true // 有活跃执行者，跳过
+			return false, true // an active executor exists; skip
 		}
-		// zombie：重置为 Pending 重新抢占
+		// Zombie: reset to Pending and re-claim
 		ok, err := c.taskRunRepo.UpdateCAS(ctx, run.TaskRunID, model.TaskRunStatusRunning, map[string]any{
 			"status": model.TaskRunStatusPending,
 		})
 		if err != nil || !ok {
 			return false, true
 		}
-		// 落回 Pending 后继续往下走（Pending 分支）
+		// After falling back to Pending, continue below (the Pending branch)
 		run.Status = model.TaskRunStatusPending
 	}
 
-	// Pending → Running（CAS 抢占）
+	// Pending → Running (CAS claim)
 	ok, err := c.taskRunRepo.UpdateCAS(ctx, run.TaskRunID, model.TaskRunStatusPending, map[string]any{
 		"status":      model.TaskRunStatusRunning,
 		"consumer_ip": c.executorID,

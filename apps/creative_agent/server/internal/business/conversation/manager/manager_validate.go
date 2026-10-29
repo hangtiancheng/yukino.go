@@ -8,37 +8,37 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/business/subtask"
 )
 
-// ValidateStage 校验阶段（第 8 章 §8.4.2 分阶段报错）。
+// ValidateStage is the validation stage (chapter 8 §8.4.2 staged error reporting).
 type ValidateStage int
 
 const (
-	// StageJSONParse 参数非合法 JSON：置空 + Retry 回显原始参数。
+	// StageJSONParse: arguments are not valid JSON: clear them + Retry echoing the original arguments.
 	StageJSONParse ValidateStage = iota
-	// StageSchemaValidate JSON 合法但不满足 Schema：保留参数 + 精准报错。
+	// StageSchemaValidate: JSON is valid but violates the schema: keep the arguments + report precisely.
 	StageSchemaValidate
 )
 
-// ValidateResult 是 generate_response 参数校验结果。
+// ValidateResult is the validation result of generate_response arguments.
 type ValidateResult struct {
 	Stage         ValidateStage
 	OK            bool
-	Message       string       // 给 LLM 看的纠错提示（ActionRetry 注入）
-	FriendlyReply string       // 校验通过时的友好回复
-	Plan          *PlanOutput  // task_type=new_agents_plan 时解析出的计划
-	Card          *HotCardData // task_type=push_card 时解析出的卡（创作功能卡等）
+	Message       string       // correction hint shown to the LLM (injected by ActionRetry)
+	FriendlyReply string       // friendly reply when validation passes
+	Plan          *PlanOutput  // plan parsed when task_type=new_agents_plan
+	Card          *HotCardData // card parsed when task_type=push_card (creation-feature card, etc.)
 }
 
-// ValidTaskTypes 是 task_type 合法枚举（第 8 章 §8.2.2）。
+// ValidTaskTypes is the valid task_type enum (chapter 8 §8.2.2).
 var ValidTaskTypes = map[string]bool{
 	"only_reply": true, "push_card": true, "new_agents_plan": true, "execute_agent": true,
 }
 
-// ValidateGenerateResponse 校验 generate_response 工具的参数（约束③）。
+// ValidateGenerateResponse validates the arguments of the generate_response tool (constraint ③).
 //
-// 流程（第 8 章 §8.4.2）：RepairJSON 修复 → task_type 枚举校验 →
-// task_arguments 解析（string / object 容错）→ new_agents_plan 的 agent 白名单校验。
+// Flow (chapter 8 §8.4.2): RepairJSON → task_type enum validation →
+// task_arguments parsing (string / object tolerant) → agent whitelist validation for new_agents_plan.
 func ValidateGenerateResponse(arguments string) *ValidateResult {
-	// 1. JSON 修复（去 Markdown 包裹等）
+	// 1. JSON repair (strip Markdown wrappers, etc.)
 	repaired, ok := RepairJSON(arguments)
 	if !ok {
 		return &ValidateResult{
@@ -48,7 +48,7 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 		}
 	}
 
-	// 2. 解析顶层字段（用 map 而非 struct：task_arguments 可能是 string 或 object）
+	// 2. Parse top-level fields (using a map instead of a struct: task_arguments may be a string or an object)
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(repaired), &raw); err != nil {
 		return &ValidateResult{
@@ -62,7 +62,7 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 	taskType, _ := raw["task_type"].(string)
 	_ = thought
 
-	// 3. task_type 枚举校验
+	// 3. task_type enum validation
 	if !ValidTaskTypes[taskType] {
 		return &ValidateResult{
 			Stage:   StageSchemaValidate,
@@ -71,7 +71,7 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 		}
 	}
 
-	// 4. task_arguments：string / object 容错
+	// 4. task_arguments: string / object tolerance
 	taskArgsJSON := "{}"
 	switch tv := raw["task_arguments"].(type) {
 	case string:
@@ -80,7 +80,7 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 		b, _ := json.Marshal(tv)
 		taskArgsJSON = string(b)
 	case nil:
-		// 缺省 → "{}"
+		// Missing → "{}"
 	default:
 		return &ValidateResult{
 			Stage:   StageSchemaValidate,
@@ -89,7 +89,7 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 		}
 	}
 
-	// 5. task_arguments 必须是合法 JSON 对象
+	// 5. task_arguments must be a valid JSON object
 	var taskArgs map[string]any
 	if err := json.Unmarshal([]byte(taskArgsJSON), &taskArgs); err != nil {
 		if r2, ok2 := RepairJSON(taskArgsJSON); ok2 {
@@ -101,8 +101,8 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 		}
 	}
 
-	// 6. new_agents_plan → 校验产线 + 校验 LLM 填的 agent 属于产线 → 服务端翻译链
-	//    agents_pipeline 是 generate_response 顶层参数（Schema enum 硬约束，§8.4.4）
+	// 6. new_agents_plan → validate the pipeline + validate that the LLM-filled agents belong to it → server-side chain translation
+	//    agents_pipeline is a top-level generate_response parameter (hard schema enum constraint, §8.4.4)
 	if taskType == "new_agents_plan" {
 		pipelineName, _ := raw["agents_pipeline"].(string)
 		plan, msg := validateAndBuildPlan(friendlyReply, pipelineName, taskArgs)
@@ -112,8 +112,8 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 		return &ValidateResult{Stage: StageSchemaValidate, OK: true, FriendlyReply: friendlyReply, Plan: plan}
 	}
 
-	// 6.5 push_card → 解析卡数据（创作功能卡等）。task_arguments 含 card_type +
-	//     title_data（[{title,content,eid}]）或 prompt_items（[{title,text,index,eid,imageUrl}]）。
+	// 6.5 push_card → parse the card data (creation-feature card, etc.). task_arguments contains card_type +
+	//     title_data ([{title,content,eid}]) or prompt_items ([{title,text,index,eid,imageUrl}]).
 	if taskType == "push_card" {
 		card := parsePushCard(taskArgs, friendlyReply)
 		return &ValidateResult{Stage: StageSchemaValidate, OK: true, FriendlyReply: friendlyReply, Card: card}
@@ -122,13 +122,13 @@ func ValidateGenerateResponse(arguments string) *ValidateResult {
 	return &ValidateResult{Stage: StageSchemaValidate, OK: true, FriendlyReply: friendlyReply}
 }
 
-// parsePushCard 解析 push_card 的 task_arguments → HotCardData。
-// task_arguments 结构（对齐参考）：
+// parsePushCard parses push_card's task_arguments → HotCardData.
+// task_arguments structure (aligned with the reference):
 //
 //	{card_type, label, hotspot_data, title_data:[{title,content,eid}],
 //	 prompt_items:[{title,text,index,eid,imageUrl}]}
 //
-// prompt_items 优先（服务端预定义卡可带 imageUrl）；否则用 title_data 转换。
+// prompt_items takes priority (server-predefined cards may carry imageUrl); otherwise title_data is converted.
 func parsePushCard(taskArgs map[string]any, friendlyReply string) *HotCardData {
 	card := &HotCardData{
 		CardType: "创作功能选择卡",
@@ -146,7 +146,7 @@ func parsePushCard(taskArgs map[string]any, friendlyReply string) *HotCardData {
 		card.Layout = lay
 	}
 
-	// prompt_items 优先（可带 imageUrl）
+	// prompt_items takes priority (may carry imageUrl)
 	if pis, ok := taskArgs["prompt_items"].([]any); ok && len(pis) > 0 {
 		for i, piRaw := range pis {
 			pi, ok := piRaw.(map[string]any)
@@ -174,7 +174,7 @@ func parsePushCard(taskArgs map[string]any, friendlyReply string) *HotCardData {
 		return card
 	}
 
-	// title_data 转换
+	// title_data conversion
 	if tds, ok := taskArgs["title_data"].([]any); ok {
 		for i, tdRaw := range tds {
 			td, ok := tdRaw.(map[string]any)
@@ -198,8 +198,8 @@ func parsePushCard(taskArgs map[string]any, friendlyReply string) *HotCardData {
 	return card
 }
 
-// creationTypePipeline 把创作功能名映射到产线（AI成片→mix_video / AI笔记图→article）。
-// 未识别返回空（前端按普通选项处理）。
+// creationTypePipeline maps creation-feature names to pipelines (AI成片→mix_video / AI笔记图→article).
+// Unrecognized names return empty (the frontend treats them as ordinary options).
 func creationTypePipeline(title string) string {
 	switch title {
 	case "AI成片", "混剪成片", "AI成片混剪":
@@ -210,12 +210,12 @@ func creationTypePipeline(title string) string {
 	return ""
 }
 
-// validateAndBuildPlan 校验 new_agents_plan 参数并组装 Plan。
-// 返回 (plan, 纠错提示)：plan 为 nil 时提示非空（精准报错，供 ActionRetry 注入）。
+// validateAndBuildPlan validates new_agents_plan arguments and assembles the Plan.
+// Returns (plan, correction hint): when plan is nil the hint is non-empty (precise error for ActionRetry injection).
 func validateAndBuildPlan(friendlyReply, pipelineName string, taskArgs map[string]any) (*PlanOutput, string) {
-	// 1. agents_pipeline：generate_response 顶层参数（Schema enum 硬约束，§8.4.4）。
-	//    兼容旧协议：顶层没填时回退读 task_arguments.agents_pipeline（fake 链路/老测试）。
-	//    填不存在的键 → 精准报错（enum 是模型层约束，服务端校验仍做最终防线）
+	// 1. agents_pipeline: top-level generate_response parameter (hard schema enum constraint, §8.4.4).
+	//    Legacy protocol compatibility: when the top level is empty, fall back to task_arguments.agents_pipeline (fake chain / old tests).
+	//    A nonexistent key → precise error (the enum is a model-layer constraint; server validation remains the final defense)
 	if pipelineName == "" {
 		pipelineName, _ = taskArgs["agents_pipeline"].(string)
 	}
@@ -226,21 +226,21 @@ func validateAndBuildPlan(friendlyReply, pipelineName string, taskArgs map[strin
 		return nil, pipelineErrorHint + listValidPipelines() + "（你填了 " + pipelineName + "）"
 	}
 
-	// 2. 校验 LLM 填的 input agent：必须属于所选产线，防越权装配
-	//    （§8.4.4：LLM 决定链怎么装配，但每个 agent 必须是所选产线内的——防止
-	//     LLM 在 mix_video 产线里塞 image_painter 之类越权 agent；选题 idea_king
-	//     走 idea_king_api 工具，不在此列）
+	// 2. Validate the LLM-filled input agents: they must belong to the selected pipeline, preventing overreach assembly
+	//    (§8.4.4: the LLM decides how to assemble the chain, but every agent must be within the selected pipeline — preventing
+	//     the LLM from stuffing overreach agents like image_painter into the mix_video pipeline; topic selection idea_king
+	//     goes through the idea_king_api tool and is exempt)
 	llmAgents := parseLLMAgents(taskArgs)
 	for _, a := range llmAgents {
 		if a.AgentID == "" {
-			continue // 只有 input 无 agent_id 的项 → 服务端忽略，不报错
+			continue // entries with input but no agent_id → ignored by the server, not an error
 		}
 		if !pipelineContainsAgent(pipelineName, a.AgentID) {
 			return nil, fmt.Sprintf("agent_id %q 不在产线 %s 的 agent 集合内（可选："+listValidPipelines()+"的 chain agent，选题 idea_king 走 idea_king_api 工具不进 plan）", a.AgentID, pipelineName)
 		}
 	}
 
-	// 3. 服务端翻译：链 = LLM 填的 agents（剔 idea_king、补缺失 input），不展开固定链
+	// 3. Server-side translation: chain = the LLM-filled agents (drop idea_king, fill missing inputs); the fixed chain is not expanded
 	steps, err := subtask.ExpandPipelinePlan(pipelineName, llmAgents)
 	if err != nil {
 		return nil, "pipeline 展开失败：" + err.Error()
@@ -253,10 +253,10 @@ func validateAndBuildPlan(friendlyReply, pipelineName string, taskArgs map[strin
 	}, ""
 }
 
-// parseLLMAgents 从 task_arguments 提取 LLM 填的 agent 列表（agent_id + input）。
-// 兼容两种形态：
-//   - 新协议：agents 列表（LLM 只填产线内的 agent 及其 input）
-//   - 旧协议：plan_steps.agents（兼容 Phase 3 假 LLM / 老测试，校验失败路径同新协议）
+// parseLLMAgents extracts the LLM-filled agent list (agent_id + input) from task_arguments.
+// Compatible with two shapes:
+//   - New protocol: the agents list (the LLM fills only agents within the pipeline and their inputs)
+//   - Legacy protocol: plan_steps.agents (compatible with the Phase 3 fake LLM / old tests; validation-failure paths match the new protocol)
 func parseLLMAgents(taskArgs map[string]any) []PlanAgentPayload {
 	out := make([]PlanAgentPayload, 0)
 	if ps, ok := taskArgs["plan_steps"].(map[string]any); ok {
@@ -284,8 +284,8 @@ func parseLLMAgents(taskArgs map[string]any) []PlanAgentPayload {
 	return out
 }
 
-// pipelineContainsAgent 判断 agent_id 是否在产线的合法 agent 集合内。
-// idea_king 除外：它虽是产线链首，但走 idea_king_api 工具，不进 plan（§8.4.3）。
+// pipelineContainsAgent checks whether agent_id is in the pipeline's valid agent set.
+// idea_king is exempt: although it heads the pipeline chain, it goes through the idea_king_api tool and does not enter the plan (§8.4.3).
 func pipelineContainsAgent(pipelineName, agentID string) bool {
 	agentTypes, err := subtask.PipelineAgentTypes(pipelineName)
 	if err != nil {
@@ -299,7 +299,7 @@ func pipelineContainsAgent(pipelineName, agentID string) bool {
 	return false
 }
 
-// asString 安全取字符串字段（nil / 非 string 一律空串）。
+// asString safely fetches a string field (nil / non-string always yields an empty string).
 func asString(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -307,10 +307,10 @@ func asString(v any) string {
 	return ""
 }
 
-// RepairJSON 轻量 JSON 修复（第 8 章 §8.4.2）：
-//  1. 去 ```json ... ``` Markdown 包裹
-//  2. 去首尾空白
-//  3. json.Valid 校验
+// RepairJSON performs lightweight JSON repair (chapter 8 §8.4.2):
+//  1. Strip ```json ... ``` Markdown wrappers
+//  2. Trim surrounding whitespace
+//  3. Validate with json.Valid
 func RepairJSON(raw string) (string, bool) {
 	s := strings.TrimSpace(raw)
 	s = strings.TrimPrefix(s, "```json")
@@ -323,7 +323,7 @@ func RepairJSON(raw string) (string, bool) {
 	return "", false
 }
 
-// truncate 截断字符串到 n 个字符（报错回显用，避免刷屏）。
+// truncate cuts a string to n characters (for error echo, avoiding floods).
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {

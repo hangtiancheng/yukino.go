@@ -12,7 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// JWT 相关的 ctx.State 键。
+// ctx.State keys for JWT.
 const (
 	ContextUsername = "username"
 	ContextUserID   = "user_id"
@@ -20,8 +20,8 @@ const (
 	ContextExp      = "exp"
 )
 
-// jwtClaims 与 service.Claims 字段一致，通过 JSON 序列化协议兼容。
-// UserID 可选：base-server 域签发的旧 token 不含 user_id，解析后为 0。
+// jwtClaims matches the fields of service.Claims and is compatible via the JSON serialization protocol.
+// UserID is optional: legacy tokens issued by the base-server domain carry no user_id and parse to 0.
 type jwtClaims struct {
 	Username string `json:"username"`
 	UserID   int64  `json:"user_id"`
@@ -29,14 +29,14 @@ type jwtClaims struct {
 	jwt.RegisteredClaims
 }
 
-// JWT 返回校验 Bearer token 的中间件。
-// token 来源：优先 Authorization: Bearer <token> 头；无则回退 query 参数 ?token=<token>
-// （EventSource 无法带自定义头，前端通过一次性 query token 鉴权）。
-// secret 为签名密钥；rdb 用于查询 token 黑名单，nil 时跳过（降级）。
+// JWT returns a middleware validating the Bearer token.
+// Token source: the Authorization: Bearer <token> header takes priority; otherwise it falls back to the ?token=<token> query parameter
+// (EventSource cannot send custom headers, so the frontend authenticates with a one-off query token).
+// secret is the signing key; rdb is used to query the token blacklist and is skipped when nil (degraded mode).
 func JWT(secret string, rdb *redis.Client) yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
-		// 取 token：优先 Authorization: Bearer <token> 头（scheme 大小写不敏感，RFC 6750）；
-		// 无则回退 query 参数 token（EventSource 场景）。
+		// Get the token: the Authorization: Bearer <token> header takes priority (scheme is case-insensitive, RFC 6750);
+		// otherwise fall back to the token query parameter (EventSource scenario).
 		tokenStr := ""
 		header := ctx.Get("Authorization")
 		parts := strings.Fields(header)
@@ -67,7 +67,7 @@ func JWT(secret string, rdb *redis.Client) yukino.Middleware {
 			return
 		}
 
-		// 黑名单检查
+		// Blacklist check
 		if rdb != nil && claims.JTI != "" {
 			if n, err := rdb.Exists(ctx.Request.Context(), service.JwtBlacklistKey(claims.JTI)).Result(); err == nil && n > 0 {
 				response.Fail(ctx, 401, 401, "token has been revoked")

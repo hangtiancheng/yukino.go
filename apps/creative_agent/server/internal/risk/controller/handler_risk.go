@@ -8,23 +8,23 @@ import (
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 )
 
-// RiskHandler 处理 /inner/callback/risk（视频异步风控结果回调，链路终点）。
+// RiskHandler handles /inner/callback/risk (the async video risk-control result callback; the chain's endpoint).
 //
-// 直接持有 *AuditOutputApp，无接口跳转：HTTP 到业务一路可见。
+// It holds *AuditOutputApp directly, with no interface hops: HTTP to business is visible all the way.
 type RiskHandler struct {
 	auditOutput *service.AuditOutputApp
 }
 
-// NewRiskHandler 创建 RiskHandler。
-// 具体实现由 app 装配线注入（service.AuditOutputApp）。
+// NewRiskHandler creates a RiskHandler.
+// The concrete implementation is injected by the app assembly line (service.AuditOutputApp).
 func NewRiskHandler(auditOutput *service.AuditOutputApp) *RiskHandler {
 	return &RiskHandler{auditOutput: auditOutput}
 }
 
-// CallbackRisk 处理 /inner/callback/risk：风控回调终态落定（审计记录乐观锁 + 通知 creation）。
+// CallbackRisk handles /inner/callback/risk: settle the risk-callback terminal state (audit-record optimistic lock + notify creation).
 //
-// 对齐旧 internal/handler/creation.go 的 CallbackRisk：成功时响应体为
-// {"errno":0}（CallbackResp 契约 §3.6），业务成败靠 errno 区分。
+// Aligned with the old internal/handler/creation.go CallbackRisk: on success the response body is
+// {"errno":0} (CallbackResp contract §3.6); business success/failure is distinguished by errno.
 func (h *RiskHandler) CallbackRisk(c *yukino.Context, _ func()) {
 	var req contracts.RiskCallbackReq
 	if err := c.BindJSON(&req); err != nil {

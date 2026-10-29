@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
-// mockBaseServer 起一个 httptest server，记录收到的请求并按路径返回固定响应。
+// mockBaseServer starts an httptest server recording received requests and returning fixed responses by path.
 func mockBaseServer(t *testing.T) (*httptest.Server, map[string][]byte) {
 	t.Helper()
 	received := map[string][]byte{}
@@ -39,7 +39,7 @@ func mockBaseServer(t *testing.T) (*httptest.Server, map[string][]byte) {
 	return srv, received
 }
 
-// TestClient_PreCreate 验证 PreCreate 请求构造与响应解析。
+// TestClient_PreCreate verifies PreCreate request construction and response parsing.
 func TestClient_PreCreate(t *testing.T) {
 	srv, received := mockBaseServer(t)
 	defer srv.Close()
@@ -57,7 +57,7 @@ func TestClient_PreCreate(t *testing.T) {
 	testx.Equal(t, 0, resp.Data.Status)
 	testx.Equal(t, "push_card", resp.Data.TaskType)
 
-	// 验证请求体字段
+	// Verify the request body fields
 	var req map[string]any
 	testx.NoError(t, json.Unmarshal(received["/inner/creation/pre_create"], &req))
 	testx.Equal(t, float64(1), req["user_id"])
@@ -66,7 +66,7 @@ func TestClient_PreCreate(t *testing.T) {
 	testx.Equal(t, float64(3), req["role_type"])
 }
 
-// TestClient_Create 验证 Create 请求与响应。
+// TestClient_Create verifies the Create request and response.
 func TestClient_Create(t *testing.T) {
 	srv, _ := mockBaseServer(t)
 	defer srv.Close()
@@ -84,12 +84,12 @@ func TestClient_Create(t *testing.T) {
 	testx.Equal(t, "success", resp.Data.Status)
 }
 
-// TestClient_TraceHeader 验证出站请求携带 W3C traceparent 头（trace 透传）。
+// TestClient_TraceHeader verifies that outbound requests carry the W3C traceparent header (trace propagation).
 func TestClient_TraceHeader(t *testing.T) {
 	srv, _ := mockBaseServer(t)
 	defer srv.Close()
 
-	// 用真实 span 才能注入 traceparent；全局 provider 默认 no-op，需临时替换并恢复。
+	// A real span is required to inject traceparent; the global provider defaults to no-op, so replace it temporarily and restore.
 	tp, _ := otelx.NewMemoryExporter()
 	oldTP := otel.GetTracerProvider()
 	oldProp := otel.GetTextMapPropagator()
@@ -101,7 +101,7 @@ func TestClient_TraceHeader(t *testing.T) {
 		_ = tp.Shutdown(context.Background())
 	})
 
-	// 自建 http server 记录收到的 traceparent 头。
+	// A self-built http server records the received traceparent header.
 	var gotTrace string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTrace = r.Header.Get(tracex.TraceParentKey)
@@ -116,14 +116,14 @@ func TestClient_TraceHeader(t *testing.T) {
 	_, err := c.PreCreate(ctx, &baseapi.PreCreateReq{UserID: 1})
 	testx.NoError(t, err)
 
-	// traceparent 头形如 00-<32位traceID>-<16位spanID>-01
+	// The traceparent header looks like 00-<32-char traceID>-<16-char spanID>-01
 	testx.Equal(t, "00-"+span.SpanContext().TraceID().String()+"-"+span.SpanContext().SpanID().String()+"-01", gotTrace,
-		"应透传 W3C traceparent 头")
+		"the W3C traceparent header should be propagated")
 }
 
-// TestClient_BusinessErrno 验证 HTTP 200 但业务 errno != 0 时返回错误（Data 不可用）。
+// TestClient_BusinessErrno verifies that HTTP 200 with business errno != 0 returns an error (Data unusable).
 func TestClient_BusinessErrno(t *testing.T) {
-	// 自建 server 返回 HTTP 200 但 errno != 0（base-server 接口调用失败形态）。
+	// The self-built server returns HTTP 200 with errno != 0 (the base-server API-call failure shape).
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"errno":1001,"errmsg":"no permission"}`))
 	}))
@@ -135,7 +135,7 @@ func TestClient_BusinessErrno(t *testing.T) {
 	testx.Contains(t, err.Error(), "baseapi business errno 1001")
 }
 
-// TestClient_AsyncPostCreate 验证异步登记请求。
+// TestClient_AsyncPostCreate verifies the async registration request.
 func TestClient_AsyncPostCreate(t *testing.T) {
 	srv, _ := mockBaseServer(t)
 	defer srv.Close()

@@ -1,69 +1,70 @@
 # yukino-creative-agent
 
-yukino-creative-agent 后端（`../server`）的前端：登录 / 注册 / 首页 / 智能对话（SSE 流式）。
+Frontend for the yukino-creative-agent backend (`../server`): login / register / home / agent chat (SSE streaming).
 
-由 go-learn 的静态页面（`fe/*.html`）迁移而来。
+Migrated from the static pages of go-learn (`fe/*.html`).
 
-## 技术栈
+## Tech stack
 
-- React 19 + TypeScript + Vite 8（React Compiler 已启用）
-- Tailwind CSS v4 + shadcn/ui（Base UI 底座，nova 主题）+ lucide-react
-- TanStack Router（路由）+ TanStack Query（数据请求）
-- Zustand（auth / conversation 状态，persist 到 localStorage）
-- SSE：原生 EventSource（`GET /aigc/conversation`，token 走 query 参数）
+- React 19 + TypeScript + Vite 8 (React Compiler enabled)
+- Tailwind CSS v4 + shadcn/ui (Base UI foundation, nova theme) + lucide-react
+- TanStack Router (routing) + TanStack Query (data fetching)
+- Zustand (auth / conversation state, persisted to localStorage)
+- SSE: native EventSource (`GET /aigc/conversation`, token passed via query parameter)
 
-## 开发
+## Development
 
 ```bash
 pnpm install
-pnpm dev        # http://localhost:5173，/api 与 /aigc 代理到后端（默认 localhost:18080，可用 VITE_BACKEND_URL 覆盖）
-                # 生产构建用 VITE_API_BASE_URL 指定后端地址（见下方"部署"）
+pnpm dev        # http://localhost:5173, /api and /aigc are proxied to the backend (defaults to localhost:18080, override with VITE_BACKEND_URL)
+                # for production builds set the backend address with VITE_API_BASE_URL (see "Deployment" below)
 pnpm build      # tsc -b + vite build → dist/
 pnpm lint       # eslint
 ```
 
-后端启动见 `../server/README.md`（`make run`）。
+See `../server/README.md` for starting the backend (`make run`).
 
-## 部署（前后端分离）
+## Deployment (frontend/backend separation)
 
-后端（`../server`）只提供 API，不托管前端静态产物。本项目独立构建、独立部署：
+The backend (`../server`) serves the API only and does not host frontend static assets. This project builds and deploys independently:
 
 ```bash
-# 构建时注入后端地址（跨域由后端 CORS 中间件放行）
+# Inject the backend address at build time (cross-origin is allowed by the backend CORS middleware)
 VITE_API_BASE_URL=https://api.example.com pnpm build
 
-# dist/ 部署到任意静态服务器（nginx / Vercel / OSS+CDN ...）
+# Deploy dist/ to any static server (nginx / Vercel / OSS+CDN ...)
 ```
 
-注意：SPA 使用 history 路由（`/login` `/register` `/conversation`），
-静态服务器需把未命中的路径回退到 `index.html`（nginx 示例：`try_files $uri /index.html;`）。
+Note: the SPA uses history routing (`/login` `/register` `/conversation`),
+so the static server must fall back unknown paths to `index.html` (nginx example: `try_files $uri /index.html;`).
 
-## 结构
+## Structure
 
 ```
 src/
   main.tsx               # QueryClientProvider + RouterProvider
-  router.tsx             # TanStack Router 路由表（/login /register / /conversation，登录守卫）
+  router.tsx             # TanStack Router route table (/login /register / /conversation, auth guard)
   lib/
-    api.ts               # 统一响应包 {code,message,data} 封装 + EventSource SSE helper
-    jwt.ts               # JWT payload 解析（用户名 / user_id）
+    api.ts               # Unified response envelope {code,message,data} wrapper + EventSource SSE helper
+    jwt.ts               # JWT payload parsing (username / user_id)
   stores/
-    auth.ts              # zustand：token + login/register/logout（persist）
-    conversation.ts      # zustand：消息列表 + SSE 编排（断线重连 msgId/lastSeq、点卡确认、HIL resume）
+    auth.ts              # zustand: token + login/register/logout (persist)
+    conversation.ts      # zustand: message list + SSE orchestration (reconnect msgId/lastSeq, card confirmation, HIL resume)
   routes/
-    login.tsx            # 登录页
-    register.tsx         # 注册页
-    home.tsx             # 首页（欢迎 + /api/v1/example，TanStack Query）
-    conversation.tsx     # 智能对话页
+    login.tsx            # Login page
+    register.tsx         # Register page
+    home.tsx             # Home page (welcome + /api/v1/example, TanStack Query)
+    conversation.tsx     # Agent chat page
   components/
-    ui/                  # shadcn 组件（button/card/input/field/alert/...）
-    conversation/        # 消息列表 + 热点卡 / 脚本确认卡 / HIL 卡 + 输入框
+    ui/                  # shadcn components (button/card/input/field/alert/...)
+    conversation/        # Message list + hot-topic card / script confirmation card / HIL card + input box
 ```
 
-## SSE 事件
+## SSE events
 
-与后端 `pkg/sse/events.go` 对齐：`message-start` / `text-delta` / `tool-call-start` /
+Aligned with the backend `pkg/sse/events.go`: `message-start` / `text-delta` / `tool-call-start` /
 `tool-call-result` / `task-step` / `task-done` / `interrupt` / `reconnect` /
-`ui-block-start` / `ui-block-complete` / `message-complete` / `error`。
+`ui-block-start` / `ui-block-complete` / `message-complete` / `error`.
 
-断线时若存在未完成的 `msgId`，自动携带 `reconnect=1&msgId=&lastSeq=` 重连，服务端断点续拉回放。
+On disconnect, if an unfinished `msgId` exists, the client automatically reconnects with
+`reconnect=1&msgId=&lastSeq=` and the server replays from the breakpoint.

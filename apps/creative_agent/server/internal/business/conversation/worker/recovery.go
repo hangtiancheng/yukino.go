@@ -28,10 +28,10 @@ import (
 //   - Strategy B (no EndTurn): Worker crashed mid-execution.
 //     → ResetForRetry (InProgress→Pending) + StreamQueue.Requeue for fresh execution.
 type RecoveryScanner struct {
-	asyncRepo  repository.AsyncRequestRepository  // 查僵尸 + 翻状态
-	msgRepo    repository.MessageRecordRepository // 落库重建（策略 A 写回 chat_text）
-	chunkStore infra.ChunkStore                   // 查 EndTurn 标记（策略分发依据）+ 重建数据源
-	streamQ    infra.StreamQueue                  // 重投消息（策略 B）
+	asyncRepo  repository.AsyncRequestRepository  // zombie lookup + state flipping
+	msgRepo    repository.MessageRecordRepository // persistence rebuild (strategy A writes chat_text back)
+	chunkStore infra.ChunkStore                   // EndTurn marker lookup (strategy dispatch basis) + rebuild data source
+	streamQ    infra.StreamQueue                  // message redispatch (strategy B)
 	logger     *zap.Logger
 }
 
@@ -78,7 +78,7 @@ func (r *RecoveryScanner) scan(ctx context.Context) {
 	r.ScanOnce(ctx)
 }
 
-// ScanOnce 执行一轮僵尸检测与恢复（单次，供定时循环 Start 与测试直接调用）。
+// ScanOnce performs one round of zombie detection and recovery (single-shot; called by the Start loop and directly by tests).
 func (r *RecoveryScanner) ScanOnce(ctx context.Context) {
 	// Heartbeat expires when heartbeat_at < now - 15s
 	expiry := time.Now().Add(-15 * time.Second)
@@ -110,12 +110,12 @@ func (r *RecoveryScanner) ScanOnce(ctx context.Context) {
 			continue
 		}
 		if hasEnd {
-			// 重建落库（tryRecoverFromRedis 语义）：chunk 里有完整产出，写回 message_record。
-			// 落库是收口动作，此处仅兜底失败场景；worker 正常路径已落库，重复重建幂等无害。
+			// Rebuild persistence (tryRecoverFromRedis semantics): the chunks hold the complete output; write it back to message_record.
+			// Persistence is the closing action; this only covers failure scenarios. The worker's normal path already persisted, and repeated rebuilds are idempotent and harmless.
 			if r.msgRepo != nil {
 				if err := RebuildChatTextFromChunks(ctx, r.msgRepo, r.chunkStore, z.MessageID); err != nil {
-					// 重建失败（Redis 读失败 / MySQL 写失败）：不能标 Completed 丢数据，
-					// 标 Failed 收口 + 保留 chunk 供人工/重扫处置。
+					// Rebuild failed (Redis read failure / MySQL write failure): must not mark Completed and lose data;
+					// mark Failed to close out + keep the chunks for manual handling / rescans.
 					r.logger.Error("recovery: strategy A — rebuild chat_text failed, marking Failed",
 						zap.String("msgID", z.MessageID), zap.Error(err))
 					_ = r.asyncRepo.MarkTerminal(ctx, z.ID, model.AsyncStatusFailed)
@@ -124,8 +124,8 @@ func (r *RecoveryScanner) ScanOnce(ctx context.Context) {
 				r.logger.Info("recovery: strategy A — chat_text rebuilt from chunks",
 					zap.String("msgID", z.MessageID))
 			} else {
-				// msgRepo 未装配：无重建能力，退化为旧行为（仅翻状态），chunk 过期后数据仍丢。
-				r.logger.Warn("recovery: strategy A — msgRepo 未装配，仅翻状态不重建",
+				// msgRepo not wired: no rebuild capability; degrades to the old behavior (state flip only), and data is still lost once chunks expire.
+				r.logger.Warn("recovery: strategy A — msgRepo not wired, flipping state without rebuild",
 					zap.String("msgID", z.MessageID))
 			}
 			r.logger.Info("recovery: strategy A — EndTurn found, marking Completed",

@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// newTracedDB 建一个挂了 GormTracing 插件的内存 sqlite DB（用内存 exporter 收 span）。
+// newTracedDB builds an in-memory sqlite DB with the GormTracing plugin attached (collecting spans with the in-memory exporter).
 func newTracedDB(t *testing.T) (*gorm.DB, *sdktrace.TracerProvider, *otelx.MemoryExporter) {
 	t.Helper()
 	tp, exp := otelx.NewMemoryExporter()
@@ -27,7 +27,7 @@ func newTracedDB(t *testing.T) (*gorm.DB, *sdktrace.TracerProvider, *otelx.Memor
 	return db, tp, exp
 }
 
-// waitSpan 轮询等待满足条件的 span 出现。
+// waitSpan polls until a span matching the condition appears.
 func waitSpan(t *testing.T, exp *otelx.MemoryExporter, match func(s sdktrace.ReadOnlySpan) bool) sdktrace.ReadOnlySpan {
 	t.Helper()
 	var found sdktrace.ReadOnlySpan
@@ -39,11 +39,11 @@ func waitSpan(t *testing.T, exp *otelx.MemoryExporter, match func(s sdktrace.Rea
 			}
 		}
 		return false
-	}, 2*time.Second, 10*time.Millisecond, "应出现目标 GORM SQL span")
+	}, 2*time.Second, 10*time.Millisecond, "the target GORM SQL span should appear")
 	return found
 }
 
-// TestGormSQLSpan 验证 GormTracing 为 SQL 建 span（取代 gorm.io/plugin/opentelemetry 的等价能力）。
+// TestGormSQLSpan verifies that GormTracing creates spans for SQL (equivalent to gorm.io/plugin/opentelemetry).
 func TestGormSQLSpan(t *testing.T) {
 	db, tp, exp := newTracedDB(t)
 	testx.NoError(t, db.Exec("CREATE TABLE t (id INTEGER)").Error)
@@ -52,8 +52,8 @@ func TestGormSQLSpan(t *testing.T) {
 	testx.NoError(t, db.WithContext(ctx).Exec("INSERT INTO t VALUES (1)").Error)
 	span.End()
 
-	// db.Exec 走 raw processor：span 名 gorm.Raw（对齐原插件 gorm.Create/gorm.Exec/gorm.Raw 命名族）。
-	// 按 SQL 过滤掉前面的 CREATE TABLE（也是 gorm.Raw）。
+	// db.Exec goes through the raw processor: span name gorm.Raw (aligned with the original plugin's gorm.Create/gorm.Exec/gorm.Raw naming family).
+	// Filter by SQL to exclude the preceding CREATE TABLE (also gorm.Raw).
 	s := waitSpan(t, exp, func(s sdktrace.ReadOnlySpan) bool {
 		if s.Name() != "gorm.Raw" {
 			return false
@@ -66,16 +66,16 @@ func TestGormSQLSpan(t *testing.T) {
 		return false
 	})
 
-	// 属性：db.system / db.statement / db.rows_affected。
+	// Attributes: db.system / db.statement / db.rows_affected.
 	attrs := map[attribute.Key]attribute.Value{}
 	for _, kv := range s.Attributes() {
 		attrs[kv.Key] = kv.Value
 	}
 	testx.Equal(t, "sqlite", attrs["db.system"].AsString())
-	testx.True(t, len(attrs["db.statement"].AsString()) > 0, "db.statement 应记录 SQL")
+	testx.True(t, len(attrs["db.statement"].AsString()) > 0, "db.statement should record the SQL")
 	testx.Equal(t, int64(1), attrs["db.rows_affected"].AsInt64())
 
-	// 父子链：SQL span 应挂在 outer span 的同一条 trace 下。
+	// Parent-child chain: the SQL span should hang under the same trace as the outer span.
 	var outer sdktrace.ReadOnlySpan
 	for _, sp := range exp.GetSpans() {
 		if sp.Name() == "outer" {
@@ -87,7 +87,7 @@ func TestGormSQLSpan(t *testing.T) {
 	testx.Equal(t, outer.SpanContext().SpanID(), s.Parent().SpanID())
 }
 
-// TestGormSQLSpanError 验证 SQL 出错时 span 记 Error status。
+// TestGormSQLSpanError verifies that the span records Error status when SQL fails.
 func TestGormSQLSpanError(t *testing.T) {
 	db, _, exp := newTracedDB(t)
 
@@ -96,10 +96,10 @@ func TestGormSQLSpanError(t *testing.T) {
 
 	s := waitSpan(t, exp, func(s sdktrace.ReadOnlySpan) bool { return s.Name() == "gorm.Raw" })
 	testx.Equal(t, "Error", s.Status().Code.String())
-	testx.True(t, len(s.Events()) > 0, "应记录 exception 事件")
+	testx.True(t, len(s.Events()) > 0, "an exception event should be recorded")
 }
 
-// TestGormCRUDSpans 验证 Create/Query/Update/Delete 四类操作各自建 span。
+// TestGormCRUDSpans verifies that Create/Query/Update/Delete operations each create their own span.
 func TestGormCRUDSpans(t *testing.T) {
 	db, _, exp := newTracedDB(t)
 

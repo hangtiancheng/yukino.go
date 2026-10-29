@@ -20,39 +20,39 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// ============ §7.7 SkillProvider — SKILL.md 动态工具源 ============
-// SkillProvider 从 skills 目录扫描 SKILL.md 文件夹，把其中的 API 定义
-// 动态暴露给 LLM。相比 ToolRegistry（编译期 Register），Skill 是"懒加载"：
-// 只有 LLM 调用 skill_load 显式加载某个 skill 后，其 API 才进入工具列表。
+// ============ §7.7 SkillProvider — SKILL.md dynamic tool source ============
+// SkillProvider scans the skills directory for SKILL.md folders and dynamically
+// exposes their API definitions to the LLM. Unlike ToolRegistry (compile-time Register), skills are "lazy-loaded":
+// a skill's APIs enter the tool list only after the LLM explicitly loads it via skill_load.
 //
-// 一个 skill 是一个含 YAML frontmatter 的 SKILL.md：
+// A skill is a SKILL.md with YAML frontmatter:
 //
 //	---
 //	name: weather
-//	description: 查询城市天气。当用户询问天气、气温、降雨时调用。
+//	description: Query city weather. Call when the user asks about weather, temperature, or rain.
 //	apis:
 //	  - name: query_weather
-//	    description: 查询指定城市的当前天气
+//	    description: Query the current weather of the given city
 //	    endpoint: ${WEATHER_API_BASE_URL}/api/weather
 //	    method: GET
 //	    parameters:
 //	      city:
 //	        type: string
-//	        description: 城市名（中文）
+//	        description: City name (in Chinese, e.g. 北京)
 //	        required: true
 //	      user_id:
 //	        type: string
 //	        required: true
 //	        injected: true
 //	---
-//	# weather 使用说明
+//	# weather skill usage
 //	...
 //
-// 关键点：
-//   - frontmatter 中的 ${VAR} 会被环境变量 / 显式传入的 vars 展开；
-//   - injected: true 的参数由服务端注入（不要求 LLM 提供），如 user_id。
+// Key points:
+//   - ${VAR} in the frontmatter is expanded from env vars / explicitly passed vars;
+//   - parameters with injected: true are injected server-side (not required from the LLM), e.g. user_id.
 
-// APIDefinition 描述 skill 中的一个可调用 API。
+// APIDefinition describes one callable API in a skill.
 type APIDefinition struct {
 	Name        string              `yaml:"name" json:"name"`
 	Description string              `yaml:"description" json:"description,omitempty"`
@@ -62,7 +62,7 @@ type APIDefinition struct {
 	Parameters  map[string]APIParam `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 }
 
-// APIParam 描述 API 的单个参数。
+// APIParam describes a single parameter of an API.
 type APIParam struct {
 	Type        string `yaml:"type" json:"type"`
 	Description string `yaml:"description" json:"description,omitempty"`
@@ -72,41 +72,41 @@ type APIParam struct {
 	Injected    bool   `yaml:"injected" json:"injected,omitempty"`
 }
 
-// SkillSummary 是 skill 的轻量摘要（列表/展示用，不含 Body）。
+// SkillSummary is a lightweight summary of a skill (for listing/display, without the Body).
 type SkillSummary struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	APIs        []APIDefinition `json:"apis,omitempty"`
 }
 
-// Skill 是一个完整的 skill（frontmatter 摘要 + markdown 正文）。
+// Skill is a complete skill (frontmatter summary + markdown body).
 type Skill struct {
 	Summary SkillSummary
 	Body    string
 }
 
-// skillFrontmatter 是 SKILL.md 的 YAML frontmatter。
+// skillFrontmatter is the YAML frontmatter of a SKILL.md.
 type skillFrontmatter struct {
 	Name        string          `yaml:"name"`
 	Description string          `yaml:"description"`
 	APIs        []APIDefinition `yaml:"apis"`
 }
 
-// SkillRepository 提供 skill 的扫描与读取能力。
-// FSRepository 是文件夹实现；测试可用内存实现替换。
+// SkillRepository provides skill scanning and reading.
+// FSRepository is the folder implementation; tests can swap in an in-memory implementation.
 type SkillRepository interface {
 	Summaries() []SkillSummary
 	Get(name string) (*Skill, error)
 	GetWithVars(name string, vars map[string]string) (*Skill, error)
 }
 
-// FSRepository 扫描一个或多个 skills 根目录，以 skill name 为索引。
+// FSRepository scans one or more skills root directories, indexed by skill name.
 type FSRepository struct {
-	index map[string]string // skill name → 所在目录路径
+	index map[string]string // skill name → directory path
 	vars  map[string]string
 }
 
-// NewFSRepository 扫描 roots 下所有 SKILL.md，建立 name → 目录 索引。
+// NewFSRepository scans all SKILL.md files under roots and builds the name → directory index.
 func NewFSRepository(roots ...string) (*FSRepository, error) {
 	r := &FSRepository{index: map[string]string{}}
 	for _, root := range roots {
@@ -123,7 +123,7 @@ func NewFSRepository(roots ...string) (*FSRepository, error) {
 			}
 			fm, _, ok := splitYAMLFrontMatter(string(b))
 			if !ok || fm.Name == "" {
-				return fmt.Errorf("skill %s: frontmatter 缺 name", p)
+				return fmt.Errorf("skill %s: frontmatter missing name", p)
 			}
 			r.index[fm.Name] = filepath.Dir(p)
 			return nil
@@ -135,7 +135,7 @@ func NewFSRepository(roots ...string) (*FSRepository, error) {
 	return r, nil
 }
 
-// Summaries 返回所有 skill 的摘要（每次实时读盘，方便热更新）。
+// Summaries returns the summaries of all skills (read from disk each time, enabling hot updates).
 func (r *FSRepository) Summaries() []SkillSummary {
 	var out []SkillSummary
 	for _, dir := range r.index {
@@ -152,12 +152,12 @@ func (r *FSRepository) Summaries() []SkillSummary {
 	return out
 }
 
-// Get 读取单个 skill（不带额外变量）。
+// Get reads a single skill (without extra variables).
 func (r *FSRepository) Get(name string) (*Skill, error) {
 	return r.GetWithVars(name, nil)
 }
 
-// GetWithVars 读取单个 skill，并展开 frontmatter 中的 ${VAR}（优先 vars，其次环境变量）。
+// GetWithVars reads a single skill and expands ${VAR} in the frontmatter (vars first, then env vars).
 func (r *FSRepository) GetWithVars(name string, vars map[string]string) (*Skill, error) {
 	dir, ok := r.index[name]
 	if !ok {
@@ -170,7 +170,7 @@ func (r *FSRepository) GetWithVars(name string, vars map[string]string) (*Skill,
 	text := expandVars(string(b), vars)
 	fm, body, ok := splitYAMLFrontMatter(text)
 	if !ok {
-		return nil, fmt.Errorf("skill %q: 无 frontmatter", name)
+		return nil, fmt.Errorf("skill %q: no frontmatter", name)
 	}
 	return &Skill{
 		Summary: SkillSummary{Name: fm.Name, Description: fm.Description, APIs: fm.APIs},
@@ -178,8 +178,8 @@ func (r *FSRepository) GetWithVars(name string, vars map[string]string) (*Skill,
 	}, nil
 }
 
-// splitYAMLFrontMatter 把 SKILL.md 拆成 frontmatter 与正文。
-// 仅当文件以 `---` 开头且在第二行以内找到闭合 `---` 时认为有 frontmatter。
+// splitYAMLFrontMatter splits a SKILL.md into frontmatter and body.
+// Frontmatter is recognized only when the file starts with `---` and a closing `---` is found within the second line.
 func splitYAMLFrontMatter(text string) (skillFrontmatter, string, bool) {
 	var fm skillFrontmatter
 	lines := strings.Split(text, "\n")
@@ -204,7 +204,7 @@ func splitYAMLFrontMatter(text string) (skillFrontmatter, string, bool) {
 	return fm, body, true
 }
 
-// expandVars 展开字符串中的 ${KEY}：优先用 vars，其次读环境变量。
+// expandVars expands ${KEY} in a string: vars first, then env vars.
 func expandVars(text string, vars map[string]string) string {
 	return os.Expand(text, func(key string) string {
 		if v, ok := vars[key]; ok {
@@ -214,16 +214,16 @@ func expandVars(text string, vars map[string]string) string {
 	})
 }
 
-// ============ RemoteSkillExecutor — 通用 HTTP 执行器 ============
+// ============ RemoteSkillExecutor — generic HTTP executor ============
 
-// RemoteSkillExecutor 把 APIDefinition 转换为通用 HTTP 调用。
-// GET/DELETE → query string；POST/PUT → JSON body；请求体 30s 超时；
-// 响应 >=400 视为错误。
+// RemoteSkillExecutor turns an APIDefinition into a generic HTTP call.
+// GET/DELETE → query string; POST/PUT → JSON body; 30s request timeout;
+// responses >=400 are treated as errors.
 type RemoteSkillExecutor struct {
 	client *http.Client
 }
 
-// NewRemoteSkillExecutor 创建执行器；client 为 nil 时用 http.DefaultClient。
+// NewRemoteSkillExecutor creates the executor; http.DefaultClient is used when client is nil.
 func NewRemoteSkillExecutor(client *http.Client) *RemoteSkillExecutor {
 	if client == nil {
 		client = http.DefaultClient
@@ -231,7 +231,7 @@ func NewRemoteSkillExecutor(client *http.Client) *RemoteSkillExecutor {
 	return &RemoteSkillExecutor{client: client}
 }
 
-// Execute 调用远程 API 并返回响应体文本。
+// Execute calls the remote API and returns the response body text.
 func (e *RemoteSkillExecutor) Execute(ctx context.Context, api APIDefinition, params map[string]any) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -286,7 +286,7 @@ func (e *RemoteSkillExecutor) Execute(ctx context.Context, api APIDefinition, pa
 	return string(out), nil
 }
 
-// paramString 把参数值序列化为查询串值。
+// paramString serializes a parameter value into a query-string value.
 func paramString(v any) string {
 	switch val := v.(type) {
 	case string:
@@ -302,15 +302,15 @@ func paramString(v any) string {
 	}
 }
 
-// ============ SkillProvider — ToolsProvider 实现 ============
+// ============ SkillProvider — ToolsProvider implementation ============
 
-// APIMapping 记录某个 API 属于哪个 skill（卸载/查找用）。
+// APIMapping records which skill an API belongs to (for unloading/lookup).
 type APIMapping struct {
 	SkillName string
 	APIDef    APIDefinition
 }
 
-// SkillProvider 实现 ToolsProvider：skill_load 懒加载 + 已加载 skill 的 API 暴露。
+// SkillProvider implements ToolsProvider: skill_load lazy loading + API exposure of loaded skills.
 type SkillProvider struct {
 	repo     SkillRepository
 	executor *RemoteSkillExecutor
@@ -320,7 +320,7 @@ type SkillProvider struct {
 	apiIndex map[string]APIMapping
 }
 
-// NewSkillProvider 创建 SkillProvider。
+// NewSkillProvider creates a SkillProvider.
 func NewSkillProvider(repo SkillRepository, executor *RemoteSkillExecutor) *SkillProvider {
 	if executor == nil {
 		executor = NewRemoteSkillExecutor(nil)
@@ -333,19 +333,19 @@ func NewSkillProvider(repo SkillRepository, executor *RemoteSkillExecutor) *Skil
 	}
 }
 
-// GetFunctionDefs 返回 skill_load（内建）与所有已加载 skill 的 API Schema。
-// skill 参数带 Enum 枚举所有可用 skill 名。
+// GetFunctionDefs returns the schema of skill_load (built-in) plus the APIs of all loaded skills.
+// The skill parameter carries an Enum listing all available skill names.
 func (p *SkillProvider) GetFunctionDefs(ctx context.Context) ([]react.FunctionDef, error) {
 	defs := []react.FunctionDef{
 		{
 			Name:        "skill_load",
-			Description: "加载一个 skill 到工具列表，返回加载成功的 skill 名。",
+			Description: "Load a skill into the tool list; returns the name of the successfully loaded skill.",
 			Parameters: appkittools.ParameterSpec{
 				Type: "object",
 				Properties: map[string]appkittools.PropertyDef{
 					"skill": {
 						Type:        "string",
-						Description: "要加载的 skill 名",
+						Description: "Name of the skill to load",
 						Enum:        p.availableSkillNames(),
 					},
 				},
@@ -362,7 +362,7 @@ func (p *SkillProvider) GetFunctionDefs(ctx context.Context) ([]react.FunctionDe
 	return defs, nil
 }
 
-// Execute 执行工具。skill_load 由本 provider 处理；其余按 apiIndex 查表调用执行器。
+// Execute runs a tool. skill_load is handled by this provider; the rest are looked up in apiIndex and delegated to the executor.
 func (p *SkillProvider) Execute(ctx context.Context, name, args string) (string, bool, bool, error) {
 	if name == "skill_load" {
 		return p.handleSkillLoad(ctx, args)
@@ -377,7 +377,7 @@ func (p *SkillProvider) Execute(ctx context.Context, name, args string) (string,
 
 	params := appkittools.ParseArgs(args)
 
-	// 注入 injected: true 的参数（由服务端提供，LLM 不传）
+	// Inject parameters marked injected: true (provided server-side, not by the LLM)
 	for k, param := range mapping.APIDef.Parameters {
 		if !param.Injected {
 			continue
@@ -395,7 +395,7 @@ func (p *SkillProvider) Execute(ctx context.Context, name, args string) (string,
 	return result, true, false, nil
 }
 
-// injectedValue 计算 injected 参数的取值（目前以参数 Default 兜底）。
+// injectedValue computes the value of an injected parameter (currently falling back to the parameter Default).
 func injectedValue(param APIParam) any {
 	if param.Default != nil {
 		return param.Default
@@ -403,12 +403,12 @@ func injectedValue(param APIParam) any {
 	return ""
 }
 
-// handleSkillLoad 处理 skill_load 工具调用。
+// handleSkillLoad handles the skill_load tool call.
 func (p *SkillProvider) handleSkillLoad(ctx context.Context, args string) (string, bool, bool, error) {
 	params := appkittools.ParseArgs(args)
 	name := appkittools.ArgString(params, "skill", "")
 	if name == "" {
-		return "", true, false, fmt.Errorf("skill_load: 缺少 skill 参数")
+		return "", true, false, fmt.Errorf("skill_load: missing skill parameter")
 	}
 
 	skill, err := p.repo.GetWithVars(name, nil)
@@ -427,7 +427,7 @@ func (p *SkillProvider) handleSkillLoad(ctx context.Context, args string) (strin
 	return fmt.Sprintf("loaded skill: %s", name), true, false, nil
 }
 
-// availableSkillNames 返回所有可加载的 skill 名（供 skill_load 的 Enum）。
+// availableSkillNames returns all loadable skill names (for the skill_load Enum).
 func (p *SkillProvider) availableSkillNames() []string {
 	summaries := p.repo.Summaries()
 	names := make([]string, 0, len(summaries))
@@ -437,13 +437,13 @@ func (p *SkillProvider) availableSkillNames() []string {
 	return names
 }
 
-// apiToFunctionDef 把 APIDefinition 转为 FunctionDef（跳过 injected 参数，enum 转 []string）。
+// apiToFunctionDef converts an APIDefinition into a FunctionDef (skipping injected parameters, converting enum to []string).
 func apiToFunctionDef(api APIDefinition) appkittools.FunctionDef {
 	props := map[string]appkittools.PropertyDef{}
 	required := []string{}
 	for name, param := range api.Parameters {
 		if param.Injected {
-			continue // 服务端注入的参数不暴露给 LLM
+			continue // server-injected parameters are not exposed to the LLM
 		}
 		props[name] = appkittools.PropertyDef{
 			Type:        param.Type,
@@ -465,7 +465,7 @@ func apiToFunctionDef(api APIDefinition) appkittools.FunctionDef {
 	}
 }
 
-// enumToStrings 把 []any 枚举转成 []string（JSON Schema enum 需字符串数组）。
+// enumToStrings converts a []any enum into []string (JSON Schema enum requires a string array).
 func enumToStrings(enum []any) []string {
 	if len(enum) == 0 {
 		return nil

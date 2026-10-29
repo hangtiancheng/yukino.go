@@ -1,7 +1,7 @@
 package react
 
-// NopHooks 是 Hooks 的空实现。嵌入到你自己的 hooks 结构体中，
-// 即可只覆写你关心的回调。
+// NopHooks is the no-op implementation of Hooks. Embed it in your own hooks struct
+// to override only the callbacks you care about.
 type NopHooks struct{}
 
 func (NopHooks) OnAfterLLM(*AgentContext)        {}

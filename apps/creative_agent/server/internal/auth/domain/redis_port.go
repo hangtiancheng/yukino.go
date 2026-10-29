@@ -5,21 +5,21 @@ import (
 	"time"
 )
 
-// RedisPort 抽象登录失败计数与 token 黑名单所需的 Redis 原语。
+// RedisPort abstracts the Redis primitives needed for login-failure counting and the token blacklist.
 //
-// 仅暴露 Login/Logout 需要的操作；应用层依赖本接口而非 *redis.Client，
-// 便于测试 mock 与无 Redis 降级。实现见 infrastructure.RedisAdapter。
+// It exposes only the operations Login/Logout need; the application layer depends on this interface instead of *redis.Client,
+// It eases test mocking and no-Redis degradation. See infrastructure.RedisAdapter for the implementation.
 type RedisPort interface {
-	// Get 读取键值，键不存在返回 redis.Nil。
+	// Get reads a key value; returns redis.Nil when the key does not exist.
 	Get(ctx context.Context, key string) (string, error)
-	// Set 写入键值并设置 TTL。
+	// Set writes a key value with a TTL.
 	Set(ctx context.Context, key, value string, ttl time.Duration) error
-	// Del 删除键。
+	// Del deletes a key.
 	Del(ctx context.Context, key string) error
-	// Incr 自增并返回新值（键不存在时从 1 开始）。
+	// Incr increments and returns the new value (starting from 1 when the key does not exist).
 	Incr(ctx context.Context, key string) (int64, error)
-	// Expire 设置键的过期时间。
+	// Expire sets the key's expiry.
 	Expire(ctx context.Context, key string, ttl time.Duration) error
-	// Exists 键是否存在，返回存在的键个数。
+	// Exists checks whether keys exist, returning the count of existing keys.
 	Exists(ctx context.Context, key string) (int64, error)
 }

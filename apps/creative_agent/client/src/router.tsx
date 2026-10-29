@@ -28,7 +28,7 @@ const registerRoute = createRoute({
   component: RegisterPage,
 });
 
-/** 登录守卫：无 token 跳登录页。 */
+/** Auth guard: redirects to the login page when there is no token. */
 function requireAuth() {
   if (!useAuthStore.getState().token) {
     throw redirect({ to: "/login" });

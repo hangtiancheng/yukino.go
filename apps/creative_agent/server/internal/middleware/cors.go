@@ -4,7 +4,7 @@ import (
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 )
 
-// CORS 返回一个允许跨域请求的中间件（开发用宽松配置）。
+// CORS returns a middleware allowing cross-origin requests (permissive configuration for development).
 func CORS() yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
 		ctx.Set("Access-Control-Allow-Origin", "*")

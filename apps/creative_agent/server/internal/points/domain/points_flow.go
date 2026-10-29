@@ -1,18 +1,18 @@
 package domain
 
-// FlowType 积分流水类型。
+// FlowType is the points-ledger entry type.
 const (
-	FlowTypeConsume = 1 // 扣积分
-	FlowTypeRefund  = 2 // 退积分
+	FlowTypeConsume = 1 // points deduction
+	FlowTypeRefund  = 2 // points refund
 )
 
-// FlowStatus 流水状态。
+// FlowStatus is the ledger entry status.
 const (
-	FlowStatusValid      = 1 // 有效
-	FlowStatusRolledBack = 0 // 已回退（对应扣分流水被退积分标记）
+	FlowStatusValid      = 1 // valid
+	FlowStatusRolledBack = 0 // rolled back (the deduction entry marked refunded)
 )
 
-// PointsFlow 积分流水实体（cg_points_flow）。
+// PointsFlow is the points-ledger entity (cg_points_flow).
 type PointsFlow struct {
 	ID         uint64
 	UserID     int64
@@ -25,6 +25,6 @@ type PointsFlow struct {
 	CreateTime int64
 }
 
-// IsConsume / IsRefund 便捷判断。
+// IsConsume / IsRefund convenience checks.
 func (f *PointsFlow) IsConsume() bool { return f.FlowType == FlowTypeConsume }
 func (f *PointsFlow) IsRefund() bool  { return f.FlowType == FlowTypeRefund }

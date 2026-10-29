@@ -16,13 +16,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// Init 初始化 MySQL 连接并对全部模型执行 AutoMigrate。
-// logger 用于 GORM slow SQL 的 zap JSON 输出；SQL tracing 插件用全局 provider（由 otelx.Init 设置）。
+// Init initializes the MySQL connection and runs AutoMigrate for all models.
+// logger is used for zap JSON output of GORM slow SQL; the SQL tracing plugin uses the global provider (set by otelx.Init).
 //
-// 表结构分两部分：
-//   - agent 域（cg_ 前缀 6 张 + users）：internal/model 的 GORM 模型
-//   - base-server 各 bounded context：由各自 infrastructure 层的 Migrate 触发
-//     （gorm 标签只存在于基础设施层，database 不关心具体 schema）
+// The schema has two parts:
+//   - agent domain (6 cg_-prefixed tables + users): GORM models in internal/model
+//   - base-server bounded contexts: triggered by each infrastructure layer's Migrate
+//     (gorm tags live only in the infrastructure layer; database does not care about concrete schemas)
 func Init(cfg config.MySQLConfig, logger *zap.Logger) (*gorm.DB, error) {
 	if logger == nil {
 		logger = zap.L()
@@ -34,8 +34,8 @@ func Init(cfg config.MySQLConfig, logger *zap.Logger) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// 每条 SQL 建一个 span（默认全局 TracerProvider，由 otelx.Init 设置）。
-	// 自研极简插件，取代 gorm.io/plugin/opentelemetry（零额外依赖）。
+	// Create one span per SQL statement (defaults to the global TracerProvider set by otelx.Init).
+	// A minimal in-house plugin replacing gorm.io/plugin/opentelemetry (zero extra dependencies).
 	if err := db.Use(otelx.NewGormTracing()); err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func Init(cfg config.MySQLConfig, logger *zap.Logger) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// base-server 各 bounded context 的表（users 表与 model.User 列对齐，幂等）。
+	// Tables of the base-server bounded contexts (the users table columns are aligned with model.User; idempotent).
 	if err := authinfra.Migrate(db); err != nil {
 		return nil, err
 	}

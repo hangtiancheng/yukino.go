@@ -7,44 +7,44 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/domain"
 )
 
-// AuditOutputApp 风控回调终态落定应用服务。
+// AuditOutputApp is the risk-callback terminal-settling application service.
 //
-// 对齐 §4.5：risk 回调不再走 callback_record——阶段 3 的 AsyncAudit 插入的
-// status=auditing 记录在这里做终态落定（乐观锁防并发重复回调），终态判定后
-// 通过 AuditResultSink 通知 creation 落定 project（依赖反转）。
+// Aligned with §4.5: risk callbacks no longer go through callback_record — the status=auditing
+// record inserted by stage 3's AsyncAudit is settled to terminal here (optimistic lock preventing concurrent duplicate callbacks); after the terminal decision
+// It notifies creation to settle the project through AuditResultSink (dependency inversion).
 //
-// 编排顺序：
-//  1. 按 extra.callback_record_id 找审计记录；记录已终态 → 短路返回（幂等）
-//  2. 乐观锁置终态（仅 auditing/running → done/fail，防并发重复回调）
-//  3. 通知 creation 落定 project（passed → done；!passed → 退积分 + fail）
+// Orchestration order:
+//  1. Find the audit record by extra.callback_record_id; record already terminal → short-circuit return (idempotent)
+//  2. Set terminal with the optimistic lock (auditing/running → done/fail only, preventing concurrent duplicate callbacks)
+//  3. Notify creation to settle the project (passed → done; !passed → refund points + fail)
 //
-// 依赖全部为接口注入（domain.AuditRecordRepository / AuditResultSink），
-// 不感知 creation / infrastructure，不持 gorm / redis.Client。
+// All dependencies are interface-injected (domain.AuditRecordRepository / AuditResultSink);
+// it knows nothing about creation / infrastructure and holds no gorm / redis.Client.
 type AuditOutputApp struct {
 	records  domain.AuditRecordRepository
-	onResult AuditResultSink // 由 creation 实现并注入，依赖反转
+	onResult AuditResultSink // implemented and injected by creation; dependency inversion
 }
 
-// NewAuditOutputApp 创建 AuditOutputApp。
+// NewAuditOutputApp creates an AuditOutputApp.
 func NewAuditOutputApp(records domain.AuditRecordRepository, onResult AuditResultSink) *AuditOutputApp {
 	return &AuditOutputApp{records: records, onResult: onResult}
 }
 
-// Handle 处理一次风控回调（/inner/callback/risk 入口）。
+// Handle processes one risk callback (the /inner/callback/risk entry).
 //
-// 幂等语义（防 sink 失败死胡同）：record 终态短路只拦"已成功落定"的回调；终态写入
-// 放在 sink 成功之后——若 sink 瞬时失败，审计记录保持 auditing，风控服务重试时会
-// 重新走 sink，不会因记录已终态而短路吞掉重试。sink 侧幂等由 creation 的 project
-// 终态短路 + 幂等退积分兜底（两层幂等）。
+// Idempotency semantics (preventing a sink-failure dead end): the record terminal short-circuit only blocks callbacks that "already settled successfully"; the terminal write
+// happens after the sink succeeds — if the sink fails transiently, the audit record stays auditing, and the risk service's retry
+// goes through the sink again instead of being swallowed by a terminal short-circuit. Sink-side idempotency is covered by creation's project
+// terminal short-circuit + idempotent points refund (two layers of idempotency).
 //
-// 并发保护：两个并发回调都会调 sink（sink 幂等），MarkTerminal 的 CAS 保证审计记录
-// 终态只写一次（后写者 RowsAffected=0，幂等忽略）。
+// Concurrency protection: two concurrent callbacks both call the sink (the sink is idempotent); MarkTerminal's CAS guarantees the audit record's
+// terminal state is written once (the later writer gets RowsAffected=0, idempotently ignored).
 //
-// Extra 缺 callback_record_id（recordID=0）时跳过审计记录对账，仅做 sink 通知
-// （旧协议兼容，最终态以 project 终态短路兜底）。
+// When Extra lacks callback_record_id (recordID=0), audit-record reconciliation is skipped and only the sink notification runs
+// (legacy protocol compatibility; the final state is covered by the project terminal short-circuit).
 func (a *AuditOutputApp) Handle(ctx context.Context, req *contracts.RiskCallbackReq) error {
-	// 1. 根据 extra.callback_record_id 找审计记录；已终态 → 幂等短路（终态意味着 sink
-	//    已成功落定过，无需重做——这是与 sink 失败场景的区分点）。
+	// 1. Find the audit record by extra.callback_record_id; already terminal → idempotent short-circuit (terminal means the sink
+	//    already settled successfully; no redo needed — this is what distinguishes it from the sink-failure scenario).
 	recordID := mustParseRecordID(req.Extra["callback_record_id"])
 	if recordID > 0 {
 		rec, err := a.records.Get(ctx, recordID)
@@ -52,19 +52,19 @@ func (a *AuditOutputApp) Handle(ctx context.Context, req *contracts.RiskCallback
 			return err
 		}
 		if rec.IsTerminal() {
-			return nil // 终态短路：sink 已成功落定过
+			return nil // terminal short-circuit: the sink already settled successfully
 		}
 	}
 
-	// 2. 先通知 creation 落定 project（sink）。sink 幂等（project 终态短路 + 幂等退积分），
-	//    失败时返回错误，风控服务重试会重新走这里（审计记录尚未置终态）。
+	// 2. Notify creation to settle the project first (sink). The sink is idempotent (project terminal short-circuit + idempotent refund);
+	//    on failure it returns an error, and the risk service's retry comes back here (the audit record is not terminal yet).
 	if err := a.onResult.Handle(ctx, req.ThirdID, req.Passed, req.Reason); err != nil {
 		return err
 	}
 
-	// 3. sink 成功后再乐观锁置审计记录终态（仅 auditing/running → done/fail，防并发重复）。
-	//    MarkTerminal 的 bool（是否 CAS 命中）可忽略：并发重复回调时输给对方的那一方，
-	//    其终态已由对方写对。
+	// 3. After the sink succeeds, set the audit record terminal with the optimistic lock (auditing/running → done/fail only, preventing concurrent duplicates).
+	//    MarkTerminal's bool (whether the CAS hit) can be ignored: in concurrent duplicate callbacks, the losing side's
+	//    terminal state was already written correctly by the winner.
 	status := domain.StatusDone
 	if !req.Passed {
 		status = domain.StatusFail

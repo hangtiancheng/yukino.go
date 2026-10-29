@@ -276,7 +276,7 @@ func TestFlow_SliceStreaming(t *testing.T) {
 	testx.Equal(t, []string{"frame_1", "frame_2", "frame_3", "frame_4", "frame_5", "__END__"}, received)
 }
 
-// ---------- Context 单值 & 流式 ----------
+// ---------- Context single-value & streaming ----------
 
 // TestContext_SetGet_Value tests single-value Set/Get.
 func TestContext_SetGet_Value(t *testing.T) {

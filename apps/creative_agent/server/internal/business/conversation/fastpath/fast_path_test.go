@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// newFastPathDB 创建内存 sqlite，注册 cg_task_run 表。
+// newFastPathDB creates an in-memory sqlite DB with the cg_task_run table registered.
 func newFastPathDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -29,7 +29,7 @@ func newFastPathDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// stubStream 是测试用内存 StreamQ stub（实现 infra.StreamQueue 接口）。
+// stubStream is the in-memory StreamQ stub for tests (implements the infra.StreamQueue interface).
 type stubStream struct{}
 
 func (stubStream) Push(ctx context.Context, msgID string, body []byte) error { return nil }
@@ -48,7 +48,7 @@ func TestFastPath_CanFastTask(t *testing.T) {
 	mem := memory.NewIntentMemory()
 	taskRunRepo := repository.NewTaskRunRepository(db)
 
-	// 内存 stream stub
+	// In-memory stream stub
 	stream := &stubStream{}
 	submitter := subtaskexecutor.NewSubmitter(subtaskexecutor.SubmitterConfig{
 		TaskRunRepo: taskRunRepo,
@@ -63,7 +63,7 @@ func TestFastPath_CanFastTask(t *testing.T) {
 		Logger:      zap.NewNop(),
 	})
 
-	// script_confirmed 命中 → handled + 投递
+	// script_confirmed hit → handled + dispatched
 	mem.SetPipeline("s1", "mix_video")
 	mem.SetStage("s1", memory.FlowStageScriptConfirmed)
 	mem.SetAgent("s1", "gold_scriptwriter")
@@ -75,12 +75,12 @@ func TestFastPath_CanFastTask(t *testing.T) {
 		Query:     "继续",
 	})
 	testx.NoError(t, err)
-	testx.True(t, handled, "script_confirmed 应命中快任务")
+	testx.True(t, handled, "script_confirmed should hit the fast task")
 
-	// 投递了新的 execute_agent task_run（链中下一个 = edit_master）
+	// A new execute_agent task_run was dispatched (next in the chain = edit_master)
 	var runs []model.CGTaskRun
 	db.Find(&runs)
-	testx.Len(t, runs, 1, "应投递一个 task_run")
+	testx.Len(t, runs, 1, "one task_run should be dispatched")
 	plan, err := runs[0].ParsePlanSteps()
 	testx.NoError(t, err)
 	testx.Len(t, plan.Agents, 1)
@@ -101,7 +101,7 @@ func TestFastPath_NoMatch_EmptyStage(t *testing.T) {
 		SessionID: "s1", UserID: 1, AgentID: "manager", Query: "生成一张海报",
 	})
 	testx.NoError(t, err)
-	testx.False(t, handled, "FlowStageEmpty 不应命中")
+	testx.False(t, handled, "FlowStageEmpty should not hit")
 }
 
 func TestFastPath_Retry(t *testing.T) {
@@ -109,7 +109,7 @@ func TestFastPath_Retry(t *testing.T) {
 	db := newFastPathDB(t)
 	mem := memory.NewIntentMemory()
 
-	// 预置一条失败 task_run（模拟上次失败）
+	// Pre-create a failed task_run (simulating the last failure)
 	failedRun := &model.CGTaskRun{
 		TaskRunID:     model.NextID(),
 		UserID:        1,
@@ -145,12 +145,12 @@ func TestFastPath_Retry(t *testing.T) {
 		RequestType: "retry",
 	})
 	testx.NoError(t, err)
-	testx.True(t, handled, "retry 请求应命中")
+	testx.True(t, handled, "a retry request should hit")
 
-	// 投递了新的 task_run（继承失败 run 的 plan）
+	// A new task_run was dispatched (inheriting the failed run's plan)
 	var runs []model.CGTaskRun
 	db.Find(&runs)
-	testx.Len(t, runs, 2, "应有一条新 task_run")
+	testx.Len(t, runs, 2, "there should be one new task_run")
 }
 
 func TestFastPath_HILResume(t *testing.T) {
@@ -158,7 +158,7 @@ func TestFastPath_HILResume(t *testing.T) {
 	db := newFastPathDB(t)
 	mem := memory.NewIntentMemory()
 
-	// 预置 checkpoint
+	// Pre-set the checkpoint
 	cp := &react.Checkpoint{
 		Messages: []react.Message{{Role: "user", Content: "继续"}},
 		Step:     1,
@@ -169,7 +169,7 @@ func TestFastPath_HILResume(t *testing.T) {
 	taskRunRepo := repository.NewTaskRunRepository(db)
 	fp := fastpath.NewFastPath(fastpath.FastPathConfig{
 		Memory:      mem,
-		Submitter:   nil, // resume 不投递，Submitter 可空
+		Submitter:   nil, // resume does not dispatch; Submitter may be nil
 		TaskRunRepo: taskRunRepo,
 		Logger:      zap.NewNop(),
 	})
@@ -182,7 +182,7 @@ func TestFastPath_HILResume(t *testing.T) {
 		Resume:    true,
 	})
 	testx.NoError(t, err)
-	testx.True(t, handled, "resume 且存在 checkpoint 应命中")
+	testx.True(t, handled, "resume with an existing checkpoint should hit")
 }
 
 func TestFastPath_ResumePrecedence(t *testing.T) {
@@ -190,7 +190,7 @@ func TestFastPath_ResumePrecedence(t *testing.T) {
 	db := newFastPathDB(t)
 	mem := memory.NewIntentMemory()
 
-	// 同时有 checkpoint 和 CanFastTask stage（HIL 中断的典型状态）
+	// Both a checkpoint and a CanFastTask stage exist (the typical HIL-interrupt state)
 	mem.SaveCheckpoint("s1", &react.Checkpoint{
 		Messages: []react.Message{{Role: "user", Content: "继续"}},
 		Step:     1,
@@ -212,12 +212,12 @@ func TestFastPath_ResumePrecedence(t *testing.T) {
 		SessionID: "s1", UserID: 1, AgentID: "manager", Query: "继续", Resume: true,
 	})
 	testx.NoError(t, err)
-	testx.True(t, handled, "resume 应优先命中")
+	testx.True(t, handled, "resume should hit first")
 
-	// 不应投递新 task_run（resume 不投递）
+	// No new task_run should be dispatched (resume does not dispatch)
 	var runs []model.CGTaskRun
 	db.Find(&runs)
-	testx.Len(t, runs, 0, "resume 不应投递新 task_run")
+	testx.Len(t, runs, 0, "resume should not dispatch a new task_run")
 }
 
 func TestFastPath_Retry_NotFoundIsNoOp(t *testing.T) {
@@ -225,7 +225,7 @@ func TestFastPath_Retry_NotFoundIsNoOp(t *testing.T) {
 	db := newFastPathDB(t)
 	mem := memory.NewIntentMemory()
 
-	// 记忆里的失败 id 指向一条不存在的 task_run（如已被清理）
+	// The remembered failed id points to a nonexistent task_run (e.g. cleaned up)
 	mem.RecordFailedTaskRun("s1", model.NextID())
 
 	taskRunRepo := repository.NewTaskRunRepository(db)
@@ -243,17 +243,17 @@ func TestFastPath_Retry_NotFoundIsNoOp(t *testing.T) {
 		Query:       "重试",
 		RequestType: "retry",
 	})
-	testx.NoError(t, err, "NotFound 应静默 no-op，不报错")
-	testx.False(t, handled, "失败 task_run 不存在 → 不命中")
+	testx.NoError(t, err, "NotFound should silently no-op without error")
+	testx.False(t, handled, "the failed task_run does not exist → no hit")
 
-	// 不应投递任何新 task_run
+	// No new task_run should be dispatched
 	var runs []model.CGTaskRun
 	db.Find(&runs)
-	testx.Len(t, runs, 0, "NotFound 不应投递新 task_run")
+	testx.Len(t, runs, 0, "NotFound should not dispatch a new task_run")
 }
 
-// TestFastPath_ScriptContextPassThrough 验证带 OriginMsgID 时：
-// 用 OriginMsgID 追溯脚本 task_run → 取 step_output → 拼进 edit_master 的 input。
+// TestFastPath_ScriptContextPassThrough verifies that with OriginMsgID:
+// the script task_run is traced by OriginMsgID → step_output is taken → spliced into edit_master's input.
 func TestFastPath_ScriptContextPassThrough(t *testing.T) {
 	ctx := context.Background()
 	db := newFastPathDB(t)
@@ -262,7 +262,7 @@ func TestFastPath_ScriptContextPassThrough(t *testing.T) {
 	taskRunRepo := repository.NewTaskRunRepository(db)
 	stepRepo := repository.NewTaskStepRepository(db)
 
-	// 预置脚本 task_run（MsgID = OriginMsgID）+ 脚本 step_output
+	// Pre-create the script task_run (MsgID = OriginMsgID) + the script step_output
 	scriptRunID := model.NextID()
 	scriptRun := &model.CGTaskRun{
 		TaskRunID:     scriptRunID,
@@ -286,7 +286,7 @@ func TestFastPath_ScriptContextPassThrough(t *testing.T) {
 		StepOutput:   `{"final_product":"【脚本】夏日旅行60秒混剪"}`,
 	}).Error)
 
-	// script_confirmed 命中 → 带 OriginMsgID
+	// script_confirmed hit → with OriginMsgID
 	mem.SetPipeline("s1", "mix_video")
 	mem.SetStage("s1", memory.FlowStageScriptConfirmed)
 	mem.SetAgent("s1", "gold_scriptwriter")
@@ -307,20 +307,20 @@ func TestFastPath_ScriptContextPassThrough(t *testing.T) {
 		OriginMsgID: "msg-script-1",
 	})
 	testx.NoError(t, err)
-	testx.True(t, handled, "带 OriginMsgID + 脚本可解析 → 应命中快任务")
+	testx.True(t, handled, "OriginMsgID + a parsable script → the fast task should hit")
 
-	// 投递的 edit_master input 应含脚本内容 + 用户确认语
-	// （表里还有预置的脚本 task_run，过滤出本次投递的那条）
+	// The dispatched edit_master input should contain the script content + the user's confirmation text
+	// (the table also holds the pre-created script task_run; filter out this dispatch's row)
 	var runs []model.CGTaskRun
 	db.Find(&runs)
 	var dispatched *model.CGTaskRun
 	for i := range runs {
-		if runs[i].MsgID == "" { // 脚本 task_run 有 MsgID=msg-script-1，本次投递无 MsgID
+		if runs[i].MsgID == "" { // the script task_run has MsgID=msg-script-1; this dispatch has no MsgID
 			dispatched = &runs[i]
 			break
 		}
 	}
-	testx.NotNil(t, dispatched, "应投递一个新的 edit_master task_run")
+	testx.NotNil(t, dispatched, "a new edit_master task_run should be dispatched")
 	plan, err := dispatched.ParsePlanSteps()
 	testx.NoError(t, err)
 	testx.Len(t, plan.Agents, 1)
@@ -328,11 +328,11 @@ func TestFastPath_ScriptContextPassThrough(t *testing.T) {
 	testx.Contains(t, plan.Agents[0].Input, "【脚本】夏日旅行60秒混剪")
 	testx.Contains(t, plan.Agents[0].Input, "脚本已确认，请执行")
 	testx.True(t, strings.HasPrefix(plan.Agents[0].Input, "【脚本】"),
-		"脚本内容应置于 input 前部")
+		"the script content should be placed at the front of the input")
 }
 
-// TestFastPath_ScriptContextMissing 验证带 OriginMsgID 但脚本查不到时：
-// 不投递（对齐真实系统 judge.go skip 语义），交回 ReAct。
+// TestFastPath_ScriptContextMissing verifies that with OriginMsgID but no findable script:
+// nothing is dispatched (aligned with the reference system's judge.go skip semantics); control returns to ReAct.
 func TestFastPath_ScriptContextMissing(t *testing.T) {
 	ctx := context.Background()
 	db := newFastPathDB(t)
@@ -358,9 +358,9 @@ func TestFastPath_ScriptContextMissing(t *testing.T) {
 		OriginMsgID: "msg-not-exist",
 	})
 	testx.NoError(t, err)
-	testx.False(t, handled, "OriginMsgID 脚本查不到 → 不命中，交回 ReAct")
+	testx.False(t, handled, "OriginMsgID script not found → no hit; hand back to ReAct")
 
 	var runs []model.CGTaskRun
 	db.Find(&runs)
-	testx.Len(t, runs, 0, "脚本缺失不应投递新 task_run")
+	testx.Len(t, runs, 0, "a missing script should not dispatch a new task_run")
 }

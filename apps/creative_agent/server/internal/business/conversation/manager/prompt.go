@@ -2,13 +2,14 @@ package manager
 
 import "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 
-// ManagerPrepare 返回管家 ReAct 的 system prompt（约束链协议：必须用 generate_response、
-// task_type 取值、new_agents_plan 选产线）。业务层注入：appkit/runner 不背业务 prompt，
-// 由管家业务通过 SetPrepare 注入。
+// ManagerPrepare returns the system prompt of the manager ReAct (the constraint-chain protocol: must use generate_response,
+// task_type values, pipeline selection for new_agents_plan). Injected by the business layer: appkit/runner carries no business prompts;
+// the manager business injects it via SetPrepare.
 //
-// 完整约束文本取回自 Task 3 删除前的原样（9dc1051~1:internal/provider/runner/
-// supervisor_runner.go 的 RunWithPlan 段）：真实 LLM 配置下，worker 路径靠它约束
-// LLM 用 generate_response / 选产线 / 装配 agent 链。
+// The full constraint text was restored verbatim from before Task 3's deletion (9dc1051~1:internal/provider/runner/
+// supervisor_runner.go, the RunWithPlan section): with a real LLM configured, the worker path relies on it to make the LLM
+// use generate_response / pick a pipeline / assemble the agent chain.
+// (The prompt itself is Chinese product content and stays as designed.)
 func ManagerPrepare(q string) []react.Message {
 	return []react.Message{
 		{Role: "system", Content: `你是管家智能体，负责理解用户需求并编排子任务。

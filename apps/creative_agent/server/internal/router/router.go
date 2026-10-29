@@ -32,7 +32,7 @@ type Dependencies struct {
 	Redis     *redis.Client
 	Logger    *zap.Logger
 
-	// base-server 域 handlers（creation / risk；nil 时跳过对应路由）。
+	// base-server domain handlers (creation / risk; the corresponding routes are skipped when nil).
 	CreationHandler *creationHandler.CreationHandler
 	RiskHandler     *riskHandler.RiskHandler
 
@@ -47,33 +47,33 @@ type Dependencies struct {
 	Locker       infra.Locker
 	AsyncEnabled bool
 
-	// Phase 4: 快捷路径（nil 时跳过 FastPath 判断，走 ReAct）。
+	// Phase 4: fast path (when nil, the FastPath check is skipped and ReAct runs).
 	FastPath *fastpath.FastPath
 
-	// Phase 4: 同步快任务回流（Async 启用时非 nil）。
+	// Phase 4: sync fast-task backflow (non-nil when Async is enabled).
 	TaskPoller  *taskflow.Poller
 	TaskRunRepo repository.TaskRunRepository
 
-	// Task 8: 回调路由依赖（服务端调用，身份来自回调 body）。
+	// Task 8: callback route dependencies (server-to-server calls; identity comes from the callback body).
 	TaskStepRepo repository.TaskStepRepository
 
-	// Step 3.6: 多 agent 串联的意图记忆（nil 时 Setup 自动创建）。
+	// Step 3.6: intent memory for multi-agent chaining (Setup creates it automatically when nil).
 	IntentMemory *memory.IntentMemory
 
-	// OTel: 可观测性。TracerProvider 非 nil 时启用 HTTP span。
+	// OTel: observability. HTTP spans are enabled when TracerProvider is non-nil.
 	TracerProvider trace.TracerProvider
-	// ServiceName 是 OTel 服务名（Jaeger 里按此过滤）。
+	// ServiceName is the OTel service name (used for filtering in Jaeger).
 	ServiceName string
 
-	// MetricsEnabled 控制 /metrics（Prometheus）端点。
+	// MetricsEnabled controls the /metrics (Prometheus) endpoint.
 	MetricsEnabled bool
 }
 
-// Setup 注册所有路由与中间件，返回配置好的 yukino_http Application。
+// Setup registers all routes and middleware and returns the configured yukino_http Application.
 //
-// 中间件顺序：RequestID → OTel → Logger → CORS → Recovery。
-// 注意：yukino_http 的 Router 中间件按路径前缀生效（同前缀子分组无法只保护部分路由），
-// 因此 JWT 用 withAuth 按路由包裹，而不是挂在 /api/v1 子分组上。
+// Middleware order: RequestID → OTel → Logger → CORS → Recovery.
+// Note: yukino_http Router middleware applies by path prefix (a sub-group with the same prefix cannot protect only some routes),
+// so JWT is wrapped per route with withAuth instead of being mounted on an /api/v1 sub-group.
 func Setup(deps Dependencies) *yukino.Application {
 	app := yukino.New()
 
@@ -108,7 +108,7 @@ func Setup(deps Dependencies) *yukino.Application {
 		TaskRunRepo:       deps.TaskRunRepo,
 	})
 
-	// Step 3.6: 多 agent 串联的意图记忆（内存版，单进程）。
+	// Step 3.6: intent memory for multi-agent chaining (in-memory, single process).
 	if deps.IntentMemory == nil {
 		deps.IntentMemory = memory.NewIntentMemory()
 	}
@@ -122,26 +122,26 @@ func Setup(deps Dependencies) *yukino.Application {
 
 	// Conversation (Phase 1): /aigc/conversation
 	aigc := app.Router("/aigc")
-	// Task 8: 回调路由，服务端调用（fakegen/base-server 域），不挂 JWT（身份来自回调 body）。
+	// Task 8: callback route, server-to-server (fakegen/base-server domain), no JWT (identity comes from the callback body).
 	aigc.Post("/callback/task_detail",
 		handler.CallbackTaskDetailHandler(handler.CallbackDeps{
 			StepRepo:    deps.TaskStepRepo,
 			TaskRunRepo: deps.TaskRunRepo,
 		}))
 
-	// 对话路由强制鉴权（会话绑定个人）。
+	// Conversation routes require authentication (sessions are bound to individuals).
 	aigc.Post("/conversation", withAuth(conversationHandler))
-	// GET 版本供浏览器 EventSource 使用（EventSource 只支持 GET）。
+	// The GET version is for browser EventSource (EventSource only supports GET).
 	aigc.Get("/conversation", withAuth(conversationHandler))
 
-	// Step 3.6: 点卡确认接口（多 agent 串联的推进器）。
-	// 用户点交互卡 → 写回 intent_memory → 推进 FlowStage。
+	// Step 3.6: card-confirmation endpoint (the driver of multi-agent chaining).
+	// User clicks an interactive card → write back to intent_memory → advance FlowStage.
 	aigc.Post("/agent/submit_clarification", withAuth(
 		handler.SubmitClarificationHandler(handler.ClarificationDeps{
 			Memory: deps.IntentMemory,
 		})))
 
-	// 内部接口：被 agent 工具链按序调用（同进程 loopback），无需用户 JWT。
+	// Internal endpoints: called in sequence by the agent tool chain (same-process loopback); no user JWT required.
 	if deps.CreationHandler != nil {
 		inner := app.Router("/inner")
 		creation := inner.Router("/creation")
@@ -153,13 +153,13 @@ func Setup(deps Dependencies) *yukino.Application {
 
 		callback := inner.Router("/callback")
 		callback.Post("/task_detail", deps.CreationHandler.CallbackTaskDetail)
-		// risk 回调由 risk 域独立负责，单独判空守卫（与 creation 装配可解耦）。
+		// The risk callback is owned by the risk domain; guard it with its own nil check (decoupled from the creation assembly).
 		if deps.RiskHandler != nil {
 			callback.Post("/risk", deps.RiskHandler.CallbackRisk)
 		}
 	}
 
-	// Prometheus 指标端点（文本格式，经 prometheus/common expfmt 编码）。
+	// Prometheus metrics endpoint (text format, encoded via prometheus/common expfmt).
 	if deps.MetricsEnabled {
 		app.Get("/metrics", MetricsHandler())
 	}
@@ -167,7 +167,7 @@ func Setup(deps Dependencies) *yukino.Application {
 	return app
 }
 
-// MetricsHandler 以 Prometheus 文本格式暴露默认注册表的指标。
+// MetricsHandler exposes the default registry's metrics in Prometheus text format.
 func MetricsHandler() yukino.Middleware {
 	return func(ctx *yukino.Context, _ func()) {
 		mfs, err := prometheus.DefaultGatherer.Gather()

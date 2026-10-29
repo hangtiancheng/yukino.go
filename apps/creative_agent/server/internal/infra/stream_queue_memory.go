@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// memStreamEntry 是内存队列中的一条消息。
+// memStreamEntry is one message in the in-memory queue.
 type memStreamEntry struct {
 	ID          string
 	MsgID       string
@@ -16,12 +16,12 @@ type memStreamEntry struct {
 	deliveredAt time.Time
 }
 
-// MemoryStreamQueue 是 StreamQueue 的进程内实现（单二进制部署无 Redis 时降级用，
-// 测试中替代 miniredis）。语义对齐 RedisStreamQueue：
-//   - Push 追加消息；Receive 阻塞拉取未投递消息（超时返回 nil, nil）
-//   - Ack 从 pending 移除；ClaimPending 认领空闲超时的 pending 消息
+// MemoryStreamQueue is the in-process implementation of StreamQueue (a degradation for single-binary deployments without Redis;
+// replaces miniredis in tests). Semantics align with RedisStreamQueue:
+//   - Push appends a message; Receive blocks pulling undelivered messages (returns nil, nil on timeout)
+//   - Ack removes from pending; ClaimPending claims pending messages idle beyond a timeout
 //
-// 单进程内所有 consumer 共享一条投递游标（等价于同一 consumer group）。
+// All consumers within one process share a single delivery cursor (equivalent to one consumer group).
 type MemoryStreamQueue struct {
 	mu        sync.Mutex
 	entries   []*memStreamEntry
@@ -32,8 +32,8 @@ type MemoryStreamQueue struct {
 	blockTime time.Duration
 }
 
-// NewMemoryStreamQueue 创建进程内 StreamQueue。streamKey/group/consumer 仅用于
-// 与 RedisStreamQueue 保持相同的构造签名（进程内实现不区分 key）。
+// NewMemoryStreamQueue creates the in-process StreamQueue. streamKey/group/consumer exist only to keep
+// the same constructor signature as RedisStreamQueue (the in-process implementation does not distinguish keys).
 func NewMemoryStreamQueue(streamKey, group, consumer string) *MemoryStreamQueue {
 	_ = streamKey
 	_ = group
@@ -45,7 +45,7 @@ func NewMemoryStreamQueue(streamKey, group, consumer string) *MemoryStreamQueue 
 	}
 }
 
-// Push 追加一条消息并唤醒等待中的 Receive。
+// Push appends a message and wakes waiting Receives.
 func (q *MemoryStreamQueue) Push(_ context.Context, msgID string, body []byte) error {
 	q.mu.Lock()
 	q.seq++
@@ -62,8 +62,8 @@ func (q *MemoryStreamQueue) Push(_ context.Context, msgID string, body []byte) e
 	return nil
 }
 
-// Receive 阻塞拉取下一条未投递消息；blockTime 内无消息返回 nil, nil；
-// ctx 取消返回 ctx.Err()。
+// Receive blocks pulling the next undelivered message; returns nil, nil when no message arrives within blockTime;
+// returns ctx.Err() when ctx is canceled.
 func (q *MemoryStreamQueue) Receive(ctx context.Context) (*StreamMessage, error) {
 	deadline := time.NewTimer(q.blockTime)
 	defer deadline.Stop()
@@ -90,7 +90,7 @@ func (q *MemoryStreamQueue) Receive(ctx context.Context) (*StreamMessage, error)
 	}
 }
 
-// Ack 确认消息，从 pending 列表移除。
+// Ack acknowledges a message, removing it from the pending list.
 func (q *MemoryStreamQueue) Ack(_ context.Context, streamMsgID string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -98,12 +98,12 @@ func (q *MemoryStreamQueue) Ack(_ context.Context, streamMsgID string) error {
 	return nil
 }
 
-// Requeue 将消息重新入队（新条目；旧条目留在 pending 直到被 Ack 或认领）。
+// Requeue re-enqueues a message (as a new entry; the old entry stays pending until Acked or claimed).
 func (q *MemoryStreamQueue) Requeue(ctx context.Context, msgID string, body []byte) error {
 	return q.Push(ctx, msgID, body)
 }
 
-// ClaimPending 认领空闲时长超过 minIdle 的 pending 消息（僵尸恢复用）。
+// ClaimPending claims pending messages idle longer than minIdle (for zombie recovery).
 func (q *MemoryStreamQueue) ClaimPending(_ context.Context, minIdle time.Duration) ([]*StreamMessage, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()

@@ -1,4 +1,4 @@
-// Package otelx 提供 OpenTelemetry 初始化与测试辅助。
+// Package otelx provides OpenTelemetry initialization and test helpers.
 package otelx
 
 import (
@@ -16,21 +16,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// Init 初始化全局 TracerProvider。
-// enabled=false 时返回 no-op provider（测试/CI 零副作用，不启动 exporter）。
-// exporter 建失败不阻断启动：logger.Warn 后降级为 no-op。
-// logger 为 nil 时用 zap.L()。
+// Init initializes the global TracerProvider.
+// When enabled=false it returns a no-op provider (zero side effects in tests/CI, no exporter started).
+// A failed exporter build does not block startup: it logs a warning and degrades to no-op.
+// When logger is nil, zap.L() is used.
 func Init(cfg config.OTelConfig, logger *zap.Logger) (*sdktrace.TracerProvider, error) {
 	if logger == nil {
 		logger = zap.L()
 	}
 	if !cfg.Enabled {
-		// 无 exporter 的 sdk provider：span 进不了任何 exporter，等同 no-op，
-		// 但保留 Shutdown 语义，调用方统一处理。Start 产生的 span 为 non-recording。
+		// An sdk provider without exporters: spans reach no exporter, equivalent to no-op,
+		// but Shutdown semantics are preserved so callers handle it uniformly. Spans from Start are non-recording.
 		return sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.NeverSample())), nil
 	}
 
-	// 统一 W3C tracecontext 传播（HTTP header / Redis stream 透传用）。
+	// Unified W3C tracecontext propagation (for HTTP headers / Redis stream propagation).
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
@@ -46,7 +46,7 @@ func Init(cfg config.OTelConfig, logger *zap.Logger) (*sdktrace.TracerProvider, 
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
-		// exporter 建失败不阻断启动：降级为 no-op（无 exporter），保证服务可用。
+		// A failed exporter build does not block startup: degrade to no-op (no exporters) to keep the service available.
 		logger.Warn("otelx: failed to create otlp exporter (trace disabled)",
 			zap.String("endpoint", cfg.ExporterEndpoint), zap.Error(err))
 		return sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.NeverSample())), nil
@@ -66,14 +66,14 @@ func Init(cfg config.OTelConfig, logger *zap.Logger) (*sdktrace.TracerProvider, 
 		)),
 	)
 
-	// 设为全局：GORM plugin / redisotel / otelhttp 默认读全局 provider。
+	// Set globally: the GORM plugin / redisotel / otelhttp read the global provider by default.
 	otel.SetTracerProvider(tp)
 	return tp, nil
 }
 
-// NewMemoryExporter 创建测试用的内存 exporter + TracerProvider。
-// 测试内调用，避免依赖真实 Jaeger。注意：不调用 otel.SetTracerProvider，
-// 由测试方自行决定是否替换全局 provider（避免覆盖 app.New 的初始化）。
+// NewMemoryExporter creates an in-memory exporter + TracerProvider for tests.
+// Call it inside tests to avoid depending on a real Jaeger. Note: it does not call otel.SetTracerProvider;
+// the test decides whether to replace the global provider (to avoid overriding app.New's initialization).
 func NewMemoryExporter() (*sdktrace.TracerProvider, *MemoryExporter) {
 	exp := newMemoryExporter()
 	tp := sdktrace.NewTracerProvider(

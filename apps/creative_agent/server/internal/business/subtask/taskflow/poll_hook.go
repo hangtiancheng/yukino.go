@@ -13,40 +13,40 @@ import (
 	"go.uber.org/zap"
 )
 
-// TaskStepFrame 是 poll_hook 回流到前端的子任务进度帧（SSE task-step / task-done）。
+// TaskStepFrame is the subtask progress frame flowing back to the frontend via poll_hook (SSE task-step / task-done).
 type TaskStepFrame struct {
 	Type       string `json:"type"`                 // task-step / task-done
-	TaskRunID  int64  `json:"taskRunId,omitempty"`  // 所属 task_run
-	TaskStepID int64  `json:"taskStepId,omitempty"` // 步骤 ID
-	StepName   string `json:"stepName,omitempty"`   // 步骤名（agent 名 / tool 名）
+	TaskRunID  int64  `json:"taskRunId,omitempty"`  // owning task_run
+	TaskStepID int64  `json:"taskStepId,omitempty"` // step ID
+	StepName   string `json:"stepName,omitempty"`   // step name (agent name / tool name)
 	Status     int32  `json:"status"`               // cg_task_step.status
-	Output     string `json:"output,omitempty"`     // step_output（终态时交付产物）
-	Reason     string `json:"reason,omitempty"`     // 失败原因（task_run Failed 时）
-	MsgID      string `json:"msgId,omitempty"`      // 关联管家 message_id（前端回放锚点）
+	Output     string `json:"output,omitempty"`     // step_output (the delivered product at terminal state)
+	Reason     string `json:"reason,omitempty"`     // failure reason (when task_run Failed)
+	MsgID      string `json:"msgId,omitempty"`      // associated manager message_id (the frontend replay anchor)
 }
 
-// Poller 是子任务回流轮询器（对应真实系统 query_executor.go 的 TaskStepPollHook）。
+// Poller is the subtask backflow poller (corresponding to the reference system's query_executor.go TaskStepPollHook).
 //
-// 与真实系统同构：子智能体只写 cg_task_run / cg_task_step 两张表，不主动推送。
-// 对话 Worker 通过 poll 轮询这两张表，把增量 step 输出推成 SSE/chunk 回流前端。
-// 跨进程完全靠 DB 解耦（05-subagent.md §5.4）。
+// Isomorphic to the reference system: sub-agents only write the cg_task_run / cg_task_step tables and never push.
+// The conversation Worker polls these two tables, pushing incremental step output as SSE/chunks back to the frontend.
+// Cross-process decoupling relies entirely on the DB (05-subagent.md §5.4).
 type Poller struct {
 	stepRepo    repository.TaskStepRepository
 	taskRunRepo repository.TaskRunRepository
 	logger      *zap.Logger
 
-	// lastStepID 记录已推送的最大 task_step_id（游标语义，只推增量）。
+	// lastStepID records the largest task_step_id pushed so far (cursor semantics; only increments are pushed).
 	lastStepID atomic.Int64
 }
 
-// PollerConfig 持有 Poller 的依赖。
+// PollerConfig holds the Poller's dependencies.
 type PollerConfig struct {
 	StepRepo    repository.TaskStepRepository
 	TaskRunRepo repository.TaskRunRepository
 	Logger      *zap.Logger
 }
 
-// NewPoller 创建子任务回流轮询器。
+// NewPoller creates the subtask backflow poller.
 func NewPoller(cfg PollerConfig) *Poller {
 	return &Poller{
 		stepRepo:    cfg.StepRepo,
@@ -55,15 +55,15 @@ func NewPoller(cfg PollerConfig) *Poller {
 	}
 }
 
-// PollOnce 轮询一次 cg_task_step：把增量步骤推给 onFrame，检查 task_run 终态。
-// 返回是否已到终态（true=task_run Finished/Failed/Waiting，应停止轮询）。
+// PollOnce polls cg_task_step once: pushes incremental steps to onFrame and checks the task_run terminal state.
+// Returns whether the terminal state was reached (true = task_run Finished/Failed/Waiting; polling should stop).
 //
-// 游标语义：与 ③ 的 attach 同思想——只推 lastStepID 之后的增量，不重复推。
+// Cursor semantics: same idea as ③'s attach — only increments after lastStepID are pushed, never duplicates.
 func (p *Poller) PollOnce(ctx context.Context, taskRunID int64, msgID string, onFrame func(TaskStepFrame)) bool {
-	// 1. 拉增量步骤
+	// 1. Pull incremental steps
 	steps, err := p.stepRepo.GetByTaskRunID(ctx, taskRunID)
 	if err != nil {
-		p.logger.Error("poll: 拉 task_step 失败",
+		p.logger.Error("poll: failed to pull task_step",
 			zap.Int64("taskRunID", taskRunID), zap.Error(err))
 		return false
 	}
@@ -71,7 +71,7 @@ func (p *Poller) PollOnce(ctx context.Context, taskRunID int64, msgID string, on
 	last := p.lastStepID.Load()
 	for _, s := range steps {
 		if s.ID <= last {
-			continue // 已推送过
+			continue // already pushed
 		}
 		frame := TaskStepFrame{
 			Type:       sse.EventTaskStep,
@@ -89,15 +89,15 @@ func (p *Poller) PollOnce(ctx context.Context, taskRunID int64, msgID string, on
 	}
 	p.lastStepID.Store(last)
 
-	// 2. 查 task_run 终态
+	// 2. Check the task_run terminal state
 	run, err := p.taskRunRepo.GetByTaskRunID(ctx, taskRunID)
 	if err != nil {
 		return false
 	}
 
-	// 终态统一推 task-done。交付产物从「最近一条 Finished 顶层步骤」取——
-	// 因为步骤按游标去重，Running→Finished 的同一 step 不会被重推，
-	// 必须由 run 终态帧兜底携带 final_product（保证交付不丢）。
+	// Terminal states uniformly push task-done. The delivered product is taken from the "newest Finished top-level step" —
+	// because steps are deduped by cursor, the same step transitioning Running→Finished is not re-pushed,
+	// so the run terminal frame must carry final_product as the fallback (guaranteeing delivery is never lost).
 	switch run.Status {
 	case model.TaskRunStatusFinished:
 		finalOutput, _ := p.stepRepo.GetNewestFinishedOutput(ctx, taskRunID)
@@ -123,16 +123,16 @@ func (p *Poller) PollOnce(ctx context.Context, taskRunID int64, msgID string, on
 		})
 		return true
 	case model.TaskRunStatusWaiting:
-		// NeedWait=Yes：task_run 保持 Waiting，等产线回调。
-		// 此时不推 task-done（终态未到），但中间产物已通过 task-step 回流。
-		// 真实系统在此由产线 Callback 把 Waiting→Finished 后 poll 再收敛。
+		// NeedWait=Yes: task_run stays Waiting for the pipeline callback.
+		// No task-done is pushed now (terminal state not reached), but intermediate products already flowed back via task-step.
+		// In the reference system the pipeline Callback flips Waiting→Finished and the poll then converges.
 		return true
 	default:
-		return false // 还在跑，下次再查
+		return false // still running; check next time
 	}
 }
 
-// newestFinishedStepID 返回 steps 中最近一条 Finished 顶层步骤的 TaskStepID（无则 0）。
+// newestFinishedStepID returns the TaskStepID of the newest Finished top-level step in steps (0 when none).
 func newestFinishedStepID(steps []model.CGTaskStep) int64 {
 	for i := len(steps) - 1; i >= 0; i-- {
 		if steps[i].ParentStepID == 0 && steps[i].Status == model.TaskStepStatusFinished {
@@ -142,8 +142,8 @@ func newestFinishedStepID(steps []model.CGTaskStep) int64 {
 	return 0
 }
 
-// PollUntilDone 阻塞轮询直到 task_run 终态（或 ctx 取消）。
-// onFrame 每轮收到增量帧。pollInterval 默认 500ms。
+// PollUntilDone blocks polling until the task_run terminal state (or ctx cancellation).
+// onFrame receives incremental frames each round. pollInterval defaults to 500ms.
 func (p *Poller) PollUntilDone(ctx context.Context, taskRunID int64, msgID string, onFrame func(TaskStepFrame), pollInterval time.Duration) {
 	if pollInterval <= 0 {
 		pollInterval = 500 * time.Millisecond
@@ -151,7 +151,7 @@ func (p *Poller) PollUntilDone(ctx context.Context, taskRunID int64, msgID strin
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	// 先查一次，避免等待首个 tick
+	// Poll once first to avoid waiting for the first tick
 	if p.PollOnce(ctx, taskRunID, msgID, onFrame) {
 		return
 	}
@@ -167,13 +167,13 @@ func (p *Poller) PollUntilDone(ctx context.Context, taskRunID int64, msgID strin
 	}
 }
 
-// FrameToJSON 将 TaskStepFrame 序列化为 JSON（供 chunkStore.Write / flowcontext.Push）。
+// FrameToJSON serializes a TaskStepFrame to JSON (for chunkStore.Write / flowcontext.Push).
 func FrameToJSON(f TaskStepFrame) string {
 	b, _ := json.Marshal(f)
 	return string(b)
 }
 
-// FrameToSSEFrame 将 TaskStepFrame 转为通用 SSEFrame（复用 provider.SSEFrame 的流式通道）。
+// FrameToSSEFrame converts a TaskStepFrame into a generic SSEFrame (reusing provider.SSEFrame's streaming channel).
 func FrameToSSEFrame(f TaskStepFrame) interface{} {
 	return f
 }

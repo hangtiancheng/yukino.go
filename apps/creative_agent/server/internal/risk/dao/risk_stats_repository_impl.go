@@ -10,45 +10,45 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// riskStatsRow 持久化结构（gorm 映射 cg_risk_stats）。
+// riskStatsRow is the persistence structure (gorm mapping cg_risk_stats).
 type riskStatsRow struct {
 	ID          uint64 `gorm:"column:id;primaryKey;autoIncrement"`
 	UserID      int64  `gorm:"column:user_id;not null;uniqueIndex:idx_risk_stats"`
 	SubProduct  string `gorm:"column:sub_product;size:128;not null;uniqueIndex:idx_risk_stats"`
 	RiskType    string `gorm:"column:risk_type;size:64;not null;uniqueIndex:idx_risk_stats"`
-	WindowStart int64  `gorm:"column:window_start;not null;uniqueIndex:idx_risk_stats"` // Unix 秒，分钟级分桶
+	WindowStart int64  `gorm:"column:window_start;not null;uniqueIndex:idx_risk_stats"` // Unix seconds, minute-level buckets
 	HitCount    int    `gorm:"column:hit_count;not null;default:0"`
 	CreateTime  int64  `gorm:"column:create_time;not null"`
 	UpdateTime  int64  `gorm:"column:update_time;not null"`
 }
 
-// TableName 指定表名。
+// TableName specifies the table name.
 func (riskStatsRow) TableName() string { return "cg_risk_stats" }
 
-// RiskStatsRepositoryImpl 基于 gorm 的 RiskStatsRepository 实现。
+// RiskStatsRepositoryImpl is the gorm-based RiskStatsRepository implementation.
 type RiskStatsRepositoryImpl struct {
 	db *gorm.DB
 }
 
-// NewRiskStatsRepositoryImpl 创建实现。
+// NewRiskStatsRepositoryImpl creates the implementation.
 func NewRiskStatsRepositoryImpl(db *gorm.DB) *RiskStatsRepositoryImpl {
 	return &RiskStatsRepositoryImpl{db: db}
 }
 
-// 编译期断言：确保实现满足 domain.RiskStatsRepository 接口。
+// Compile-time assertion: the implementation satisfies the domain.RiskStatsRepository interface.
 var _ domain.RiskStatsRepository = (*RiskStatsRepositoryImpl)(nil)
 
-// UpsertIncrement 对 (user, subProduct, riskType, windowStart) 累加 hit_count +1。
+// UpsertIncrement increments hit_count +1 for (user, subProduct, riskType, windowStart).
 //
-// ⚠️ 唯一键：UNIQUE(user_id, sub_product, risk_type, window_start)。
-// 保证同一 (user, subProduct, riskType, windowStart) 只存在一行（不产生重复行）；
-// 但 hit_count + 1 的累加语义不幂等——同一条记录跨批次被重复消费时仍会再次 +1。
-// 批内去重由消费端 `id > lastInsertID` 下界负责（见 consumer），表结构只兜"不重复行"。
+// ⚠️ Unique key: UNIQUE(user_id, sub_product, risk_type, window_start).
+// It guarantees one row per (user, subProduct, riskType, windowStart) (no duplicate rows);
+// but the hit_count + 1 accumulation is not idempotent — the same record consumed again across batches will +1 again.
+// In-batch dedup is the consumer's `id > lastInsertID` lower bound (see consumer); the schema only guarantees "no duplicate rows".
 //
-// ⚠️ 累加语义：ON DUPLICATE KEY UPDATE hit_count = hit_count + 1。
-// 不能直接用 AssignmentColumns（它会生成 hit_count = excluded.hit_count，
-// 重复时把 hit_count 覆盖成 1 而非累加），窗口内多次命中必须逐条 +1，
-// 否则评估 job 的阈值判断（>= 5）永远不会命中。
+// ⚠️ Accumulation semantics: ON DUPLICATE KEY UPDATE hit_count = hit_count + 1.
+// AssignmentColumns cannot be used directly (it generates hit_count = excluded.hit_count,
+// overwriting hit_count to 1 on duplicates instead of accumulating); multiple hits within the window must each +1,
+// otherwise the evaluation job's threshold check (>= 5) would never hit.
 func (r *RiskStatsRepositoryImpl) UpsertIncrement(ctx context.Context, userID int64, subProduct, riskType string, windowStart int64) error {
 	now := time.Now().Unix()
 	row := &riskStatsRow{
@@ -70,8 +70,8 @@ func (r *RiskStatsRepositoryImpl) UpsertIncrement(ctx context.Context, userID in
 	}).Create(row).Error
 }
 
-// SumByUserAndSubProduct 统计 (userID, subProduct) 在 [windowStart, now] 窗口内累计命中次数。
-// 评估 job 用：单窗口阈值判断"是否下线"。
+// SumByUserAndSubProduct sums the accumulated hits of (userID, subProduct) within the [windowStart, now] window.
+// Used by the evaluation job: single-window threshold decision "whether to offline".
 func (r *RiskStatsRepositoryImpl) SumByUserAndSubProduct(ctx context.Context, userID int64, subProduct string, windowStart int64) (int, error) {
 	var total int
 	err := r.db.WithContext(ctx).Raw(
@@ -81,7 +81,7 @@ func (r *RiskStatsRepositoryImpl) SumByUserAndSubProduct(ctx context.Context, us
 	return total, err
 }
 
-// MinWindowStart 返回当前最老的窗口起点（测试/对账用）。
+// MinWindowStart returns the oldest window start (tests/reconciliation).
 func (r *RiskStatsRepositoryImpl) MinWindowStart(ctx context.Context) (int64, error) {
 	var min int64
 	err := r.db.WithContext(ctx).Raw(
@@ -90,8 +90,8 @@ func (r *RiskStatsRepositoryImpl) MinWindowStart(ctx context.Context) (int64, er
 	return min, err
 }
 
-// SumAllInWindow 统计 windowStart 之后所有 (user, subProduct) 的聚合命中数。
-// 评估 job 全量扫描用。
+// SumAllInWindow aggregates the hits of all (user, subProduct) pairs after windowStart.
+// Used by the evaluation job's full scan.
 func (r *RiskStatsRepositoryImpl) SumAllInWindow(ctx context.Context, windowStart int64) ([]domain.RiskStatsRow, error) {
 	var rows []domain.RiskStatsRow
 	err := r.db.WithContext(ctx).Raw(

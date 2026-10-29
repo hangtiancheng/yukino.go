@@ -1,31 +1,31 @@
-// Package seda 提供 SEDA（阶段式事件驱动架构）执行引擎。
+// Package seda provides the SEDA (staged event-driven architecture) execution engine.
 //
-// Context 是一次 flow 执行的共享数据容器，支持两种数据形态：
-//   - 单值（Value）：Set/Get/Wait，一个 key 存一个值，可覆盖
-//   - 流式（Slice）：Push/GetSliceWithInit，一个 key 存一条可追加序列，
-//     带变更通知，用于实时流式场景（如 SSE 帧）。
+// Context is the shared data container of one flow execution, supporting two data shapes:
+//   - Single value (Value): Set/Get/Wait, one key stores one value, overwritable
+//   - Streaming (Slice): Push/GetSliceWithInit, one key stores an appendable sequence
+//     with change notifications, for realtime streaming scenarios (e.g. SSE frames).
 package seda
 
 import "sync"
 
-// ---------- Slice：可追加流式通道 ----------
+// ---------- Slice: appendable streaming channel ----------
 
-// Slice 是一个线程安全的可追加列表，带变更通知机制。
-// 它是流式数据（如 SSE 帧）的基础构件。
-// 每次 Push 追加元素并广播；消费者通过 WatchPush+DiffFrom
-// 只接收上次读取之后新增的元素。
+// Slice is a thread-safe appendable list with a change-notification mechanism.
+// It is the building block of streaming data (e.g. SSE frames).
+// Each Push appends an element and broadcasts; consumers use WatchPush+DiffFrom
+// to receive only elements added since their last read.
 type Slice struct {
 	mu     sync.Mutex
 	items  []any
-	notify chan struct{} // 每次 push 换新 channel，close 旧的即广播唤醒
+	notify chan struct{} // each push swaps in a new channel; closing the old one broadcasts the wakeup
 }
 
 func newSlice() *Slice {
 	return &Slice{notify: make(chan struct{})}
 }
 
-// Push 追加元素 v，并关闭旧的通知 channel、创建新的供下一轮等待，
-// 以此唤醒所有当前 WatchPush 的等待者。
+// Push appends element v, closes the old notification channel, and creates a new one for the next wait round,
+// thereby waking all waiters currently on WatchPush.
 func (s *Slice) Push(v any) {
 	s.mu.Lock()
 	s.items = append(s.items, v)
@@ -35,16 +35,16 @@ func (s *Slice) Push(v any) {
 	close(old)
 }
 
-// WatchPush 返回当前的通知 channel。调用方每次被唤醒后必须重新调
-// WatchPush，才能拿到下一轮等待用的 channel。
+// WatchPush returns the current notification channel. Callers must call WatchPush again
+// after each wakeup to obtain the channel for the next wait round.
 func (s *Slice) WatchPush() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.notify
 }
 
-// DiffFrom 返回自 cursor 位置之后追加的所有元素，以及新的 cursor
-// （= 读取后总长度）。返回的切片是浅拷贝，可以安全修改。
+// DiffFrom returns all elements appended after the cursor position, plus the new cursor
+// (= total length after the read). The returned slice is a shallow copy and safe to modify.
 func (s *Slice) DiffFrom(cursor int) ([]any, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,15 +58,15 @@ func (s *Slice) DiffFrom(cursor int) ([]any, int) {
 
 // ---------- Context ----------
 
-// Context 是一次 flow 执行的共享数据上下文。
+// Context is the shared data context of one flow execution.
 type Context struct {
 	mu      sync.Mutex
 	data    map[string]any
-	waiters map[string]chan struct{} // 每个 key 一个通知 channel（单值订阅用）
-	slices  map[string]*Slice        // 每个 key 一条流式通道（流式订阅用）
+	waiters map[string]chan struct{} // one notification channel per key (for single-value subscription)
+	slices  map[string]*Slice        // one streaming channel per key (for streaming subscription)
 }
 
-// NewContext 创建一个空的 Context。
+// NewContext creates an empty Context.
 func NewContext() *Context {
 	return &Context{
 		data:    make(map[string]any),
@@ -75,7 +75,7 @@ func NewContext() *Context {
 	}
 }
 
-// chanOf 惰性返回（或创建）key k 的通知 channel。必须在 c.mu 锁内调用。
+// chanOf lazily returns (or creates) the notification channel of key k. Must be called under the c.mu lock.
 func (c *Context) chanOf(k string) chan struct{} {
 	ch, ok := c.waiters[k]
 	if !ok {
@@ -85,13 +85,13 @@ func (c *Context) chanOf(k string) chan struct{} {
 	return ch
 }
 
-// Set 为 key k 存入值 v，并广播唤醒所有阻塞在 Wait(k) 上的 goroutine。
+// Set stores value v under key k and broadcasts, waking all goroutines blocked on Wait(k).
 func (c *Context) Set(k string, v any) {
 	c.mu.Lock()
 	c.data[k] = v
 	ch := c.chanOf(k)
 	c.mu.Unlock()
-	// 用 close 做一对多广播。select 防重复 close panic。
+	// Use close for one-to-many broadcast. The select guards against a double-close panic.
 	select {
 	case <-ch:
 	default:
@@ -99,15 +99,15 @@ func (c *Context) Set(k string, v any) {
 	}
 }
 
-// Get 返回 key k 对应的值，不存在返回 nil。
+// Get returns the value of key k, or nil when absent.
 func (c *Context) Get(k string) any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.data[k]
 }
 
-// Wait 阻塞直到 key k 被 Set，然后返回其值。
-// 若 k 已被 Set，则立即返回。
+// Wait blocks until key k is Set, then returns its value.
+// It returns immediately if k has already been Set.
 func (c *Context) Wait(k string) any {
 	c.mu.Lock()
 	if v, ok := c.data[k]; ok {
@@ -121,8 +121,8 @@ func (c *Context) Wait(k string) any {
 	return c.Get(k)
 }
 
-// GetSliceWithInit 返回 key k 对应的 Slice，不存在时自动创建。
-// 一定要在 Push 之前调用，避免丢失第一帧。
+// GetSliceWithInit returns the Slice of key k, creating it automatically when absent.
+// It must be called before Push to avoid losing the first frame.
 func (c *Context) GetSliceWithInit(k string) *Slice {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -134,7 +134,7 @@ func (c *Context) GetSliceWithInit(k string) *Slice {
 	return s
 }
 
-// Push 将 v 追加到 key k 对应的 Slice 尾部，Slice 不存在时自动创建。
+// Push appends v to the tail of the Slice of key k, creating the Slice automatically when absent.
 func (c *Context) Push(k string, v any) {
 	c.GetSliceWithInit(k).Push(v)
 }

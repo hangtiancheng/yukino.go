@@ -10,30 +10,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrTaskStepNotFound 表示未找到对应 task_step 记录。
+// ErrTaskStepNotFound indicates no matching task_step record was found.
 var ErrTaskStepNotFound = errors.New("task step not found")
 
-// TaskStepRepository 封装 cg_task_step 表的数据访问。
+// TaskStepRepository encapsulates data access to the cg_task_step table.
 //
-// 核心语义：
-//   - Insert: 子智能体执行每步时建行（工具调用前）
-//   - GetByTaskRunID: 查指定 task_run 下所有步骤（poll 回流用）
-//   - UpdateByTaskStepID: 按业务键更新（写 step_output / intermediate_result / 状态）
+// Core semantics:
+//   - Insert: creates a row for each sub-agent execution step (before the tool call)
+//   - GetByTaskRunID: queries all steps under a task_run (used by the poll backflow)
+//   - UpdateByTaskStepID: updates by business key (writes step_output / intermediate_result / status)
 type TaskStepRepository interface {
-	// Insert 插入一条 task_step 记录。
+	// Insert inserts one task_step record.
 	Insert(ctx context.Context, s *model.CGTaskStep) error
 
-	// GetByTaskStepID 按雪花业务键查询记录。
+	// GetByTaskStepID queries a record by its snowflake business key.
 	GetByTaskStepID(ctx context.Context, taskStepID int64) (*model.CGTaskStep, error)
 
-	// GetByTaskRunID 查询指定 task_run 下所有步骤（含子步骤，poll 回流的数据源）。
+	// GetByTaskRunID queries all steps under a task_run (including sub-steps; the poll backflow's data source).
 	GetByTaskRunID(ctx context.Context, taskRunID int64) ([]model.CGTaskStep, error)
 
-	// UpdateByTaskStepID 按业务键更新字段。
+	// UpdateByTaskStepID updates fields by business key.
 	UpdateByTaskStepID(ctx context.Context, taskStepID int64, assigns map[string]any) error
 
-	// GetNewestFinishedOutput 查询指定 task_run 下最近一条 Finished 顶层步骤的输出
-	// （NeedWait 分支下最终交付产物）。
+	// GetNewestFinishedOutput queries the output of the newest Finished top-level step under a task_run
+	// (the final delivered product in the NeedWait branch).
 	GetNewestFinishedOutput(ctx context.Context, taskRunID int64) (string, error)
 }
 
@@ -41,7 +41,7 @@ type taskStepRepository struct {
 	db *gorm.DB
 }
 
-// NewTaskStepRepository 基于 gorm.DB 创建 TaskStepRepository。
+// NewTaskStepRepository creates a TaskStepRepository on top of gorm.DB.
 func NewTaskStepRepository(db *gorm.DB) TaskStepRepository {
 	return &taskStepRepository{db: db}
 }

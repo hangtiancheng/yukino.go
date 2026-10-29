@@ -16,42 +16,42 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/tracex"
 )
 
-// ConOnePackSSEKey 是同步 SSE 帧的 flow context key。
-// supervisor 往这里推帧，con_writer 从这里消费。
+// ConOnePackSSEKey is the flow-context key of sync SSE frames.
+// The supervisor pushes frames here; con_writer consumes them.
 const ConOnePackSSEKey = "con_text_sse"
 
-// ConReconnectSSEKey 是异步/重连 SSE 帧的 flow context key。
-// RunAttach 往这里推帧，con_writer 从这里消费。
+// ConReconnectSSEKey is the flow-context key of async/reconnect SSE frames.
+// RunAttach pushes frames here; con_writer consumes them.
 const ConReconnectSSEKey = "con_reconnect_sse"
 
 // SSEFrame is an alias for appkitrunner.SSEFrame used in operator callbacks.
 type SSEFrame = appkitrunner.SSEFrame
 
-// SupervisorAgentNode 是运行 ReAct 循环的业务算子。
+// SupervisorAgentNode is the business operator running the ReAct loop.
 //
-// Phase 1（同步）：DoImpl 直接调用 runSupervisorBusiness → ReAct 执行 → Push ConOnePackSSEKey。
-// Phase 2（异步）：当 flowcontext 中存在 asyncShortCircuit=true 时，DoImpl 转 doAttach，
+// Phase 1 (sync): DoImpl calls runSupervisorBusiness directly → ReAct executes → Push ConOnePackSSEKey.
+// Phase 2 (async): when asyncShortCircuit=true exists in the flow context, DoImpl switches to doAttach,
 //
-//	改从 Redis chunk_store 拉回流数据（RunAttach），通过 ConReconnectSSEKey 推送。
+//	pulling backflow data from the Redis chunk_store (RunAttach) and pushing via ConReconnectSSEKey.
 //
-// 同步和异步路径复用同一个 SupervisorRunner.Run 引擎，差异仅 onFrame 回调目标不同。
+// Sync and async paths reuse the same SupervisorRunner.Run engine; only the onFrame callback target differs.
 type SupervisorAgentNode struct {
-	// chunkStore 是跨进程中转站：Worker 往里写 chunk，RunAttach 从里读。
-	// nil 时异步分支不可用（Phase 1 / 异步未启用时）。
+	// chunkStore is the cross-process relay store: Workers write chunks into it; RunAttach reads from it.
+	// When nil the async branch is unavailable (Phase 1 / async disabled).
 	chunkStore infra.ChunkStore
-	// asyncRepo 用于 attach 无新 chunk 时轮询异步任务终态（Worker 是否已死）。
+	// asyncRepo is used to poll the async task's terminal state when attach sees no new chunks (whether the Worker died).
 	asyncRepo repository.AsyncRequestRepository
 
-	// Phase 4: 快捷路径（nil 时跳过 FastPath 判断，走 ReAct）。
+	// Phase 4: fast path (when nil, the FastPath check is skipped and ReAct runs).
 	fastPath *fastpath.FastPath
 
-	// Phase 4: 同步快任务回流——子任务投递后同步轮询 cg_task_step 推帧。
-	// nil 时快路径命中只推完成帧。
+	// Phase 4: sync fast-task backflow — after dispatching subtasks, poll cg_task_step synchronously and push frames.
+	// When nil, a fast-path hit only pushes the completion frame.
 	taskPoller  *taskflow.Poller
 	taskRunRepo repository.TaskRunRepository
 }
 
-// NewSupervisorAgentNode 创建 SupervisorAgentNode。
+// NewSupervisorAgentNode creates a SupervisorAgentNode.
 func NewSupervisorAgentNode(chunkStore infra.ChunkStore, asyncRepo repository.AsyncRequestRepository,
 	fastPath *fastpath.FastPath, taskPoller *taskflow.Poller, taskRunRepo repository.TaskRunRepository) *SupervisorAgentNode {
 	return &SupervisorAgentNode{
@@ -63,14 +63,14 @@ func NewSupervisorAgentNode(chunkStore infra.ChunkStore, asyncRepo repository.As
 	}
 }
 
-// Name 返回算子名。
+// Name returns the operator name.
 func (n *SupervisorAgentNode) Name() string { return "supervisor_agent" }
 
-// DoImpl 跑 ReAct supervisor 业务逻辑。
-// Phase 2: 检查 asyncShortCircuit → 若是异步模式则转入 RunAttach。
-// Phase 4: 同步路径注入 FastPath，命中快路径时直接推送完成帧，不跑 ReAct。
+// DoImpl runs the ReAct supervisor business logic.
+// Phase 2: check asyncShortCircuit → switch to RunAttach in async mode.
+// Phase 4: the sync path injects FastPath; on a fast-path hit it pushes the completion frame directly without running ReAct.
 func (n *SupervisorAgentNode) DoImpl(ctx *seda.Context) (int, string) {
-	// 异步短路分支
+	// Async short-circuit branch
 	if shortCircuit, _ := ctx.Get("asyncShortCircuit").(bool); shortCircuit {
 		return n.doAttach(ctx)
 	}
@@ -78,10 +78,10 @@ func (n *SupervisorAgentNode) DoImpl(ctx *seda.Context) (int, string) {
 	query, _ := ctx.Get(FCKQuery).(string)
 	serverMsgID, _ := ctx.Get(FCKServerMsgID).(string)
 
-	// Phase 4: 快捷路径（HIL resume / Retry / CanFastTask）
-	// seda.Context 无 GetString/GetInt64/GetBool 便捷方法，用类型断言取值。
-	// con_reader 在 writeOutput 已保证这些 key 均为目标类型，缺失时按零值处理。
-	// CheckFastTask 内部错误时 handled=false → 静默回退 ReAct（不阻断同步路径）。
+	// Phase 4: fast path (HIL resume / Retry / CanFastTask)
+	// seda.Context has no GetString/GetInt64/GetBool conveniences; values are fetched with type assertions.
+	// con_reader guarantees these keys are the target types in writeOutput; missing keys are treated as zero values.
+	// On internal CheckFastTask errors handled=false → silently fall back to ReAct (the sync path is not blocked).
 	if n.fastPath != nil {
 		sessionID, _ := ctx.Get(FCKSessionID).(string)
 		userID, _ := ctx.Get(FCKUserID).(int64)
@@ -89,8 +89,8 @@ func (n *SupervisorAgentNode) DoImpl(ctx *seda.Context) (int, string) {
 		requestType, _ := ctx.Get(FCKRequestType).(string)
 		resume, _ := ctx.Get(FCKResume).(bool)
 
-		// 用 flow context 恢复的 HTTP span 作为 ctx：投递子任务时 Submitter.Submit 会把
-		// worker 的 traceparent 写入 task stream，让 fast-path 的 task.process 挂进同一条 trace。
+		// Use the HTTP span restored from the flow context as ctx: when dispatching subtasks, Submitter.Submit writes
+		// the worker's traceparent into the task stream so the fast-path task.process hangs under the same trace.
 		fctx := tracex.ContextFromFlow(ctx)
 		originMsgID, _ := ctx.Get(FCKOriginMsgID).(string)
 		handled, _ := n.fastPath.CheckFastTask(fctx, &fastpath.FastTaskRequest{
@@ -104,12 +104,12 @@ func (n *SupervisorAgentNode) DoImpl(ctx *seda.Context) (int, string) {
 			OriginMsgID: originMsgID,
 		})
 		if handled {
-			// 同步 resume：命中但无 checkpoint 预置机制（完整 resume 在异步 Worker Task 8），
-			// 此处只推完成帧。
+			// Sync resume: hit but no checkpoint pre-loading mechanism (the full resume lives in the async Worker Task 8);
+			// only the completion frame is pushed here.
 			if resume {
 				n.pushFlowEnd(ctx)
 			} else {
-				// CanFastTask/Retry：已投递子任务 → 同步轮询 cg_task_step 回流进度帧
+				// CanFastTask/Retry: subtasks dispatched → synchronously poll cg_task_step for progress frames
 				n.pollTaskAndFinish(ctx, serverMsgID)
 			}
 			return 0, ""
@@ -120,25 +120,25 @@ func (n *SupervisorAgentNode) DoImpl(ctx *seda.Context) (int, string) {
 	return 0, ""
 }
 
-// pushFlowEnd 通知 con_writer 流结束（快路径命中后无 SSE 帧时）。
+// pushFlowEnd tells con_writer the stream ended (when a fast-path hit produced no SSE frames).
 func (n *SupervisorAgentNode) pushFlowEnd(ctx *seda.Context) {
 	ctx.Push(ConOnePackSSEKey, "__FLOW_END__")
 }
 
-// pollTaskAndFinish 快路径命中（已投递子任务）后：同步轮询 cg_task_step 推 task-step/task-done 帧回流。
-// 复用 taskflow.Poller（与异步 Worker 的 PollUntilDone 同构），帧 JSON 直接 push 到 ConOnePackSSEKey。
+// pollTaskAndFinish runs after a fast-path hit (subtasks dispatched): synchronously poll cg_task_step and push task-step/task-done backflow frames.
+// It reuses taskflow.Poller (isomorphic to the async Worker's PollUntilDone); frame JSON is pushed directly to ConOnePackSSEKey.
 func (n *SupervisorAgentNode) pollTaskAndFinish(ctx *seda.Context, serverMsgID string) {
 	if n.taskPoller == nil || n.taskRunRepo == nil {
 		n.pushFlowEnd(ctx)
 		return
 	}
-	// 查本次投递的 task_run（该 msgID 关联的最新一条）
+	// Look up this dispatch's task_run (the latest one associated with the msgID)
 	run, err := n.taskRunRepo.GetByMsgID(context.Background(), serverMsgID)
 	if err != nil || run == nil {
 		n.pushFlowEnd(ctx)
 		return
 	}
-	// 轮询 ctx 从 flow 恢复的 HTTP span 派生：task_step/task_run 查询挂进 HTTP trace。
+	// The polling ctx derives from the HTTP span restored from the flow: task_step/task_run queries hang under the HTTP trace.
 	pollCtx, cancel := context.WithTimeout(tracex.ContextFromFlow(ctx), 60*time.Second)
 	defer cancel()
 	n.taskPoller.PollUntilDone(pollCtx, run.TaskRunID, serverMsgID, func(f taskflow.TaskStepFrame) {
@@ -147,7 +147,7 @@ func (n *SupervisorAgentNode) pollTaskAndFinish(ctx *seda.Context, serverMsgID s
 	n.pushFlowEnd(ctx)
 }
 
-// doAttach 是异步路径：不跑 ReAct，改从 Redis chunk_store 拉回流数据。
+// doAttach is the async path: it does not run ReAct; instead it pulls backflow data from the Redis chunk_store.
 func (n *SupervisorAgentNode) doAttach(ctx *seda.Context) (int, string) {
 	msgID, _ := ctx.Get(FCKServerMsgID).(string)
 	if msgID == "" {
@@ -157,11 +157,11 @@ func (n *SupervisorAgentNode) doAttach(ctx *seda.Context) (int, string) {
 		return -1, "supervisor_agent: async short circuit but chunkStore is nil"
 	}
 
-	// lastSeq 从断点续拉（前端已消费的 chunk 数），首次为 0。
+	// lastSeq resumes from the breakpoint (chunks already consumed by the frontend); 0 for the first time.
 	lastSeq, _ := ctx.Get("lastSeq").(int64)
 
-	// RunAttach 会阻塞直到 EndTurn / 终态 / ctx 取消
-	// 用 flow 恢复的 HTTP span 作为 ctx：attach 的 DB 轮询 / chunk 读取挂进同一条 trace。
+	// RunAttach blocks until EndTurn / terminal state / ctx cancellation.
+	// Use the HTTP span restored from the flow as ctx: attach's DB polling / chunk reads hang under the same trace.
 	if err := worker.RunAttach(tracex.ContextFromFlow(ctx), msgID, n.chunkStore, ctx, ConReconnectSSEKey, lastSeq, n.asyncRepo); err != nil {
 		return -1, fmt.Sprintf("supervisor_agent: attach failed: %v", err)
 	}
@@ -171,7 +171,7 @@ func (n *SupervisorAgentNode) doAttach(ctx *seda.Context) (int, string) {
 func (n *SupervisorAgentNode) runSupervisorBusiness(ctx *seda.Context, query, serverMsgID string) {
 	runner := appkitrunner.NewRunner()
 
-	// 用 flow context 恢复的 HTTP span 作为父 span，把 supervisor.react 挂进同一条 trace。
+	// Use the HTTP span restored from the flow context as the parent span so supervisor.react hangs under the same trace.
 	_, err := runner.Run(tracex.ContextFromFlow(ctx), query, serverMsgID, func(frame appkitrunner.SSEFrame) {
 		pushFrame(ctx, frame)
 	})
@@ -180,7 +180,7 @@ func (n *SupervisorAgentNode) runSupervisorBusiness(ctx *seda.Context, query, se
 		return
 	}
 
-	// 发送流结束哨兵，避免 con_writer 死等 con_end
+	// Send the flow-end sentinel so con_writer does not wait forever for con_end
 	ctx.Push(ConOnePackSSEKey, "__FLOW_END__")
 }
 

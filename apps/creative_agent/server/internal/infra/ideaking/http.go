@@ -12,21 +12,21 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/tracex"
 )
 
-// HTTPProvider 是接真实热点服务的 HTTP 实现。
-// 请求 {baseURL}/inner/ideaking/hot_topics，body {"query","hotspot_count"}。
-// 复用 baseapi 的模式：traceparent 透传 + 30s 超时 + 4xx/业务 errno 判错。
+// HTTPProvider is the HTTP implementation connecting to a real hotspot service.
+// It requests {baseURL}/inner/ideaking/hot_topics with body {"query","hotspot_count"}.
+// It reuses the baseapi pattern: traceparent propagation + 30s timeout + 4xx/business-errno error detection.
 type HTTPProvider struct {
 	baseURL string
 	http    *http.Client
 }
 
-// HTTPConfig 持有 HTTPProvider 的依赖。
+// HTTPConfig holds the HTTPProvider's dependencies.
 type HTTPConfig struct {
-	BaseURL string       // 热点服务地址，如 http://localhost:8085
-	HTTP    *http.Client // 可选；nil 时用 30s 超时默认 client
+	BaseURL string       // hotspot service address, e.g. http://localhost:8085
+	HTTP    *http.Client // optional; when nil, a default client with a 30s timeout is used
 }
 
-// NewHTTPProvider 创建 HTTPProvider。
+// NewHTTPProvider creates an HTTPProvider.
 func NewHTTPProvider(cfg HTTPConfig) *HTTPProvider {
 	if cfg.HTTP == nil {
 		cfg.HTTP = &http.Client{Timeout: 30 * time.Second}
@@ -34,20 +34,20 @@ func NewHTTPProvider(cfg HTTPConfig) *HTTPProvider {
 	return &HTTPProvider{baseURL: cfg.BaseURL, http: cfg.HTTP}
 }
 
-// hotTopicsReq 是热点检索请求体。
+// hotTopicsReq is the hot-topic retrieval request body.
 type hotTopicsReq struct {
 	Query        string `json:"query"`
 	HotspotCount int    `json:"hotspot_count"`
 }
 
-// hotTopicsResp 是热点服务响应（外层包 errno/message）。
+// hotTopicsResp is the hotspot service response (wrapped with errno/message).
 type hotTopicsResp struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    *HotTopicResult `json:"data"`
 }
 
-// SearchHotTopics 调外部热点服务检索选题。
+// SearchHotTopics calls the external hotspot service to retrieve topics.
 func (p *HTTPProvider) SearchHotTopics(ctx context.Context, query string, count int) (*HotTopicResult, error) {
 	body, err := json.Marshal(hotTopicsReq{Query: query, HotspotCount: count})
 	if err != nil {
@@ -60,7 +60,7 @@ func (p *HTTPProvider) SearchHotTopics(ctx context.Context, query string, count 
 		return nil, fmt.Errorf("ideaking: new request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	// W3C traceparent 跨进程透传（对齐 baseapi）。
+	// W3C traceparent cross-process propagation (aligned with baseapi).
 	for k, v := range tracex.InjectCarrier(ctx) {
 		httpReq.Header.Set(k, v)
 	}

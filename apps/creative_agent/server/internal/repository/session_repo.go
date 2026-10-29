@@ -10,10 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrSessionNotFound 表示未找到对应 session 记录。
+// ErrSessionNotFound indicates no matching session record was found.
 var ErrSessionNotFound = errors.New("session not found")
 
-// SessionRepository 封装 cg_session 表的数据访问。
+// SessionRepository encapsulates data access to the cg_session table.
 type SessionRepository interface {
 	Insert(ctx context.Context, s *model.CGSession) error
 	GetBySessionID(ctx context.Context, sessionID string) (*model.CGSession, error)
@@ -24,7 +24,7 @@ type sessionRepository struct {
 	db *gorm.DB
 }
 
-// NewSessionRepository 基于 gorm.DB 创建 SessionRepository。
+// NewSessionRepository creates a SessionRepository on top of gorm.DB.
 func NewSessionRepository(db *gorm.DB) SessionRepository {
 	return &sessionRepository{db: db}
 }

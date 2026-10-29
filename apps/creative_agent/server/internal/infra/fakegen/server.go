@@ -18,10 +18,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// Server 是模拟生成服务：无真实生成逻辑，收到 /submit 后随机延迟回调 callback_url。
+// Server is the simulated generation service: it has no real generation logic; after receiving /submit it calls back callback_url with a random delay.
 //
-// 架构位置：站在 base-server 的"下游"，模拟真实系统的外部生成服务。
-// base-server 不知道它存在——只看到"有个上游来记账，有个下游算子来回调"。
+// Architectural position: it stands "downstream" of base-server, simulating the external generation service of the real system.
+// base-server does not know it exists — it only sees "an upstream coming to account, and a downstream operator calling back".
 type Server struct {
 	httpServer *http.Server
 	ln         net.Listener
@@ -30,45 +30,45 @@ type Server struct {
 	delayMin time.Duration
 	delayMax time.Duration
 
-	// nextTaskID 自增产线 ID（原子计数，客户端未传 task_id 时使用）。
+	// nextTaskID increments the pipeline ID (atomic counter, used when the client does not pass task_id).
 	nextTaskID atomic.Int64
 }
 
-// Config 持有 Server 的配置。
+// Config holds the Server's configuration.
 type Config struct {
-	Addr       string     // 监听地址，如 ":8091"；空=随机端口
-	DelayRange DelayRange // 回调随机延迟范围
+	Addr       string     // listen address, e.g. ":8091"; empty = random port
+	DelayRange DelayRange // random delay range for callbacks
 	Logger     *zap.Logger
 }
 
-// DelayRange 是回调延迟范围。
+// DelayRange is the callback delay range.
 type DelayRange struct {
 	Min time.Duration
 	Max time.Duration
 }
 
-// SubmitReq 是 /submit 请求体。
+// SubmitReq is the /submit request body.
 type SubmitReq struct {
-	ProjectInput string `json:"project_input"` // base-server 组好的算子入参
-	CallbackURL  string `json:"callback_url"`  // go-learn 回调地址
-	TaskID       int64  `json:"task_id"`       // 产线 ID（客户端传 0 时服务端自增）
-	SessionID    string `json:"session_id"`    // 透传给回调 body 的 project_id
-	UserID       int64  `json:"user_id"`       // 透传给回调 body 的 user_id
+	ProjectInput string `json:"project_input"` // operator inputs assembled by base-server
+	CallbackURL  string `json:"callback_url"`  // go-learn callback address
+	TaskID       int64  `json:"task_id"`       // pipeline ID (server increments when the client passes 0)
+	SessionID    string `json:"session_id"`    // passed through to the callback body's project_id
+	UserID       int64  `json:"user_id"`       // passed through to the callback body's user_id
 }
 
-// SubmitResp 是 /submit 响应体。
+// SubmitResp is the /submit response body.
 type SubmitResp struct {
 	Code int        `json:"code"`
 	Data SubmitData `json:"data"`
 }
 
-// SubmitData 是 /submit 响应 data 部分。
+// SubmitData is the data part of the /submit response.
 type SubmitData struct {
 	TaskID int64  `json:"task_id"`
 	Status string `json:"status"`
 }
 
-// NewServer 创建模拟生成服务。
+// NewServer creates the simulated generation service.
 func NewServer(cfg Config) *Server {
 	if cfg.DelayRange.Min <= 0 {
 		cfg.DelayRange.Min = time.Second
@@ -80,7 +80,7 @@ func NewServer(cfg Config) *Server {
 		cfg.Logger = zap.NewNop()
 	}
 	if cfg.Addr == "" {
-		// net.Listen 空地址在 go1.26 会自动选随机端口，但显式 ":0" 更明确、可移植。
+		// net.Listen with an empty address picks a random port automatically in go1.26, but an explicit ":0" is clearer and more portable.
 		cfg.Addr = ":0"
 	}
 	s := &Server{
@@ -99,10 +99,10 @@ func NewServer(cfg Config) *Server {
 	return s
 }
 
-// Addr 返回实际监听地址（测试用随机端口时取真实地址）。
+// Addr returns the actual listen address (the real address when tests use a random port).
 func (s *Server) Addr() string { return "http://" + s.ln.Addr().String() }
 
-// Start 启动 HTTP 服务（阻塞，应在 goroutine 中调用）。
+// Start starts the HTTP service (blocking; should be called in a goroutine).
 func (s *Server) Start(ctx context.Context) error {
 	err := s.httpServer.Serve(s.ln)
 	if err == http.ErrServerClosed {
@@ -111,18 +111,18 @@ func (s *Server) Start(ctx context.Context) error {
 	return err
 }
 
-// Shutdown 优雅关闭。
+// Shutdown performs a graceful shutdown.
 func (s *Server) Shutdown(ctx context.Context) error { return s.httpServer.Shutdown(ctx) }
 
-// Close 关闭 HTTP 服务（供 defer 调用，等效带超时的优雅关闭）。
+// Close shuts down the HTTP service (for defer; equivalent to a graceful shutdown with a timeout).
 func (s *Server) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return s.Shutdown(ctx)
 }
 
-// Submit 同步向 fakegen 提交生成任务，返回分配的产线 task_id。
-// 带 traceparent 透传（对齐 baseapi.do）。
+// Submit synchronously submits a generation task to fakegen and returns the assigned pipeline task_id.
+// It propagates traceparent (aligned with baseapi.do).
 func (s *Server) Submit(ctx context.Context, req *SubmitReq) (int64, error) {
 	raw, err := json.Marshal(req)
 	if err != nil {
@@ -152,9 +152,9 @@ func (s *Server) Submit(ctx context.Context, req *SubmitReq) (int64, error) {
 	return out.Data.TaskID, nil
 }
 
-// handleSubmit 处理 /submit：登记任务 → 异步随机延迟回调。
+// handleSubmit handles /submit: register the task → callback asynchronously after a random delay.
 func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
-	// 用 io.ReadAll + json.Unmarshal 一次解完整 body：拒绝尾随垃圾（与 baseapi.do 一致）。
+	// Parse the full body at once with io.ReadAll + json.Unmarshal: rejects trailing garbage (consistent with baseapi.do).
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -169,22 +169,22 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		req.TaskID = s.nextTaskID.Add(1)
 	}
 
-	// 恢复入站 traceparent：fakegen 没有 OTelTracing 中间件，r.Context() 里没有 span，
-	// 必须用 tracex.ContextFromCarrier 从 HTTP 头 Extract 回远端父 span，再建真实子 span。
-	// 对齐 tracex/seda.go 的做法（con_reader 入口恢复 span context）。
+	// Restore the inbound traceparent: fakegen has no OTelTracing middleware and r.Context() carries no span,
+	// so tracex.ContextFromCarrier must Extract the remote parent span from the HTTP headers before creating a real child span.
+	// Aligned with tracex/seda.go (the con_reader entry restores the span context).
 	reqCtx := tracex.ContextFromCarrier(r.Context(), map[string]string{
 		tracex.TraceParentKey: r.Header.Get(tracex.TraceParentKey),
 	})
-	// 在请求边界建真实 span（对齐 OTelTracing 中间件做法）：父 span 的 ctx 是恢复出的远端 span，
-	// 直接把它塞进异步回调的 ctx 会让 traceparent 链断掉（远端 span 无法直接传给下一个进程）。
-	// 建一个真实子 span 后，回调 goroutine 用它派生子孙 span。
-	// 注意：必须在 WithoutCancel 之前用 live ctx 建 span——Start 需要能从 ctx 找到父 span。
+	// Create a real span at the request boundary (aligned with the OTelTracing middleware): the parent span's ctx is the restored remote span;
+	// stuffing it directly into the async callback's ctx would break the traceparent chain (a remote span cannot be passed directly to the next process).
+	// After creating a real child span, the callback goroutine derives descendant spans from it.
+	// Note: the span must be created with the live ctx before WithoutCancel — Start needs to find the parent span from ctx.
 	ctx, span := s.tracer().Start(reqCtx, "fakegen /submit")
 	defer span.End()
-	// 去掉请求取消：handler 返回后请求 ctx 即被取消（net/http 约定），异步回调必须脱离它。
+	// Detach request cancellation: the request ctx is canceled once the handler returns (net/http convention); the async callback must detach from it.
 	ctx = context.WithoutCancel(ctx)
 
-	// 异步：随机延迟后回调（模拟"生成完成"）。
+	// Async: callback after a random delay (simulating "generation complete").
 	delay := s.randomDelay()
 	go s.delayedCallback(ctx, req, delay)
 
@@ -195,12 +195,12 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// tracer 返回 fakegen 自己的 tracer（用全局 provider，未配置时是 no-op）。
+// tracer returns fakegen's own tracer (uses the global provider; no-op when unconfigured).
 func (s *Server) tracer() trace.Tracer {
 	return otel.Tracer("github.com/hangtiancheng/yukino.go/apps/creative_agent/server/fakegen")
 }
 
-// delayedCallback 随机延迟后 POST callback_url，携带符合 base-server CallbackReq 契约的 body。
+// delayedCallback POSTs callback_url after a random delay, carrying a body conforming to the base-server CallbackReq contract.
 func (s *Server) delayedCallback(ctx context.Context, req SubmitReq, delay time.Duration) {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -210,8 +210,8 @@ func (s *Server) delayedCallback(ctx context.Context, req SubmitReq, delay time.
 		return
 	}
 
-	// 回调 body：对齐 base-server CallbackReq（task_status=success 表示生成完成）。
-	// project_id/user_id 透传 /submit 请求身份字段，供 go-learn 回调侧定位 Waiting 任务。
+	// Callback body: aligned with base-server CallbackReq (task_status=success means generation complete).
+	// project_id/user_id pass through the /submit request identity fields so go-learn's callback side can locate the Waiting task.
 	cb := map[string]any{
 		"task_id":      req.TaskID,
 		"project_id":   req.SessionID,
@@ -227,7 +227,7 @@ func (s *Server) delayedCallback(ctx context.Context, req SubmitReq, delay time.
 		return
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	// 透传 traceparent（从 /submit 请求的 ctx 提取）。
+	// Propagate traceparent (extracted from the /submit request's ctx).
 	carrier := tracex.InjectCarrier(ctx)
 	if tp, ok := carrier["traceparent"]; ok {
 		hreq.Header.Set(tracex.TraceParentKey, tp)
@@ -241,8 +241,8 @@ func (s *Server) delayedCallback(ctx context.Context, req SubmitReq, delay time.
 	_ = hresp.Body.Close()
 }
 
-// randomDelay 在 [min, max] 内随机取延迟。
-// 用 UnixNano 取模近似随机，避免引入 crypto/rand（非安全场景够用）。
+// randomDelay picks a random delay within [min, max].
+// UnixNano modulo approximates randomness, avoiding crypto/rand (good enough for non-security contexts).
 func (s *Server) randomDelay() time.Duration {
 	if s.delayMax <= s.delayMin {
 		return s.delayMin

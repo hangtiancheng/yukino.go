@@ -55,11 +55,11 @@ type StreamQueue interface {
 // Consumer groups are auto-created on construction via XGroupCreateMkStream
 // (idempotent — succeeds if group already exists).
 type RedisStreamQueue struct {
-	rdb       *redis.Client // Redis 客户端
-	streamKey string        // stream key，如 "cg:stream:conversation"
-	group     string        // consumer group 名，如 "cg:workers"
-	consumer  string        // consumer 名（也是 worker ID）
-	blockTime time.Duration // XREADGROUP 阻塞超时，默认 5s
+	rdb       *redis.Client // Redis client
+	streamKey string        // stream key, e.g. "cg:stream:conversation"
+	group     string        // consumer group name, e.g. "cg:workers"
+	consumer  string        // consumer name (also the worker ID)
+	blockTime time.Duration // XREADGROUP block timeout, default 5s
 }
 
 // NewRedisStreamQueue creates a Redis-backed StreamQueue. The consumer group

@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// newMockDB 创建 sqlmock 驱动的 gorm DB（供本包测试用）。
+// newMockDB creates a sqlmock-driven gorm DB (for this package's tests).
 func newMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	t.Helper()
 	db, mock, err := sqlmock.New()
@@ -27,8 +27,8 @@ func newMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	return gdb, mock
 }
 
-// TestUpdateIfStatusAddsStatusWhereCondition 验证 CAS：UpdateIfStatus 必须带
-// WHERE status IN (...) 条件（防并发覆盖终态），并返回 RowsAffected==1。
+// TestUpdateIfStatusAddsStatusWhereCondition verifies the CAS: UpdateIfStatus must carry the
+// WHERE status IN (...) condition (preventing concurrent overwrites of terminal states) and return RowsAffected==1.
 func TestUpdateIfStatusAddsStatusWhereCondition(t *testing.T) {
 	gdb, mock := newMockDB(t)
 	repo := dao.NewProjectRepositoryImpl(gdb)
@@ -50,11 +50,11 @@ func TestUpdateIfStatusAddsStatusWhereCondition(t *testing.T) {
 
 	ok, err := repo.UpdateIfStatus(context.Background(), project, domain.ProjectStatusRunning)
 	testx.NoError(t, err)
-	testx.True(t, ok, "CAS 命中（DB 状态为 running）应返回 true")
+	testx.True(t, ok, "a CAS hit (DB status running) should return true")
 	testx.NoError(t, mock.ExpectationsWereMet())
 }
 
-// TestUpdateIfStatusReturnsFalseWhenCASMiss 验证 CAS 失败：RowsAffected==0 → 返回 false。
+// TestUpdateIfStatusReturnsFalseWhenCASMiss verifies CAS failure: RowsAffected==0 → returns false.
 func TestUpdateIfStatusReturnsFalseWhenCASMiss(t *testing.T) {
 	gdb, mock := newMockDB(t)
 	repo := dao.NewProjectRepositoryImpl(gdb)
@@ -66,16 +66,16 @@ func TestUpdateIfStatusReturnsFalseWhenCASMiss(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 								sqlmock.AnyArg(), uint64(1), domain.ProjectStatusAudit).
-		WillReturnResult(sqlmock.NewResult(0, 0)) // 状态不匹配，0 行受影响
+		WillReturnResult(sqlmock.NewResult(0, 0)) // status mismatch, 0 rows affected
 	mock.ExpectCommit()
 
 	ok, err := repo.UpdateIfStatus(context.Background(), project, domain.ProjectStatusAudit)
 	testx.NoError(t, err)
-	testx.False(t, ok, "CAS 未命中（DB 状态不是 audit）应返回 false")
+	testx.False(t, ok, "a CAS miss (DB status not audit) should return false")
 	testx.NoError(t, mock.ExpectationsWereMet())
 }
 
-// TestUpdateUnconditional 验证无条件的 Update 不带 WHERE status（保持原有行为）。
+// TestUpdateUnconditional verifies that the unconditional Update carries no WHERE status (preserving the original behavior).
 func TestUpdateUnconditional(t *testing.T) {
 	gdb, mock := newMockDB(t)
 	repo := dao.NewProjectRepositoryImpl(gdb)

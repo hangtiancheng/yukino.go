@@ -25,18 +25,18 @@ func TestCompositeProvider_MergeAndExecute(t *testing.T) {
 	for _, d := range defs {
 		names = append(names, d.Name)
 	}
-	// 内建工具 + skill_load（query_weather 未 load 不可见）
+	// Built-in tools + skill_load (query_weather is invisible until loaded)
 	testx.Contains(t, names, "search")
 	testx.Contains(t, names, "skill_load")
 	testx.NotContains(t, names, "query_weather")
 
-	// 内建工具执行（skill 同名时不冲突）
+	// Built-in tool execution (no conflict when a skill shares the name)
 	res, handled, _, err := cp.Execute(context.Background(), "search", `{"query":"golang"}`)
 	testx.NoError(t, err)
 	testx.True(t, handled)
 	testx.Contains(t, res, "golang")
 
-	// 未知工具 → handled=false
+	// Unknown tool → handled=false
 	_, handled, _, _ = cp.Execute(context.Background(), "nope", "{}")
 	testx.False(t, handled)
 }

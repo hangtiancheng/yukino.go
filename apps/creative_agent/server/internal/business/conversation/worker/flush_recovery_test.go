@@ -13,11 +13,11 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestRebuildChatTextFromChunks 验证从 Redis chunk 重建 chat_text 的幂等写回：
-// 正常路径（含 EndTurn）重建出 ChatResponse，且重复调用结果一致。
+// TestRebuildChatTextFromChunks verifies the idempotent write-back of chat_text rebuilt from Redis chunks:
+// the normal path (with EndTurn) rebuilds the ChatResponse, and repeated calls yield the same result.
 func TestRebuildChatTextFromChunks(t *testing.T) {
 	db := newTestDB(t)
-	// 测试需要 message_record 表（ReadModifyWriteInTx 依赖）
+	// The test needs the message_record table (ReadModifyWriteInTx depends on it)
 	testx.NoError(t, db.AutoMigrate(&model.CGMessageRecord{}))
 
 	cs := infra.NewMemoryChunkStore()
@@ -25,7 +25,7 @@ func TestRebuildChatTextFromChunks(t *testing.T) {
 	ctx := context.Background()
 
 	msgID := "msg-rebuild"
-	// con_reader 预建记录（QueryInfo 已有，ChatResponse 空）
+	// con_reader pre-creates the record (QueryInfo present, ChatResponse empty)
 	ct := model.NewChatText("用户问题")
 	ctJSON, _ := json.Marshal(ct)
 	testx.NoError(t, msgRepo.Insert(ctx, &model.CGMessageRecord{
@@ -33,7 +33,7 @@ func TestRebuildChatTextFromChunks(t *testing.T) {
 		ChatText: string(ctJSON), Status: model.MessageStatusInProgress,
 	}))
 
-	// Worker 产出：两帧 + EndTurn
+	// Worker output: two frames + EndTurn
 	testx.NoError(t, cs.Write(ctx, msgID, `{"type":"text-delta","textId":"t1","content":"你好"}`, false))
 	testx.NoError(t, cs.Write(ctx, msgID, `{"type":"text-delta","textId":"t1","content":"世界"}`, false))
 	testx.NoError(t, cs.Write(ctx, msgID, "", true))
@@ -46,21 +46,21 @@ func TestRebuildChatTextFromChunks(t *testing.T) {
 
 	parsed, err := rec.ParseChatText()
 	testx.NoError(t, err)
-	testx.Len(t, parsed.ChatResponse, 2, "两帧应重建出两条 ChatResponseItem")
+	testx.Len(t, parsed.ChatResponse, 2, "two frames should rebuild two ChatResponseItems")
 	testx.Equal(t, int64(1), parsed.ChatResponse[0].SendID)
-	// Message 里存的是完整 SSE 帧 JSON（重建语义 = 按序还原 worker 产出的帧）
+	// Message stores the complete SSE frame JSON (rebuild semantics = restore the worker's frames in order)
 	testx.Equal(t, `{"type":"text-delta","textId":"t1","content":"你好"}`, parsed.ChatResponse[0].Message)
 	testx.False(t, parsed.ChatResponse[0].EndTurn)
 	testx.Equal(t, int64(2), parsed.ChatResponse[1].SendID)
-	testx.True(t, parsed.ChatResponse[1].EndTurn, "最后一条标记 EndTurn")
+	testx.True(t, parsed.ChatResponse[1].EndTurn, "the last item should be marked EndTurn")
 
-	// 幂等：重复重建结果一致
+	// Idempotent: repeated rebuilds match
 	testx.NoError(t, worker.RebuildChatTextFromChunks(ctx, msgRepo, cs, msgID))
 	rec2, _ := msgRepo.GetByMessageID(ctx, msgID)
-	testx.Equal(t, rec.ChatText, rec2.ChatText, "重复重建应幂等")
+	testx.Equal(t, rec.ChatText, rec2.ChatText, "repeated rebuilds should be idempotent")
 }
 
-// TestRebuildChatTextFromChunks_ChunkExpired 验证 chunk 已过期（无 EndTurn 且读到 0 帧）时返回 ErrChunkExpired。
+// TestRebuildChatTextFromChunks_ChunkExpired verifies that ErrChunkExpired is returned when chunks expired (no EndTurn and 0 frames read).
 func TestRebuildChatTextFromChunks_ChunkExpired(t *testing.T) {
 	db := newTestDB(t)
 	testx.NoError(t, db.AutoMigrate(&model.CGMessageRecord{}))
@@ -77,14 +77,14 @@ func TestRebuildChatTextFromChunks_ChunkExpired(t *testing.T) {
 		ChatText: string(ctJSON), Status: model.MessageStatusInProgress,
 	}))
 
-	// 无 chunk → After 返回空且游标不动 → ErrChunkExpired
+	// No chunks → After returns empty and the cursor does not move → ErrChunkExpired
 	err := worker.RebuildChatTextFromChunks(ctx, msgRepo, cs, msgID)
 	testx.Error(t, err)
-	testx.True(t, errors.Is(err, worker.ErrChunkExpired), "应返回 ErrChunkExpired，实际: %v", err)
+	testx.True(t, errors.Is(err, worker.ErrChunkExpired), "ErrChunkExpired should be returned, got: %v", err)
 }
 
-// TestRecovery_StrategyA_RebuildAndComplete 验证 recovery 策略 A 在 EndTurn 存在时：
-// 从 chunk 重建 chat_text 写回 message_record，再翻 Completed。
+// TestRecovery_StrategyA_RebuildAndComplete verifies recovery strategy A when EndTurn exists:
+// rebuild chat_text from chunks, write it back to message_record, then flip to Completed.
 func TestRecovery_StrategyA_RebuildAndComplete(t *testing.T) {
 	db := newTestDB(t)
 	testx.NoError(t, db.AutoMigrate(&model.CGMessageRecord{}))
@@ -95,13 +95,13 @@ func TestRecovery_StrategyA_RebuildAndComplete(t *testing.T) {
 	streamQ := infra.NewMemoryStreamQueue("cg:stream:test", "cg:workers", "rec")
 	ctx := context.Background()
 
-	// 预建 async_request + message_record，模拟 worker 落库失败后留下的僵尸
+	// Pre-create async_request + message_record, simulating a zombie left after the worker's persistence failed
 	req := &model.CGAsyncRequest{
 		AsyncRequestID: "ar-zombie", MessageID: "msg-zombie",
 		UserID: 1, SessionID: "s1", AgentID: "a1", Query: "q",
 	}
 	testx.NoError(t, asyncRepo.InsertPending(ctx, req))
-	// 模拟已被 worker 抢占（InProgress）但落库失败、心跳过期
+	// Simulate claimed by a worker (InProgress) but persistence failed and the heartbeat expired
 	_, err := asyncRepo.Takeover(ctx, req.AsyncRequestID, "w-dead")
 	testx.NoError(t, err)
 
@@ -112,16 +112,16 @@ func TestRecovery_StrategyA_RebuildAndComplete(t *testing.T) {
 		ChatText: string(ctJSON), Status: model.MessageStatusInProgress,
 	}))
 
-	// chunk 里有完整产出 + EndTurn（ReAct 已跑完，只差落库）
+	// Chunks hold the complete output + EndTurn (ReAct finished; only persistence is missing)
 	testx.NoError(t, chunkStore.Write(ctx, "msg-zombie", `{"type":"text-delta","textId":"t1","content":"重建内容"}`, false))
 	testx.NoError(t, chunkStore.Write(ctx, "msg-zombie", "", true))
 
-	// 心跳置为过期（recovery 扫到的判据）
+	// Expire the heartbeat (the criterion recovery scans for)
 	testx.NoError(t, db.Model(&model.CGAsyncRequest{}).
 		Where("id = ?", req.ID).
 		Update("heartbeat_at", 1).Error)
 
-	// 跑一轮扫描
+	// Run one scan round
 	recovery := worker.NewRecoveryScanner(worker.RecoveryConfig{
 		AsyncRepo:  asyncRepo,
 		MsgRepo:    msgRepo,
@@ -131,12 +131,12 @@ func TestRecovery_StrategyA_RebuildAndComplete(t *testing.T) {
 	})
 	recovery.ScanOnce(ctx)
 
-	// 状态翻 Completed
+	// Status flipped to Completed
 	ret, err := asyncRepo.GetByID(ctx, req.ID)
 	testx.NoError(t, err)
 	testx.Equal(t, model.AsyncStatusCompleted, ret.Status)
 
-	// chat_text 已从 chunk 重建（不再是空 ChatResponse）
+	// chat_text was rebuilt from chunks (no longer an empty ChatResponse)
 	rec, err := msgRepo.GetByMessageID(ctx, "msg-zombie")
 	testx.NoError(t, err)
 	parsed, err := rec.ParseChatText()
@@ -146,7 +146,7 @@ func TestRecovery_StrategyA_RebuildAndComplete(t *testing.T) {
 	testx.Equal(t, model.MessageStatusNormal, rec.Status)
 }
 
-// failMsgRepo 是总是返回错误的 MessageRecordRepository 桩，用于验证 recovery 策略 A 重建失败时的终态语义。
+// failMsgRepo is a MessageRecordRepository stub that always errors, used to verify the terminal semantics when recovery strategy A's rebuild fails.
 type failMsgRepo struct{}
 
 func (failMsgRepo) Insert(ctx context.Context, m *model.CGMessageRecord) error {
@@ -162,8 +162,8 @@ func (failMsgRepo) ReadModifyWriteInTx(ctx context.Context, messageID string, fn
 	return errors.New("injected: tx fail")
 }
 
-// TestRecovery_StrategyA_RebuildFailed_MarksFailed 验证策略 A 重建落库失败时：
-// 标 Failed（终态收口）而不是 Completed，避免留下"已完成但无内容"的脏记录。
+// TestRecovery_StrategyA_RebuildFailed_MarksFailed verifies that when strategy A's rebuild persistence fails:
+// it marks Failed (terminal close-out) instead of Completed, avoiding a dirty "completed but empty" record.
 func TestRecovery_StrategyA_RebuildFailed_MarksFailed(t *testing.T) {
 	db := newTestDB(t)
 	testx.NoError(t, db.AutoMigrate(&model.CGMessageRecord{}))
@@ -181,14 +181,14 @@ func TestRecovery_StrategyA_RebuildFailed_MarksFailed(t *testing.T) {
 	_, err := asyncRepo.Takeover(ctx, req.AsyncRequestID, "w-dead")
 	testx.NoError(t, err)
 
-	// chunk 有 EndTurn（ReAct 已跑完）
+	// Chunks have EndTurn (ReAct finished)
 	testx.NoError(t, chunkStore.Write(ctx, "msg-zombie-fail", `{"type":"text-delta","content":"x"}`, false))
 	testx.NoError(t, chunkStore.Write(ctx, "msg-zombie-fail", "", true))
 	testx.NoError(t, db.Model(&model.CGAsyncRequest{}).
 		Where("id = ?", req.ID).
 		Update("heartbeat_at", 1).Error)
 
-	// msgRepo 注入失败桩 → 重建必然失败
+	// Inject the failing msgRepo stub → the rebuild must fail
 	recovery := worker.NewRecoveryScanner(worker.RecoveryConfig{
 		AsyncRepo:  asyncRepo,
 		MsgRepo:    failMsgRepo{},
@@ -198,14 +198,14 @@ func TestRecovery_StrategyA_RebuildFailed_MarksFailed(t *testing.T) {
 	})
 	recovery.ScanOnce(ctx)
 
-	// 终态为 Failed，而不是 Completed
+	// The terminal state is Failed, not Completed
 	ret, err := asyncRepo.GetByID(ctx, req.ID)
 	testx.NoError(t, err)
 	testx.Equal(t, model.AsyncStatusFailed, ret.Status)
 }
 
-// TestRecovery_StrategyA_NoMsgRepo_LegacyFallback 验证 msgRepo 未装配时（旧配置）：
-// 策略 A 退化为仅翻 Completed（不重建），保持向后兼容。
+// TestRecovery_StrategyA_NoMsgRepo_LegacyFallback verifies that when msgRepo is not wired (legacy config):
+// strategy A degrades to flipping Completed only (no rebuild), keeping backward compatibility.
 func TestRecovery_StrategyA_NoMsgRepo_LegacyFallback(t *testing.T) {
 	db := newTestDB(t)
 	testx.NoError(t, db.AutoMigrate(&model.CGMessageRecord{}))
@@ -228,7 +228,7 @@ func TestRecovery_StrategyA_NoMsgRepo_LegacyFallback(t *testing.T) {
 		Where("id = ?", req.ID).
 		Update("heartbeat_at", 1).Error)
 
-	// 不注入 MsgRepo（零值）
+	// Do not inject MsgRepo (zero value)
 	recovery := worker.NewRecoveryScanner(worker.RecoveryConfig{
 		AsyncRepo:  asyncRepo,
 		ChunkStore: chunkStore,
@@ -239,5 +239,5 @@ func TestRecovery_StrategyA_NoMsgRepo_LegacyFallback(t *testing.T) {
 
 	ret, err := asyncRepo.GetByID(ctx, req.ID)
 	testx.NoError(t, err)
-	testx.Equal(t, model.AsyncStatusCompleted, ret.Status, "无 msgRepo 时退化为旧行为（仅翻状态）")
+	testx.Equal(t, model.AsyncStatusCompleted, ret.Status, "without msgRepo it degrades to the legacy behavior (state flip only)")
 }

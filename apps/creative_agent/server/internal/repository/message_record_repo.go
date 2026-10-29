@@ -10,16 +10,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrMessageRecordNotFound 表示未找到对应 message_record 记录。
+// ErrMessageRecordNotFound indicates no matching message_record was found.
 var ErrMessageRecordNotFound = errors.New("message record not found")
 
-// MessageRecordRepository 封装 cg_message_record 表的数据访问。
-// 采用 "先建后改" 模型：con_reader 建行，con_writer 逐帧回填。
+// MessageRecordRepository encapsulates data access to the cg_message_record table.
+// It uses a "create then update" model: con_reader creates the row, con_writer backfills frame by frame.
 type MessageRecordRepository interface {
 	Insert(ctx context.Context, m *model.CGMessageRecord) error
 	GetByMessageID(ctx context.Context, messageID string) (*model.CGMessageRecord, error)
 	UpdateByMessageID(ctx context.Context, messageID string, assigns map[string]any) error
-	// ReadModifyWriteInTx 在事务内执行原子「读-改-写」。
+	// ReadModifyWriteInTx performs an atomic read-modify-write inside a transaction.
 	ReadModifyWriteInTx(ctx context.Context, messageID string, fn func(*model.CGMessageRecord) (map[string]any, error)) error
 }
 
@@ -27,7 +27,7 @@ type messageRecordRepository struct {
 	db *gorm.DB
 }
 
-// NewMessageRecordRepository 基于 gorm.DB 创建 MessageRecordRepository。
+// NewMessageRecordRepository creates a MessageRecordRepository on top of gorm.DB.
 func NewMessageRecordRepository(db *gorm.DB) MessageRecordRepository {
 	return &messageRecordRepository{db: db}
 }

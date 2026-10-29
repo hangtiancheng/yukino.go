@@ -1,131 +1,129 @@
-# yukino-creative-agent — 智能体对话 + 内容创作/风控基座
+# yukino-creative-agent — Agent Conversation + Content Creation / Risk-Control Foundation
 
-go-learn（智能体对话：ReAct 引擎 + SEDA 图调度 + Streams 异步管道 + 多 Agent 子任务编排）与 base-server（creation 创作流程 / risk 风控 / points 积分 / monitor 离线任务）合并的单二进制服务。前端为独立 React 应用（`../client`），前后端分离部署：本服务只提供 API，前端独立构建托管。
+A single-binary service merging go-learn (agent conversation: ReAct engine + SEDA graph scheduling + Streams async pipeline + multi-agent subtask orchestration) and base-server (creation flow / risk / points / monitor offline jobs). The frontend is an independent React app (`../client`), deployed with frontend/backend separation: this service provides the API only; the frontend is built and hosted independently.
 
-## 技术栈
+## Tech stack
 
-- **Web 框架**: yukino_http（路由 + 中间件 + SSE）
-- **ORM**: GORM + MySQL（AutoMigrate；users + cg\_\* + creation/risk/points 表）
-- **消息队列**: Redis Streams（go-redis/v9，消费组 + ACK）；无 Redis 时降级进程内队列
-- **缓存/锁**: Redis + yukino_cache（ChunkStore/StreamQueue/Locker 均有 Redis 与进程内双底座）
-- **认证**: JWT (golang-jwt)
-- **LLM**: eino ChatModel（OpenAI 兼容 / Anthropic Claude；未配置回退 FakeLLM）
-- **可观测性**: OpenTelemetry → Jaeger（HTTP → Worker → 子任务 → LLM 全链路）+ Prometheus /metrics + sentry-go
-- **日志**: Zap（结构化 JSON）
-- **测试**: 标准库 testing + pkg/testx（断言）+ pkg/testx/suite（suite）；sqlite 用例需 CGO_ENABLED=1
-- **配置**: JSON + go tag（环境变量 > secrets.json > config.json > 默认值）
+- **Web framework**: yukino_http (routing + middleware + SSE)
+- **ORM**: GORM + MySQL (AutoMigrate; users + cg\_\* + creation/risk/points tables)
+- **Message queue**: Redis Streams (go-redis/v9, consumer group + ACK); falls back to an in-process queue without Redis
+- **Cache/locks**: Redis + yukino_cache (ChunkStore/StreamQueue/Locker all have Redis and in-process dual backends)
+- **Auth**: JWT (golang-jwt)
+- **LLM**: eino ChatModel (OpenAI-compatible / Anthropic Claude; falls back to FakeLLM when unconfigured)
+- **Observability**: OpenTelemetry → Jaeger (full chain HTTP → Worker → subtask → LLM) + Prometheus /metrics + sentry-go
+- **Logging**: Zap (structured JSON)
+- **Testing**: standard-library testing + pkg/testx (assertions) + pkg/testx/suite (suites); sqlite cases need CGO_ENABLED=1
+- **Configuration**: JSON + go tags (env vars > secrets.json > config.json > defaults)
 
-## 快速开始
+## Quick start
 
 ```bash
-# 本地开发前需启动 MySQL + Redis + Jaeger
+# Start MySQL + Redis + Jaeger before local development
 docker compose up -d mysql redis jaeger
 
-# 敏感配置（MySQL 密码 / LLM Key / Sentry DSN）
+# Secrets (MySQL password / LLM key / Sentry DSN)
 cp config/secrets.example.json config/secrets.json
 
-# 然后启动服务
+# Then start the service
 make run
-make test                     # 运行所有测试（CGO_ENABLED=1）
-make build                    # 编译到 build/creative-agent
-make ping                     # 远程 MySQL/Redis 连通性探测
+make test                     # run all tests (CGO_ENABLED=1)
+make build                    # build into build/creative-agent
+make ping                     # remote MySQL/Redis connectivity probe
 ```
 
-## 目录结构
+## Directory structure
 
 ```
-cmd/api/main.go       # 唯一入口（加载配置 → app.New → app.Run）
-cmd/checkdb/main.go   # 调试工具：按 session 打印 task_run/task_step 状态
-config/               # 配置加载（环境变量 > secrets.json > config.json > 默认值）
+cmd/api/main.go       # Single entry point (load config → app.New → app.Run)
+cmd/checkdb/main.go   # Debug tool: print task_run/task_step state per session
+config/               # Config loading (env vars > secrets.json > config.json > defaults)
 internal/
-  core/                  # 【引擎层】纯算法、零业务：SEDA 图引擎 + ReAct 循环
-    seda/                #   图引擎：Flow 图调度 + Slice 流式通道 + 注册表
-    react/               #   ReAct 循环：Supervisor 五分支 + 组件接口 + Checkpoint
-  appkit/                # 【复用骨架层】跑一个 agent 的机器（无业务 prompt）
-    runner/              #   SupervisorRunner（ReAct 运行流程 + SSE 帧 + PlanOutput）
-    provider/            #   注入层（按功能类别拆子包）
-      llm/               #     LLM 实现（eino ChatModel + 全局注入点 DefaultRealLLM/DefaultManagerLLM）
-      tools/             #     工具系统核心（ToolRegistry/ToolsProvider/内建工具/composite）
-      skill/             #     SKILL.md 动态工具源（SkillProvider/FSRepository）
-      fake/              #     测试桩（FakeLLM/FakeStrategy/FakeHooks + DefaultLLM 工厂）
-  business/              # 【业务层】对话与子任务
-    conversation/        #   域1：对话主链路（同步图 + 异步 worker）
-      flow.go            #     flow 图定义 + 算子注册（业务入口门面）
-      ops/               #     SEDA 算子：con_reader / supervisor_agent / con_writer / con_end
-      manager/           #     管家约束链（generate_response 协议 / 校验 / 管家 prompt）
+  core/                  # [Engine layer] Pure algorithms, zero business: SEDA graph engine + ReAct loop
+    seda/                #   Graph engine: Flow scheduling + Slice streaming channel + registry
+    react/               #   ReAct loop: Supervisor five-branch + component interfaces + checkpoint
+  appkit/                # [Reusable skeleton layer] The machinery that runs an agent (no business prompts)
+    runner/              #   SupervisorRunner (ReAct run flow + SSE frames + PlanOutput)
+    provider/            #   Injection layer (split into sub-packages by capability)
+      llm/               #     LLM implementations (eino ChatModel + DefaultRealLLM/DefaultManagerLLM injection points)
+      tools/             #     Tool system core (ToolRegistry/ToolsProvider/built-in tools/composite)
+      skill/             #     SKILL.md dynamic tool source (SkillProvider/FSRepository)
+      fake/              #     Test stubs (FakeLLM/FakeStrategy/FakeHooks + DefaultLLM factory)
+  business/              # [Business layer] Conversation and subtasks
+    conversation/        #   Domain 1: conversation main chain (sync graph + async worker)
+      flow.go            #     Flow graph definition + operator registration (business entry facade)
+      ops/               #     SEDA operators: con_reader / supervisor_agent / con_writer / con_end
+      manager/           #     Manager constraint chain (generate_response protocol / validation / manager prompt)
       memory/            #     IntentMemory + FlowStage
-      fastpath/          #     快捷路径（HIL resume / Retry）
-      worker/            #     对话异步 worker（Consumer / Recovery / heartbeat / attach）
-    subtask/             #   域2：子任务执行与调度（纯异步）
-      pipeline.go        #     产线定义（mix_video / article）
+      fastpath/          #     Fast path (HIL resume / Retry)
+      worker/            #     Conversation async worker (Consumer / Recovery / heartbeat / attach)
+    subtask/             #   Domain 2: subtask execution and scheduling (purely async)
+      pipeline.go        #     Pipeline definitions (mix_video / article)
       executor/          #     TaskExecutor / SubAgent / Submitter
       taskflow/          #     Consumer / Poller / CronTaskPoller
-  auth/                  # 【base-server】认证 DDD 模块（未接线路由，保留）
-  creation/              # 【base-server】创作流程（预创建/创建/后处理/回调/补偿）
-  risk/                  # 【base-server】风控审计
-  points/                # 【base-server】积分记账
-  monitor/               # 【base-server】离线任务（超时/补偿/风控离线 job）
-  model/                 # 【基础设施】GORM 模型 + Snowflake ID（标准库实现）
-  repository/            # 【基础设施】数据访问层（接口 + GORM 实现）
-  infra/                 # 【基础设施】ChunkStore / StreamQueue / Locker（Redis 与进程内双底座）
-  service/               # 用户/认证业务（JWT 签发）
-  handler/               # 【边界】HTTP 处理器（认证 / 对话 / 点卡确认 / 回调）
-  router/                # 【边界】路由注册（API + /aigc + /inner + /metrics）
-  middleware/            # 【边界】中间件（RequestID → OTel → Logger → CORS → Recovery → JWT）
-  database/              # MySQL 初始化 + AutoMigrate
-  app/                   # 【边界】启动编排 + 各层接线 + 优雅关机 + 异步 Worker 启动
+  auth/                  # [base-server] Auth DDD module (not wired into the router, kept for reference)
+  creation/              # [base-server] Creation flow (pre-create/create/post-process/callback/compensation)
+  risk/                  # [base-server] Risk audit
+  points/                # [base-server] Points accounting
+  monitor/               # [base-server] Offline jobs (timeout/compensation/risk-offline jobs)
+  model/                 # [Infrastructure] GORM models + Snowflake ID (standard-library implementation)
+  repository/            # [Infrastructure] Data access layer (interfaces + GORM implementations)
+  infra/                 # [Infrastructure] ChunkStore / StreamQueue / Locker (Redis and in-process dual backends)
+  service/               # User/auth business (JWT issuance)
+  handler/               # [Boundary] HTTP handlers (auth / conversation / card confirmation / callback)
+  router/                # [Boundary] Route registration (API + /aigc + /inner + /metrics)
+  middleware/            # [Boundary] Middleware (RequestID → OTel → Logger → CORS → Recovery → JWT)
+  database/              # MySQL initialization + AutoMigrate
+  app/                   # [Boundary] Startup orchestration + layer wiring + graceful shutdown + async worker startup
 pkg/
-  sse/                # SSE Writer + 事件类型
-  otelx/              # OTel 初始化 + GORM zap logger + GORM SQL tracing 插件
-  tracex/             # traceparent 跨进程透传 + 日志 helper
-  cache/              # Redis 客户端
-  logger/             # Zap 封装
-  response/           # 统一响应格式 + 错误码
-  testx/              # 标准库断言助手 + suite 运行器（取代 testify）
-skills/               # SKILL.md 动态工具源（如 weather）
-docs/
-  go-learn/           # go-learn 文档（学习笔记 / 源码分析 / 实现备忘 / 面试 QA）
-  base-server/        # base-server 文档
-Makefile              # 构建/测试/运行/连通性探测
-Dockerfile            # 多阶段构建
+  sse/                # SSE Writer + event types
+  otelx/              # OTel initialization + GORM zap logger + GORM SQL tracing plugin
+  tracex/             # Cross-process traceparent propagation + logging helpers
+  cache/              # Redis client
+  logger/             # Zap wrapper
+  response/           # Unified response format + error codes
+  testx/              # Standard-library assertion helpers + suite runner (replacing testify)
+skills/               # SKILL.md dynamic tool sources (e.g. weather)
+Makefile              # Build/test/run/connectivity probe
+Dockerfile            # Multi-stage build
 docker-compose.yml    # MySQL + Redis + Jaeger
-.env.example          # 环境变量模板
+.env.example          # Env-var template
 ```
 
-## 架构要点
+## Architecture highlights
 
-- **一个 ReAct 引擎三处复用**：`core/react` 引擎 + `appkit/runner` 装配，同步路径 / 异步 Worker / 子 Agent，仅注入不同 LLM/Strategy/Hooks。
-- **管家约束链**：`business/conversation/manager/manager_strategy.go` 强制 Function Calling + 工具名白名单 + Schema 校验 + 失败闭环（Retry 兜底）。
-- **LLM 决定 agent 链**：`business/subtask/pipeline.go` 定义产线 → 合法 agent 集合；LLM 填 agents 数组，服务端只翻译（校验/补 input/剔除 idea_king）。
-- **异步可靠性**：先落库再投递 + NX 锁（Redis/内存）+ MySQL CAS 抢占 + 心跳 + RecoveryScanner 僵尸恢复 + lastSeq 断点续拉。
-- **多 Agent 推进**：对话路径 = 点卡确认 → FlowStage（intent_memory）→ 快路径重投递；Cron 路径 = CronTaskPoller 每 30s 自动推进。
-- **真实 LLM 开关**：配置 `llm.api_key`/`llm.base_url` 才启用（管家强制 tool_choice=required，子 Agent auto）；未配置回退 FakeLLM 查表模拟。
-- **双底座降级**：Redis 不可达时 app.New 自动切换 MemoryChunkStore（yukino_cache）/ MemoryStreamQueue / MemoryLocker，单二进制可无 Redis 运行。
+- **One ReAct engine reused in three places**: `core/react` engine + `appkit/runner` assembly; sync path / async Worker / sub-agents differ only in the injected LLM/Strategy/Hooks.
+- **Manager constraint chain**: `business/conversation/manager/manager_strategy.go` enforces function calling + tool-name whitelist + schema validation + failure closure (Retry fallback).
+- **LLM decides the agent chain**: `business/subtask/pipeline.go` defines pipelines → valid agent sets; the LLM fills the agents array and the server only translates (validate / fill inputs / drop idea_king).
+- **Async reliability**: persist before dispatch + NX lock (Redis/memory) + MySQL CAS claim + heartbeat + RecoveryScanner zombie recovery + lastSeq breakpoint resume.
+- **Multi-agent advancement**: conversation path = card confirmation → FlowStage (intent_memory) → fast-path redispatch; cron path = CronTaskPoller auto-advances every 30s.
+- **Real-LLM switch**: enabled only when `llm.api_key`/`llm.base_url` are configured (manager forces tool_choice=required, sub-agents auto); otherwise falls back to FakeLLM table-lookup simulation.
+- **Dual-backend degradation**: when Redis is unreachable, app.New automatically switches to MemoryChunkStore (yukino_cache) / MemoryStreamQueue / MemoryLocker, so the single binary runs without Redis.
 
-## 开发指引
+## Development guidelines
 
-| 规则       | 说明                                                                                                     |
-| ---------- | -------------------------------------------------------------------------------------------------------- |
-| 分层       | Handler 只做参数绑定和调用 service，业务逻辑放 service 层                                                |
-| 中间件顺序 | RequestID → OTel → Logger → CORS → Recovery → 业务中间件（JWT）                                          |
-| 配置       | JSON + go tag；环境变量 > secrets.json > config.json > 默认值                                            |
-| 测试       | 标准库 testing + pkg/testx + pkg/testx/suite；测试文件使用 `_test` 外部包名；sqlite 用例需 CGO_ENABLED=1 |
-| 日志       | 运行时全部走 zap（JSON），不直接使用 `log.Printf`                                                        |
+| Rule              | Description                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Layering          | Handlers only bind parameters and call services; business logic lives in the service layer               |
+| Middleware order  | RequestID → OTel → Logger → CORS → Recovery → business middleware (JWT)                                  |
+| Configuration     | JSON + go tags; env vars > secrets.json > config.json > defaults                                         |
+| Testing           | Standard-library testing + pkg/testx + pkg/testx/suite; test files use external `_test` package names; sqlite cases need CGO_ENABLED=1 |
+| Logging           | All runtime logging goes through zap (JSON); do not use `log.Printf` directly                            |
+| Language          | All documentation, comments, and log messages are written in English                                     |
 
 ## API
 
-| 方法     | 路径                                              | 说明                                                                                  |
-| -------- | ------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| GET      | /api/v1/ping                                      | 健康检查（公开）                                                                      |
-| POST     | /api/v1/register                                  | 用户注册（公开）                                                                      |
-| POST     | /api/v1/login                                     | 登录获取 JWT（公开）                                                                  |
-| GET      | /api/v1/example                                   | 示例（需 Authorization: Bearer token）                                                |
-| POST     | /api/v1/logout                                    | 登出 token 拉黑（需认证）                                                             |
-| POST/GET | /aigc/conversation                                | 智能体对话（SSE 流；GET 供 EventSource，带断点续拉）                                  |
-| POST     | /aigc/agent/submit_clarification                  | 点卡确认（推进 FlowStage）                                                            |
-| POST     | /aigc/callback/task_detail                        | 外部任务回调（豁免 JWT）                                                              |
-| POST     | /inner/creation/\*                                | 创作流程（pre_create / create / sync_post_create / async_post_create / handle_error） |
-| POST     | /inner/callback/task_detail、/inner/callback/risk | 创作/风控回调                                                                         |
-| GET      | /metrics                                          | Prometheus 指标                                                                       |
+| Method   | Path                                              | Description                                                                          |
+| -------- | ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| GET      | /api/v1/ping                                      | Health check (public)                                                                |
+| POST     | /api/v1/register                                  | User registration (public)                                                           |
+| POST     | /api/v1/login                                     | Login to obtain a JWT (public)                                                       |
+| GET      | /api/v1/example                                   | Example (requires Authorization: Bearer token)                                       |
+| POST     | /api/v1/logout                                    | Logout, blacklist the token (requires auth)                                          |
+| POST/GET | /aigc/conversation                                | Agent conversation (SSE stream; GET for EventSource, with breakpoint resume)         |
+| POST     | /aigc/agent/submit_clarification                  | Card confirmation (advances FlowStage)                                               |
+| POST     | /aigc/callback/task_detail                        | External task callback (JWT-exempt)                                                  |
+| POST     | /inner/creation/\*                                | Creation flow (pre_create / create / sync_post_create / async_post_create / handle_error) |
+| POST     | /inner/callback/task_detail, /inner/callback/risk | Creation/risk callbacks                                                              |
+| GET      | /metrics                                          | Prometheus metrics                                                                   |
 
-> 完整版 README 见 [README.md](README.md)。
+> See [README.md](README.md) for the full README.

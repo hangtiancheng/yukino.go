@@ -5,7 +5,7 @@ export interface JwtClaims {
   exp?: number;
 }
 
-/** 解析 JWT payload（不校验签名，仅用于展示用户名等）。 */
+/** Parses the JWT payload (no signature verification; only used to display the username, etc.). */
 export function parseJwt(token: string): JwtClaims | null {
   try {
     const parts = token.split(".");

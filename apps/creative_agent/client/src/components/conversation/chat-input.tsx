@@ -31,7 +31,7 @@ export function ChatInput({ streaming, onSend }: ChatInputProps) {
             submit();
           }
         }}
-        placeholder="输入消息..."
+        placeholder="Type a message..."
         autoComplete="off"
         disabled={streaming}
         className="flex-1"
@@ -40,12 +40,12 @@ export function ChatInput({ streaming, onSend }: ChatInputProps) {
         {streaming ? (
           <>
             <Spinner data-icon="inline-start" />
-            生成中...
+            Generating...
           </>
         ) : (
           <>
             <Send data-icon="inline-start" />
-            发送
+            Send
           </>
         )}
       </Button>

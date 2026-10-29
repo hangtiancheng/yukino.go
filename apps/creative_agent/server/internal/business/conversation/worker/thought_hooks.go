@@ -11,24 +11,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// ThoughtHooks 是每轮 LLM 调用后落 thought 表的 hooks（OnAfterLLM 挂点）。
+// ThoughtHooks persists a thought-table row after every LLM round (the OnAfterLLM hook point).
 //
-// 对齐真实系统（dujia）的 OnAfterLLM → InsertThought：每轮把 model_input/model_output
-// 含 tool_calls/reasoning 落 cg_agent_thought，供调试与完整对话过程恢复。
+// Aligned with the reference system's (dujia) OnAfterLLM → InsertThought: each round writes model_input/model_output,
+// including tool_calls/reasoning, into cg_agent_thought for debugging and full conversation-process recovery.
 //
-// 身份字段（userID/sessionID/agentID/msgID）来自闭包捕获的 conversationPayload
-// （go-learn 的 AgentContext 无业务身份字段，不侵入引擎）。
+// Identity fields (userID/sessionID/agentID/msgID) come from the closure-captured conversationPayload
+// (go-learn's AgentContext has no business identity fields; the engine is not intruded upon).
 type ThoughtHooks struct {
 	react.NopHooks
 
 	repo    repository.AgentThoughtRepository
-	payload *conversationPayload // 闭包捕获的业务身份
-	model   string               // LLM 模型名（未知可空）
+	payload *conversationPayload // closure-captured business identity
+	model   string               // LLM model name (may be empty when unknown)
 	logger  *zap.Logger
 }
 
-// TestPayload 是测试用的身份载体（替代 conversationPayload，供外部包测试 ThoughtHooks）。
-// 仅测试使用：生产路径用 NewThoughtHooks（闭包捕获 conversationPayload）。
+// TestPayload is the identity carrier for tests (replacing conversationPayload so external packages can test ThoughtHooks).
+// Test-only: the production path uses NewThoughtHooks (closure-capturing conversationPayload).
 type TestPayload struct {
 	UserID    int64
 	SessionID string
@@ -36,7 +36,7 @@ type TestPayload struct {
 	MsgID     string
 }
 
-// NewThoughtHooksForTest 创建 ThoughtHooks（测试用，显式传身份字段）。
+// NewThoughtHooksForTest creates ThoughtHooks (for tests, with identity fields passed explicitly).
 func NewThoughtHooksForTest(repo repository.AgentThoughtRepository, p *TestPayload, model string, logger *zap.Logger) *ThoughtHooks {
 	if p == nil {
 		p = &TestPayload{}
@@ -50,19 +50,19 @@ func NewThoughtHooksForTest(repo repository.AgentThoughtRepository, p *TestPaylo
 	return NewThoughtHooks(repo, cp, model, logger)
 }
 
-// NewThoughtHooks 创建 ThoughtHooks。repo 为 nil 时退化为 no-op（不落表）。
+// NewThoughtHooks creates ThoughtHooks. When repo is nil it degrades to a no-op (no table writes).
 func NewThoughtHooks(repo repository.AgentThoughtRepository, payload *conversationPayload, model string, logger *zap.Logger) *ThoughtHooks {
 	return &ThoughtHooks{repo: repo, payload: payload, model: model, logger: logger}
 }
 
-// OnAfterLLM 每轮 LLM 调用后调用：落一条 thought 记录。
+// OnAfterLLM is called after every LLM round: it persists one thought record.
 func (h *ThoughtHooks) OnAfterLLM(c *react.AgentContext) {
 	if h.repo == nil || h.payload == nil {
 		return
 	}
 	now := time.Now().UnixMilli()
 
-	// model_input：引擎塞的 LLM 调用前 messages 快照（分离 system prompt）
+	// model_input: the pre-call messages snapshot stored by the engine (system prompt separated)
 	var systemPrompt *string
 	var inputMsgs []react.Message
 	if raw, ok := c.Get(react.LLMInputMessagesKey).([]react.Message); ok {
@@ -81,7 +81,7 @@ func (h *ThoughtHooks) OnAfterLLM(c *react.AgentContext) {
 		modelInput = &s
 	}
 
-	// model_output：本轮 LLM 完整响应
+	// model_output: this round's complete LLM response
 	resp := c.Runtime.LastResponse
 	var modelOutput *string
 	if resp != nil {
@@ -100,14 +100,14 @@ func (h *ThoughtHooks) OnAfterLLM(c *react.AgentContext) {
 		}
 	}
 
-	// token 统计（流式 usage 未回填时为空，可后续扩展）
+	// Token statistics (empty when streaming usage is not backfilled; extensible later)
 	var tokenCount string
 	if resp != nil {
-		// 复刻：无 usage 字段，落空 JSON 占位
+		// Replica: no usage field; persist an empty JSON placeholder
 		tokenCount = "{}"
 	}
 
-	// start_time：引擎塞的本轮开始时间戳（毫秒）
+	// start_time: this round's start timestamp stored by the engine (milliseconds)
 	startTime, _ := c.Get(react.LLMStepStartKey).(int64)
 	if startTime == 0 {
 		startTime = now
@@ -115,7 +115,7 @@ func (h *ThoughtHooks) OnAfterLLM(c *react.AgentContext) {
 
 	thought := &model.CGAgentThought{
 		AgentID:      h.payload.AgentID,
-		AgentType:    h.payload.AgentID, // 复刻：用 agentID 兜底（管家/子智能体）
+		AgentType:    h.payload.AgentID, // replica: fall back to agentID (manager/sub-agent)
 		UserID:       h.payload.UserID,
 		Model:        h.model,
 		SessionID:    h.payload.SessionID,

@@ -10,8 +10,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// NewRedisClient 创建 Redis 客户端，并通过 Ping 验证连接。
-// 同时注册 OTel 追踪 hook（使用全局 tracer provider）。
+// NewRedisClient creates the Redis client and verifies the connection with Ping.
+// It also registers OTel tracing hooks (using the global tracer provider).
 func NewRedisClient(cfg config.RedisConfig) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.Addr(),
@@ -26,9 +26,9 @@ func NewRedisClient(cfg config.RedisConfig) (*redis.Client, error) {
 		return nil, err
 	}
 
-	// OTel 追踪（全局 provider 由 otelx.Init 设置；未设置时 redisotel 内部 fallback no-op）。
+	// OTel tracing (the global provider is set by otelx.Init; when unset, redisotel falls back to no-op internally).
 	if err := redisotel.InstrumentTracing(client); err != nil {
-		_ = err // 追踪失败不阻断连接
+		_ = err // tracing failure does not block the connection
 	}
 
 	return client, nil

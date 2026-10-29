@@ -10,14 +10,14 @@ import (
 	riskmodel "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/domain"
 )
 
-// HandleMixVideoScriptCallback 编剧(role=3)脚本回调：段落文本风控 → record=done + 写剧本。
+// HandleMixVideoScriptCallback is the scriptwriter(role=3) script callback: segment text risk control → record=done + write the screenplay.
 //
-// 对齐 §4.3：编剧阶段产出脚本段落文本，做同步风控，通过则 record=done 并把剧本
-// 写进 ext.step_output["3:mix_video"]（成片 pre_create 从这里取剧本做输入）。
-// 编剧无积分：命中风控只置 record=fail，不退积分。
+// Aligned with §4.3: the scriptwriter stage produces script segment text; synchronous risk control runs, and on pass record=done and the screenplay
+// is written into ext.step_output["3:mix_video"] (the final-video pre_create fetches the screenplay from here as input).
+// The scriptwriter has no points: a risk hit only sets record=fail, with no refund.
 //
-// 幂等闸门（对齐 spec §5.1）：处理前用 records.MarkStatusIf 做数据层乐观锁，
-// 只有 running 才流转——done/fail 直接短路，防并发重复回调。
+// Idempotency gate (aligned with spec §5.1): before processing, records.MarkStatusIf provides the data-layer optimistic lock —
+// only running transitions; done/fail short-circuit directly, preventing concurrent duplicate callbacks.
 func HandleMixVideoScriptCallback(ctx context.Context, d *CallbackDeps, req *contracts.CallbackReq) error {
 	passThrough, err := contracts.ParseExtendParams(req.ExtendParams)
 	if err != nil {
@@ -25,28 +25,28 @@ func HandleMixVideoScriptCallback(ctx context.Context, d *CallbackDeps, req *con
 	}
 	recordID := uint64(passThrough.CallbackRecordID)
 
-	// 终态短路（防重复回调）：record 已是 done/fail 直接返回。
-	// ⚠️ 注意：record 可能不存在（首次 pre_create 未落记录），此时 recordID=0，
-	// 不做乐观锁判断（旧实现同样只在有 record 时短路）。
+	// Terminal short-circuit (preventing duplicate callbacks): return directly when the record is already done/fail.
+	// ⚠️ Note: the record may not exist (the first pre_create wrote no record); then recordID=0
+	// and no optimistic-lock check is done (the legacy implementation also short-circuits only when a record exists).
 	if recordID > 0 {
 		record, err := d.records.Get(ctx, recordID)
 		if err == nil && (record.Status == domain.ProjectStatusDone || record.Status == domain.ProjectStatusFail) {
-			return nil // 已完成，不重复处理
+			return nil // already done; no duplicate processing
 		}
 	}
 
 	switch req.TaskStatus {
 	case domain.CallbackTaskStatusFailed:
-		// 脚本生成失败 → record=fail（编剧无积分，不退）
-		// ⚠️ 并发保护：updateRecordStatus 返回 false 说明已被并发回调流转到终态
-		//（如 success→done），不得覆盖成功结果，幂等短路返回。
+		// Script generation failed → record=fail (the scriptwriter has no points; no refund)
+		// ⚠️ Concurrency protection: updateRecordStatus returning false means a concurrent callback already transitioned it to terminal
+		// (e.g. success→done); the successful result must not be overwritten — return with an idempotent short-circuit.
 		if !updateRecordStatus(ctx, d.records, passThrough, domain.ProjectStatusFail) {
-			return nil // 已被其它回调流转（并发重入 / 重复回调），幂等短路
+			return nil // already transitioned by another callback (concurrent re-entry / duplicate callback); idempotent short-circuit
 		}
 		return nil
 
 	case domain.CallbackTaskStatusSuccess:
-		// 1. 脚本段落文本风控（同步）——复用阶段 3 的 SyncAuditRecorder
+		// 1. Script segment text risk control (synchronous) — reusing the stage-3 SyncAuditRecorder
 		scriptText := extractScriptText(req.SpecialInfo)
 		riskReq := riskmodel.NewRiskSubmitRequest(req.UserID, req.ProjectID,
 			fmt.Sprintf("script-%d", req.TaskID), scriptText)
@@ -56,20 +56,20 @@ func HandleMixVideoScriptCallback(ctx context.Context, d *CallbackDeps, req *con
 		recorder.Finish(passed, reason, err)
 
 		if err != nil || !passed {
-			// 命中 → record=fail + 输出风控卡（不退积分，编剧无积分）
-			// ⚠️ 并发保护：与 failed 路径一致，尊重 MarkStatusIf CAS 结果，
-			// 已被并发流转到终态时不覆盖。
+			// Hit → record=fail + output-risk card (no refund; the scriptwriter has no points)
+			// ⚠️ Concurrency protection: same as the failed path — respect the MarkStatusIf CAS result;
+			// do not overwrite when a concurrent transition already reached terminal.
 			if !updateRecordStatus(ctx, d.records, passThrough, domain.ProjectStatusFail) {
-				return nil // 已被其它回调流转（并发重入 / 重复回调），幂等短路
+				return nil // already transitioned by another callback (concurrent re-entry / duplicate callback); idempotent short-circuit
 			}
 			return nil
 		}
 
-		// 2. 通过 → record=done + 把脚本写进 ext.step_output["3:mix_video"]。
-		//    数据层乐观锁：仅 running → done 原子流转，done/fail 直接短路（防并发重复回调）。
+		// 2. Pass → record=done + write the screenplay into ext.step_output["3:mix_video"].
+		//    Data-layer optimistic lock: only the running → done atomic transition; done/fail short-circuit directly (preventing concurrent duplicate callbacks).
 		if recordID > 0 {
 			if done, _ := d.records.MarkStatusIf(ctx, recordID, domain.ProjectStatusDone, domain.ProjectStatusRunning); !done {
-				return nil // 已被其它回调流转（并发重入 / 重复回调），幂等短路
+				return nil // already transitioned by another callback (concurrent re-entry / duplicate callback); idempotent short-circuit
 			}
 		}
 		saveScreenplayToExt(ctx, d.projects, req, scriptText)
@@ -78,92 +78,92 @@ func HandleMixVideoScriptCallback(ctx context.Context, d *CallbackDeps, req *con
 	return nil
 }
 
-// HandleMixVideoProjectCallback 成片(role=5)回调：audit 中间态核心。
+// HandleMixVideoProjectCallback is the final-video(role=5) callback: the core of the audit intermediate state.
 //
-// 对齐 §4.4：成片产出成功后**不能直接 done**，要先置 audit，等视频异步风控回调
-// 后才能定终态（决策 1）。
+// Aligned with §4.4: after a successful final-video output it **must not go directly to done** — set audit first; the terminal state
+// is decided only after the async video risk callback (decision 1).
 //
-// 流程：processing 更新进度 → failed 退积分+fail → success 先置 audit（乐观锁
-// running→audit）→ 产出文本风控 → 视频异步风控（AsyncAudit）→ recordID 透传。
+// Flow: processing updates progress → failed refunds points + fail → success sets audit first (optimistic lock
+// running→audit) → output text risk control → async video risk control (AsyncAudit) → recordID passed through.
 //
-// 幂等闸门（对齐 spec §5.1）：查出的 project 终态短路 + audit 置位用乐观锁，
-// 防并发重复回调。
+// Idempotency gate (aligned with spec §5.1): the fetched project short-circuits on terminal states + the audit setting uses an optimistic lock,
+// preventing concurrent duplicate callbacks.
 func HandleMixVideoProjectCallback(ctx context.Context, d *CallbackDeps, req *contracts.CallbackReq) error {
-	// 查作品（project_id 关联）
+	// Look up the work (project_id association)
 	project, err := d.projects.GetByProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return err
 	}
 
-	// ⚠️ 终态短路：防止算子重复回调（决策 1：终态不可逆）
+	// ⚠️ Terminal short-circuit: prevents duplicate operator callbacks (decision 1: terminal states are irreversible)
 	if project.Status == domain.ProjectStatusDone || project.Status == domain.ProjectStatusFail {
 		return nil
 	}
 
 	switch req.TaskStatus {
 	case domain.CallbackTaskStatusProcessing:
-		// 进度更新，保持 running，更新 progress
+		// Progress update: stay running, update progress
 		project.Progress = req.ProgressPercentage
 		_ = d.projects.Update(ctx, project)
 		return nil
 
 	case domain.CallbackTaskStatusFailed:
-		// 直接失败：退积分 + status=fail
+		// Direct failure: refund points + status=fail
 		return failProjectCallback(ctx, d, project, contracts.BuildFailReason("任务失败", req.FailReason))
 
 	case domain.CallbackTaskStatusSuccess:
-		// ⚠️ 核心逻辑：先置 audit，再送风控（不是 done！）
-		//    对用户表现为"审核中"，等风控回调定终态。
+		// ⚠️ Core logic: set audit first, then submit risk control (not done!)
+		//    Users see "under review"; the risk callback decides the terminal state.
 		//
-		//    原子性（防 audit→done 丢失更新竞态）：MarkAudit 置位与
-		//    saveAsyncAuditRecordID 透传原本是两次独立全字段 Update，risk 回调
-		//    若在两次写之间到达会读到 audit → 落定 done，随后本 handler 的陈旧的
-		//    第二次 Update 会把 done 覆盖回 audit（永久卡住）。修复：先提交异步风控
-		//    拿到 recordID，再一次性用 CAS（UpdateIfStatus WHERE status='running'）
-		//    写入 status=audit + ext.async_audit_record_id，消除中间窗口；CAS 失败
-		//    表示状态已被其它回调推进（如 risk 回调已落定），幂等短路不覆盖。
+		//    Atomicity (preventing the audit→done lost-update race): MarkAudit and the
+		//    saveAsyncAuditRecordID pass-through were originally two independent full-field Updates; a risk callback
+		//    arriving between the two writes would read audit → settle done, and then this handler's stale
+		//    second Update would overwrite done back to audit (stuck forever). Fix: submit the async risk control first
+		//    to obtain the recordID, then write status=audit + ext.async_audit_record_id in one CAS (UpdateIfStatus WHERE status='running'),
+		//    eliminating the intermediate window; a CAS failure means another callback already advanced the state
+		//    (e.g. the risk callback already settled) — idempotent short-circuit, no overwrite.
 		if project.Status != domain.ProjectStatusRunning {
-			return nil // 非 running（并发重入 / 已流转），幂等短路
+			return nil // not running (concurrent re-entry / already transitioned); idempotent short-circuit
 		}
 
-		// 1. 产出标题/正文文本风控（同步）
+		// 1. Output title/body text risk control (synchronous)
 		passed, reason, err := syncAuditOutputText(ctx, d, project, req.SpecialInfo)
 		if err != nil || !passed {
-			// 命中 → 退积分 + fail + 输出风控卡
+			// Hit → refund points + fail + output-risk card
 			return failProjectCallback(ctx, d, project, contracts.BuildFailReason("产出风控拦截", reason))
 		}
 
-		// 2. 产出视频风控（异步）——视频审核耗时长，提交即返回，靠回调闭环
+		// 2. Output video risk control (async) — video review is slow; submit and return, closing the loop via callback
 		videoReq := riskmodel.NewRiskSubmitRequest(project.UserID, project.ProjectID,
 			fmt.Sprintf("%d", req.TaskID), "")
 		videoReq.Content.Text = extractVideoDescription(req.SpecialInfo)
 
 		recordID, err := d.risk.AsyncAudit(ctx, videoReq, riskmodel.MixVideo60sT2VOutputSubproduct, buildRiskCallbackURL())
 		if err != nil {
-			// 异步提交失败 → 返回错误，Dispatch 写补偿表（阶段 5 重试）
+			// Async submission failed → return the error; Dispatch writes the compensation table (stage 5 retries)
 			return err
 		}
 
-		// 3. 一次 CAS 写入 status=audit + ext.async_audit_record_id（running → audit）
-		//    仅当 DB 中 status 仍是 running 才成功；否则 risk 回调已落定终态，短路。
+		// 3. One CAS write of status=audit + ext.async_audit_record_id (running → audit)
+		//    succeeds only while the DB status is still running; otherwise the risk callback already settled terminal — short-circuit.
 		project.MarkAudit()
 		setAsyncAuditRecordID(project, recordID)
 		if ok, err := d.projects.UpdateIfStatus(ctx, project, domain.ProjectStatusRunning); err != nil {
 			return err
 		} else if !ok {
-			return nil // 已被其它回调流转（risk 回调已落定），幂等短路不覆盖终态
+			return nil // already transitioned by another callback (the risk callback settled); idempotent short-circuit, no terminal overwrite
 		}
 		return nil
 	}
 	return nil
 }
 
-// updateRecordStatus 更新回调记录状态（数据层乐观锁：仅 running 流转），返回是否流转成功。
+// updateRecordStatus updates the callback record status (data-layer optimistic lock: only running transitions); returns whether the transition succeeded.
 //
-// 对齐 spec §5.1：用 MarkStatusIf 做乐观锁幂等闸门——只有 running 才流转，
-// done/fail 直接短路，防并发重复回调。返回 false 表示已被其它回调流转到终态
-// （如并发 success→done），调用方不得覆盖终态、应幂等短路。
-// recordID<=0 时无记录可更新（旧实现同语义），返回 false。
+// Aligned with spec §5.1: MarkStatusIf is the optimistic-lock idempotency gate — only running transitions;
+// done/fail short-circuit directly, preventing concurrent duplicate callbacks. Returning false means another callback already transitioned it to terminal
+// (e.g. concurrent success→done); callers must not overwrite terminal states and should short-circuit idempotently.
+// With recordID<=0 there is no record to update (same semantics as the legacy implementation); returns false.
 func updateRecordStatus(ctx context.Context, records domain.CallbackRecordRepository,
 	passThrough *contracts.ExtendParams, status string) bool {
 	if passThrough.CallbackRecordID <= 0 {
@@ -173,21 +173,21 @@ func updateRecordStatus(ctx context.Context, records domain.CallbackRecordReposi
 	return ok
 }
 
-// syncAuditOutputText 产出文本风控（同步），复用阶段 3 的 SyncAudit 端口。
+// syncAuditOutputText runs output text risk control (synchronous), reusing the stage-3 SyncAudit port.
 func syncAuditOutputText(ctx context.Context, d *CallbackDeps, project *domain.Project, specialInfo json.RawMessage) (bool, string, error) {
 	text := extractScriptText(specialInfo)
 	if text == "" {
-		// 无产出文本（可能只有视频）→ 通过
+		// No output text (possibly video only) → pass
 		return true, "", nil
 	}
 	req := riskmodel.NewRiskSubmitRequest(project.UserID, project.ProjectID, "output_text", text)
 	return d.risk.SyncAudit(ctx, req, riskmodel.MixVideoTitleT2TOutputSubproduct)
 }
 
-// failProjectCallback 回调失败路径：退积分 + 置 fail + 落库。
+// failProjectCallback is the callback failure path: refund points + set fail + persist.
 //
-// 幂等：project 终态短路由调用方完成；MarkFail 内部处理"仅 points_status=used 才退"
-// 不变量（points.Refund 本身幂等，已退过返回 nil）。返回 nil 表示已处理。
+// Idempotent: the project terminal short-circuit is done by callers; MarkFail internally handles the
+// "refund only when points_status=used" invariant (points.Refund is itself idempotent, returning nil when already refunded). Returning nil means handled.
 func failProjectCallback(ctx context.Context, d *CallbackDeps, project *domain.Project, reason string) error {
 	changed, err := project.MarkFail(reason, func() error {
 		return d.points.Refund(ctx, project.PointsOrderID, project.UserID, project.ProjectType)
@@ -198,7 +198,7 @@ func failProjectCallback(ctx context.Context, d *CallbackDeps, project *domain.P
 	return d.projects.Update(ctx, project)
 }
 
-// saveScreenplayToExt 把剧本写进 ext.step_output["3:mix_video"]（成片阶段输入从这里取）。
+// saveScreenplayToExt writes the screenplay into ext.step_output["3:mix_video"] (the final-video stage fetches its input from here).
 func saveScreenplayToExt(ctx context.Context, projects domain.ProjectRepository, req *contracts.CallbackReq, scriptText string) {
 	project, err := projects.GetByProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -211,11 +211,11 @@ func saveScreenplayToExt(ctx context.Context, projects domain.ProjectRepository,
 	_ = projects.Update(ctx, project)
 }
 
-// setAsyncAuditRecordID 把异步风控 recordID 写入 project 内存的 ext（不落库）。
+// setAsyncAuditRecordID writes the async-risk recordID into the in-memory ext of project (no persistence).
 //
-// ⚠️ 与旧 saveAsyncAuditRecordID 不同：这里只改内存，落库由调用方的 CAS
-// （UpdateIfStatus WHERE status='running'）一次写入 status=audit + ext，
-// 避免"置 audit"与"透传 recordID"两次独立 Update 之间的丢失更新竞态。
+// ⚠️ Unlike the old saveAsyncAuditRecordID: this only mutates memory; persistence happens in the caller's single CAS
+// (UpdateIfStatus WHERE status='running') writing status=audit + ext,
+// avoiding the lost-update race between two independent Updates for "set audit" and "pass through recordID".
 func setAsyncAuditRecordID(project *domain.Project, recordID int64) {
 	ext, _ := domain.ParseExt(project.Ext)
 	if ext.AsyncAuditRecordID == 0 {
@@ -225,8 +225,8 @@ func setAsyncAuditRecordID(project *domain.Project, recordID int64) {
 	}
 }
 
-// extractScriptText 从回调 special_info 提取剧本文本。
-// 本地复现：special_info 是 JSON（或 base64(JSON)），取 script/text 字段。
+// extractScriptText extracts the screenplay text from the callback special_info.
+// Local reproduction: special_info is JSON (or base64(JSON)); take the script/text field.
 func extractScriptText(specialInfo json.RawMessage) string {
 	raw := string(specialInfo)
 	if raw == "" {
@@ -241,10 +241,10 @@ func extractScriptText(specialInfo json.RawMessage) string {
 			return s
 		}
 	}
-	return raw // 兜底：原文作为待审文本
+	return raw // fallback: the raw text becomes the audit text
 }
 
-// extractVideoDescription 从 special_info 提取视频描述（供异步风控判审）。
+// extractVideoDescription extracts the video description from special_info (for async risk review).
 func extractVideoDescription(specialInfo json.RawMessage) string {
 	raw := string(specialInfo)
 	var payload map[string]any
@@ -256,7 +256,7 @@ func extractVideoDescription(specialInfo json.RawMessage) string {
 	return ""
 }
 
-// buildRiskCallbackURL 构造风控回调地址（异步风控提交时随请求带过去）。
+// buildRiskCallbackURL builds the risk callback address (carried with the async risk submission request).
 func buildRiskCallbackURL() string {
 	return "/inner/callback/risk"
 }

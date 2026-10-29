@@ -10,38 +10,38 @@ import (
 	"gorm.io/gorm"
 )
 
-// compensationRow 持久化结构（gorm 映射 cg_audit_compensation）。
-// 域模型 Compensation 为纯结构体（无 gorm tag），gorm tag 仅存在于本私有行结构。
+// compensationRow is the persistence structure (gorm mapping cg_audit_compensation).
+// The domain model Compensation is a plain struct (no gorm tags); gorm tags live only in this private row struct.
 type compensationRow struct {
 	ID         uint64 `gorm:"column:id;primaryKey;autoIncrement"`
 	UserID     int64  `gorm:"column:user_id;not null"`
 	ProjectID  string `gorm:"column:project_id;size:64;not null"`
 	BizID      string `gorm:"column:biz_id;size:128;not null;index:idx_biz_type"`
 	BizType    int    `gorm:"column:biz_type;not null;index:idx_biz_type"`
-	Payload    string `gorm:"column:payload;type:text"` // 待重试的原始请求（JSON）
+	Payload    string `gorm:"column:payload;type:text"` // the original request to retry (JSON)
 	Status     int    `gorm:"column:status;not null;default:0"`
 	RetryCount int    `gorm:"column:retry_count;not null;default:0"`
 	CreateTime int64  `gorm:"column:create_time;not null"`
 	UpdateTime int64  `gorm:"column:update_time;not null"`
 }
 
-// TableName 指定表名。
+// TableName specifies the table name.
 func (compensationRow) TableName() string { return "cg_audit_compensation" }
 
-// CompensationRepositoryImpl 基于 gorm 的 CompensationRepository 实现。
+// CompensationRepositoryImpl is the gorm-based CompensationRepository implementation.
 type CompensationRepositoryImpl struct {
 	db *gorm.DB
 }
 
-// NewCompensationRepositoryImpl 创建实现。
+// NewCompensationRepositoryImpl creates the implementation.
 func NewCompensationRepositoryImpl(db *gorm.DB) *CompensationRepositoryImpl {
 	return &CompensationRepositoryImpl{db: db}
 }
 
-// 编译期断言：确保实现满足 domain.CompensationRepository 接口。
+// Compile-time assertion: the implementation satisfies the domain.CompensationRepository interface.
 var _ domain.CompensationRepository = (*CompensationRepositoryImpl)(nil)
 
-// toCompensationRow 将域实体转为持久化结构。
+// toCompensationRow converts the domain entity into the persistence structure.
 func toCompensationRow(f *domain.Compensation) *compensationRow {
 	return &compensationRow{
 		ID:         f.ID,
@@ -57,7 +57,7 @@ func toCompensationRow(f *domain.Compensation) *compensationRow {
 	}
 }
 
-// toCompensationDomain 将持久化结构转为域实体。
+// toCompensationDomain converts the persistence structure into the domain entity.
 func toCompensationDomain(r *compensationRow) *domain.Compensation {
 	return &domain.Compensation{
 		ID:         r.ID,
@@ -73,7 +73,7 @@ func toCompensationDomain(r *compensationRow) *domain.Compensation {
 	}
 }
 
-// Insert 写一条补偿记录。create_time/update_time 缺省填当前时间，并回填自增 ID。
+// Insert writes one compensation record. create_time/update_time default to now, and the auto-increment ID is backfilled.
 func (r *CompensationRepositoryImpl) Insert(ctx context.Context, c *domain.Compensation) (uint64, error) {
 	now := time.Now().Unix()
 	row := toCompensationRow(c)
@@ -84,13 +84,13 @@ func (r *CompensationRepositoryImpl) Insert(ctx context.Context, c *domain.Compe
 	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
 		return 0, err
 	}
-	// 回填自增 ID
+	// Backfill the auto-increment ID
 	c.ID = row.ID
 	return row.ID, nil
 }
 
-// GetByBizID 按 biz_id + biz_type 查补偿记录（幂等：同一笔提交失败不重复补偿），
-// 取最新一条（id DESC），未找到返回 domain.ErrCompensationNotFound。
+// GetByBizID queries a compensation record by biz_id + biz_type (idempotent: one failed submission is not compensated twice),
+// taking the newest row (id DESC); returns domain.ErrCompensationNotFound when absent.
 func (r *CompensationRepositoryImpl) GetByBizID(ctx context.Context, bizID string, bizType int) (*domain.Compensation, error) {
 	var row compensationRow
 	err := r.db.WithContext(ctx).
@@ -106,7 +106,7 @@ func (r *CompensationRepositoryImpl) GetByBizID(ctx context.Context, bizID strin
 	return toCompensationDomain(&row), nil
 }
 
-// GetPending 取待重试的补偿记录（status=0），按 id 升序，最多 limit 条（补偿 job 用）。
+// GetPending fetches compensation records awaiting retry (status=0), ascending by id, at most limit rows (for the compensation job).
 func (r *CompensationRepositoryImpl) GetPending(ctx context.Context, limit int) ([]*domain.Compensation, error) {
 	if limit <= 0 {
 		limit = 100
@@ -127,14 +127,14 @@ func (r *CompensationRepositoryImpl) GetPending(ctx context.Context, limit int) 
 	return list, nil
 }
 
-// MarkDone 标记补偿记录为已处理（重试成功或超上限放弃）。
+// MarkDone marks a compensation record processed (retry succeeded or abandoned beyond the cap).
 func (r *CompensationRepositoryImpl) MarkDone(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Model(&compensationRow{}).
 		Where("id = ?", id).
 		Updates(map[string]any{"status": domain.CompensationStatusDone, "update_time": time.Now().Unix()}).Error
 }
 
-// IncrRetryCount 重试次数 +1（重试失败时调用）。
+// IncrRetryCount increments the retry count (called on retry failure).
 func (r *CompensationRepositoryImpl) IncrRetryCount(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Model(&compensationRow{}).
 		Where("id = ?", id).

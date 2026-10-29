@@ -2,34 +2,34 @@ package domain
 
 import "encoding/json"
 
-// ProjectExt 是跨阶段数据透传载体，序列化后存于 cg_creation_project.ext 字段。
+// ProjectExt is the cross-stage data pass-through carrier, serialized into the cg_creation_project.ext field.
 //
-// 一次混剪是"脑洞(2) → 编剧(3) → 成片(5)"多阶段，阶段之间不靠内存传数据，
-// 全存在 ext 里，由服务端在每次 pre_create 时读写：
-//   - task_step：每个 (role, type) 阶段的步骤 ID，key = "role_type:project_type"，回调时透传
-//   - step_output：每个阶段产物的原文，下一阶段从这里取上一阶段的产物做输入
-//   - order_ids：重试多次扣积分的所有订单 ID（积分流水对账用）
-//   - msg_id：结果卡需要的消息 ID
+// One mix-cut is a multi-stage flow "brainstorm(2) → scriptwriter(3) → final video(5)"; stages do not pass data through memory —
+// everything lives in ext, read/written by the server at each pre_create:
+//   - task_step: the step ID of each (role, type) stage, key = "role_type:project_type", passed through on callback
+//   - step_output: the raw product of each stage; the next stage fetches the previous stage's product from here as input
+//   - order_ids: all order IDs from repeated retry deductions (for points-ledger reconciliation)
+//   - msg_id: the message ID needed by result cards
 type ProjectExt struct {
 	TaskStep   map[string]TaskStepInfo `json:"task_step"`
 	StepOutput map[string]string       `json:"step_output"`
 	OrderIDs   []string                `json:"order_ids"`
 	MsgID      string                  `json:"msg_id,omitempty"`
-	// AsyncAuditRecordID 记录本 project 最近一次视频异步风控的 callback_record.id，
-	// 风控回调 /inner/callback/risk 时用它对账（阶段 4 写入）。
+	// AsyncAuditRecordID records this project's latest video async-risk callback_record.id;
+	// the risk callback /inner/callback/risk reconciles with it (written in stage 4).
 	AsyncAuditRecordID int64 `json:"async_audit_record_id,omitempty"`
 }
 
-// TaskStepInfo 记录某个 (role, type) 阶段的步骤信息，回调时透传。
+// TaskStepInfo records the step information of one (role, type) stage, passed through on callback.
 type TaskStepInfo struct {
 	TaskStepID       int64  `json:"task_step_id"`
 	ParentTaskStepID int64  `json:"parent_task_step_id"`
 	TraceParent      string `json:"trace_parent,omitempty"`
 }
 
-// --- ProjectExt 序列化工具 ---
+// --- ProjectExt serialization helpers ---
 
-// ParseExt 解析 cg_creation_project.ext 的 JSON；为空或非法时返回空结构。
+// ParseExt parses the cg_creation_project.ext JSON; returns an empty struct when empty or invalid.
 func ParseExt(raw string) (*ProjectExt, error) {
 	ext := &ProjectExt{}
 	if raw == "" {
@@ -41,7 +41,7 @@ func ParseExt(raw string) (*ProjectExt, error) {
 	return ext, nil
 }
 
-// ToJSON 序列化 ProjectExt 为 JSON 字符串。
+// ToJSON serializes ProjectExt into a JSON string.
 func (e *ProjectExt) ToJSON() (string, error) {
 	if e == nil {
 		return "", nil
@@ -50,7 +50,7 @@ func (e *ProjectExt) ToJSON() (string, error) {
 	return string(b), err
 }
 
-// AppendOrderID 把新订单号追加进 order_ids（重试扣分对账用），返回更新后的 JSON 字符串。
+// AppendOrderID appends a new order ID into order_ids (for retry-deduction reconciliation) and returns the updated JSON string.
 func AppendOrderID(extJSON, orderID string) string {
 	ext, err := ParseExt(extJSON)
 	if err != nil {
@@ -58,7 +58,7 @@ func AppendOrderID(extJSON, orderID string) string {
 	}
 	for _, id := range ext.OrderIDs {
 		if id == orderID {
-			return extJSON // 已存在，幂等
+			return extJSON // already present; idempotent
 		}
 	}
 	ext.OrderIDs = append(ext.OrderIDs, orderID)
@@ -66,7 +66,7 @@ func AppendOrderID(extJSON, orderID string) string {
 	return out
 }
 
-// SetStepOutput 记录某个 (role,type) 阶段产物的原文到 step_output。
+// SetStepOutput records the raw product of one (role,type) stage into step_output.
 func (e *ProjectExt) SetStepOutput(roleType int, projectType, output string) {
 	if e.StepOutput == nil {
 		e.StepOutput = map[string]string{}
@@ -74,7 +74,7 @@ func (e *ProjectExt) SetStepOutput(roleType int, projectType, output string) {
 	e.StepOutput[TaskTypeKey(roleType, projectType)] = output
 }
 
-// GetStepOutput 取上一阶段产物的原文。
+// GetStepOutput fetches the raw product of the previous stage.
 func (e *ProjectExt) GetStepOutput(roleType int, projectType string) string {
 	if e == nil || e.StepOutput == nil {
 		return ""

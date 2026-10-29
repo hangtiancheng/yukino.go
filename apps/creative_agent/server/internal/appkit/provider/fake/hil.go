@@ -6,13 +6,13 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 )
 
-// FakeHILLLM 是 HIL（Human-in-the-Loop）断点链路的 LLM 实现（Phase 4）。
+// FakeHILLLM is the LLM implementation of the HIL (Human-in-the-Loop) breakpoint chain (Phase 4).
 //
-// 行为：无 tool 时返回含"确认"触发的文本，配合 FakeHILStrategy——
-//   - 首次（query 含触发词）→ ActionInterrupt（推卡片等用户确认）
-//   - resume 恢复轮次（Runtime.Interrupted=true）→ 直接 Terminal
+// Behavior: without tools it returns text containing the "确认" trigger, working with FakeHILStrategy —
+//   - First run (query contains the trigger word) → ActionInterrupt (push a card and wait for user confirmation)
+//   - Resume round (Runtime.Interrupted=true) → terminate directly
 //
-// 当前为查表模拟，可后续替换为真实 LLM（OpenAI 兼容 HTTP 适配器见 llm_http.go）。
+// Currently a table-lookup simulation; can later be replaced with a real LLM (see llm_http.go for the OpenAI-compatible HTTP adapter).
 type FakeHILLLM struct {
 	turn int
 }
@@ -23,7 +23,7 @@ func (l *FakeHILLLM) Chat(ctx context.Context, messages []react.Message, tools [
 	return &react.LLMResponse{Content: "hil_keyword 需要确认"}, nil
 }
 
-// ChatStream 实现 react.LLM 接口（流式降级）。
+// ChatStream implements the react.LLM interface (streaming degradation).
 func (l *FakeHILLLM) ChatStream(ctx context.Context, messages []react.Message, tools []react.FunctionDef, cb react.StreamCallbackFunc) (*react.LLMResponse, error) {
 	resp, err := l.Chat(ctx, messages, tools)
 	return streamResponseDegraded(ctx, resp, err, cb)

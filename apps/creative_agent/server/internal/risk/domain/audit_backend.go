@@ -2,18 +2,18 @@ package domain
 
 import "context"
 
-// AuditImage 单张图片。
+// AuditImage is a single image.
 type AuditImage struct {
 	URL string `json:"url"`
 }
 
-// AuditContent 待审内容：文本与图片二选一（视频走 Async）。
+// AuditContent is the content to audit: text or image, one of the two (video goes through Async).
 type AuditContent struct {
 	Text  string       `json:"text,omitempty"`
 	Image []AuditImage `json:"image,omitempty"`
 }
 
-// RiskSubmitRequest 送审请求（同步/异步共用）。
+// RiskSubmitRequest is the audit-submission request (shared by sync/async).
 type RiskSubmitRequest struct {
 	UserID      int64             `json:"user_id"`
 	ThirdID     string            `json:"third_id"`
@@ -23,7 +23,7 @@ type RiskSubmitRequest struct {
 	Extra       map[string]string `json:"extra,omitempty"`
 }
 
-// RiskExtra 送审请求的公共来源字段（用户/IP/步骤等，用于风控服务画像）。
+// RiskExtra holds the common source fields of audit requests (user/IP/step, etc., used for risk-service profiling).
 type RiskExtra struct {
 	UserID     int64
 	CuID       string
@@ -31,7 +31,7 @@ type RiskExtra struct {
 	TaskStepID int64
 }
 
-// NewRiskSubmitRequest 构造送审请求。
+// NewRiskSubmitRequest builds an audit-submission request.
 func NewRiskSubmitRequest(userID int64, thirdID, bizID, text string) *RiskSubmitRequest {
 	return &RiskSubmitRequest{
 		UserID:  userID,
@@ -41,11 +41,11 @@ func NewRiskSubmitRequest(userID int64, thirdID, bizID, text string) *RiskSubmit
 	}
 }
 
-// AuditBackend 风控判定可注入后端。
-// 返回语义：
-//   - err != nil → 风控请求失败（系统错误）
-//   - passed=false + reason → 内容不通过（命中风控）
-//   - passed=true → 通过
+// AuditBackend is the injectable backend for risk decisions.
+// Return semantics:
+//   - err != nil → the risk request failed (system error)
+//   - passed=false + reason → content rejected (risk hit)
+//   - passed=true → passed
 type AuditBackend interface {
 	Submit(ctx context.Context, req *RiskSubmitRequest, subProduct string) (passed bool, reason string, err error)
 }

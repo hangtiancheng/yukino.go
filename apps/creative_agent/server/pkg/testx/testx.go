@@ -1,5 +1,5 @@
-// Package testx 提供基于标准库 testing 的轻量断言助手，
-// 取代 testify 的 assert/require（全部为 fail-fast 语义：断言失败立即 t.Fatalf）。
+// Package testx provides lightweight assertion helpers built on the standard-library testing package,
+// replacing testify's assert/require (all fail-fast: a failed assertion immediately calls t.Fatalf).
 package testx
 
 import (
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// AnError 是测试用通用错误（对齐 testify 的 assert.AnError）。
+// AnError is a generic error for tests (aligned with testify's assert.AnError).
 var AnError = errors.New("testx.AnError general error for testing")
 
 func message(msgAndArgs []any) string {
@@ -41,7 +41,7 @@ func describe(v any) string {
 	return fmt.Sprintf("%#v (%T)", v, v)
 }
 
-// NoError 断言 err 为 nil。
+// NoError asserts that err is nil.
 func NoError(t *testing.T, err error, msgAndArgs ...any) {
 	t.Helper()
 	if err != nil {
@@ -49,7 +49,7 @@ func NoError(t *testing.T, err error, msgAndArgs ...any) {
 	}
 }
 
-// Error 断言 err 非 nil。
+// Error asserts that err is non-nil.
 func Error(t *testing.T, err error, msgAndArgs ...any) {
 	t.Helper()
 	if err == nil {
@@ -57,7 +57,7 @@ func Error(t *testing.T, err error, msgAndArgs ...any) {
 	}
 }
 
-// ErrorIs 断言 errors.Is(err, target) 成立。
+// ErrorIs asserts that errors.Is(err, target) holds.
 func ErrorIs(t *testing.T, err error, target error, msgAndArgs ...any) {
 	t.Helper()
 	if !errors.Is(err, target) {
@@ -65,7 +65,7 @@ func ErrorIs(t *testing.T, err error, target error, msgAndArgs ...any) {
 	}
 }
 
-// Equal 断言 expected 与 actual 深度相等。
+// Equal asserts that expected and actual are deeply equal.
 func Equal(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 	if !objectsAreEqual(expected, actual) {
@@ -74,7 +74,7 @@ func Equal(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	}
 }
 
-// NotEqual 断言 expected 与 actual 不相等。
+// NotEqual asserts that expected and actual are not equal.
 func NotEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 	if objectsAreEqual(expected, actual) {
@@ -97,7 +97,7 @@ func objectsAreEqual(expected, actual any) bool {
 	return bytes.Equal(exp, act)
 }
 
-// True 断言条件为真。
+// True asserts that the condition is true.
 func True(t *testing.T, value bool, msgAndArgs ...any) {
 	t.Helper()
 	if !value {
@@ -105,7 +105,7 @@ func True(t *testing.T, value bool, msgAndArgs ...any) {
 	}
 }
 
-// False 断言条件为假。
+// False asserts that the condition is false.
 func False(t *testing.T, value bool, msgAndArgs ...any) {
 	t.Helper()
 	if value {
@@ -113,7 +113,7 @@ func False(t *testing.T, value bool, msgAndArgs ...any) {
 	}
 }
 
-// Nil 断言对象为 nil（含类型化 nil）。
+// Nil asserts that the object is nil (including typed nil).
 func Nil(t *testing.T, object any, msgAndArgs ...any) {
 	t.Helper()
 	if !isNil(object) {
@@ -121,7 +121,7 @@ func Nil(t *testing.T, object any, msgAndArgs ...any) {
 	}
 }
 
-// NotNil 断言对象非 nil。
+// NotNil asserts that the object is non-nil.
 func NotNil(t *testing.T, object any, msgAndArgs ...any) {
 	t.Helper()
 	if isNil(object) {
@@ -142,7 +142,7 @@ func isNil(object any) bool {
 	return false
 }
 
-// Empty 断言对象为空（nil、零长度集合、空字符串、零值）。
+// Empty asserts that the object is empty (nil, zero-length collection, empty string, zero value).
 func Empty(t *testing.T, object any, msgAndArgs ...any) {
 	t.Helper()
 	if !isZeroLike(object) {
@@ -150,7 +150,7 @@ func Empty(t *testing.T, object any, msgAndArgs ...any) {
 	}
 }
 
-// NotEmpty 断言对象非空。
+// NotEmpty asserts that the object is non-empty.
 func NotEmpty(t *testing.T, object any, msgAndArgs ...any) {
 	t.Helper()
 	if isZeroLike(object) {
@@ -158,7 +158,7 @@ func NotEmpty(t *testing.T, object any, msgAndArgs ...any) {
 	}
 }
 
-// Zero 断言对象为零值。
+// Zero asserts that the object is the zero value.
 func Zero(t *testing.T, object any, msgAndArgs ...any) {
 	t.Helper()
 	if !isZeroLike(object) {
@@ -166,7 +166,7 @@ func Zero(t *testing.T, object any, msgAndArgs ...any) {
 	}
 }
 
-// NotZero 断言对象非零值。
+// NotZero asserts that the object is not the zero value.
 func NotZero(t *testing.T, object any, msgAndArgs ...any) {
 	t.Helper()
 	if isZeroLike(object) {
@@ -194,7 +194,7 @@ func isZeroLike(object any) bool {
 	return reflect.DeepEqual(object, zero)
 }
 
-// Len 断言对象长度为 expected。
+// Len asserts that the object's length equals expected.
 func Len(t *testing.T, object any, expected int, msgAndArgs ...any) {
 	t.Helper()
 	length, ok := lengthOf(object)
@@ -218,7 +218,7 @@ func lengthOf(object any) (int, bool) {
 	return 0, false
 }
 
-// Contains 断言容器包含元素，或字符串包含子串。
+// Contains asserts that the container holds the element, or the string contains the substring.
 func Contains(t *testing.T, container, element any, msgAndArgs ...any) {
 	t.Helper()
 	if !containsElement(container, element) {
@@ -227,7 +227,7 @@ func Contains(t *testing.T, container, element any, msgAndArgs ...any) {
 	}
 }
 
-// NotContains 断言容器不包含元素，或字符串不包含子串。
+// NotContains asserts that the container does not hold the element, or the string does not contain the substring.
 func NotContains(t *testing.T, container, element any, msgAndArgs ...any) {
 	t.Helper()
 	if containsElement(container, element) {
@@ -265,7 +265,7 @@ func containsElement(container, element any) bool {
 	return false
 }
 
-// ElementsMatch 断言两个列表包含相同元素（忽略顺序与重复位置）。
+// ElementsMatch asserts that two lists contain the same elements (ignoring order and duplicate positions).
 func ElementsMatch(t *testing.T, listA, listB any, msgAndArgs ...any) {
 	t.Helper()
 	a := reflect.ValueOf(listA)
@@ -295,7 +295,7 @@ func ElementsMatch(t *testing.T, listA, listB any, msgAndArgs ...any) {
 	}
 }
 
-// Greater 断言 e1 > e2（数值或字符串）。
+// Greater asserts e1 > e2 (numeric or string).
 func Greater(t *testing.T, e1, e2 any, msgAndArgs ...any) {
 	t.Helper()
 	cmp, ok := compareOrdered(e1, e2)
@@ -307,7 +307,7 @@ func Greater(t *testing.T, e1, e2 any, msgAndArgs ...any) {
 	}
 }
 
-// GreaterOrEqual 断言 e1 >= e2（数值或字符串）。
+// GreaterOrEqual asserts e1 >= e2 (numeric or string).
 func GreaterOrEqual(t *testing.T, e1, e2 any, msgAndArgs ...any) {
 	t.Helper()
 	cmp, ok := compareOrdered(e1, e2)
@@ -374,7 +374,7 @@ func cmpResult[T int64 | uint64](a, b T) int {
 
 func cmpUint(a, b uint64) int { return cmpResult(a, b) }
 
-// JSONEq 断言两个 JSON 字符串语义相等。
+// JSONEq asserts that two JSON strings are semantically equal.
 func JSONEq(t *testing.T, expected, actual string, msgAndArgs ...any) {
 	t.Helper()
 	var expectedValue, actualValue any
@@ -389,7 +389,7 @@ func JSONEq(t *testing.T, expected, actual string, msgAndArgs ...any) {
 	}
 }
 
-// Eventually 在 waitFor 时间内按 tick 间隔轮询 condition，直到其为真。
+// Eventually polls condition at the tick interval within waitFor until it becomes true.
 func Eventually(t *testing.T, condition func() bool, waitFor, tick time.Duration, msgAndArgs ...any) {
 	t.Helper()
 	deadline := time.After(waitFor)
@@ -408,7 +408,7 @@ func Eventually(t *testing.T, condition func() bool, waitFor, tick time.Duration
 	}
 }
 
-// NotPanics 断言 f 执行不 panic。
+// NotPanics asserts that executing f does not panic.
 func NotPanics(t *testing.T, f func(), msgAndArgs ...any) {
 	t.Helper()
 	defer func() {

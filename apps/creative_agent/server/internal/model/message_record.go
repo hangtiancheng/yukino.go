@@ -1,8 +1,8 @@
 package model
 
-// CGMessageRecord 是 cg_message_record 表的 GORM 模型。
-// 采用"先建后改"模型：con_reader 建行（status=InProgress，只填 QueryInfo），
-// con_writer 逐帧回填 ChatResponse。
+// CGMessageRecord is the GORM model of the cg_message_record table.
+// It uses a "create then update" model: con_reader creates the row (status=InProgress, only QueryInfo filled),
+// and con_writer backfills ChatResponse frame by frame.
 type CGMessageRecord struct {
 	ID          int64  `gorm:"column:id;primaryKey;autoIncrement"`
 	MessageID   string `gorm:"column:message_id;uniqueIndex;size:64;not null"`
@@ -23,10 +23,10 @@ type CGMessageRecord struct {
 
 func (CGMessageRecord) TableName() string { return "cg_message_record" }
 
-// Message 状态常量。
+// Message status constants.
 const (
-	MessageStatusNormal     int8 = 1 // 终态
-	MessageStatusInProgress int8 = 2 // 进行中
+	MessageStatusNormal     int8 = 1 // terminal
+	MessageStatusInProgress int8 = 2 // in progress
 	IsRiskNo                int8 = 0
 	IsRiskYes               int8 = 1
 )

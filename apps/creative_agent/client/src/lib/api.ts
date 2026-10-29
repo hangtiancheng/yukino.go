@@ -1,16 +1,16 @@
 import { useAuthStore } from "@/stores/auth";
 
 /**
- * 后端 API 地址（前后端分离部署）：
- * - 生产：构建时注入 VITE_API_BASE_URL（如 https://api.example.com），跨域由后端 CORS 放行；
- * - 开发：留空走相对路径，由 vite proxy 转发 /api、/aigc（见 vite.config.ts）。
+ * Backend API base URL (split frontend/backend deployment):
+ * - Production: inject VITE_API_BASE_URL at build time (e.g. https://api.example.com); cross-origin is allowed by backend CORS.
+ * - Development: leave empty to use relative paths, forwarded by the vite proxy for /api and /aigc (see vite.config.ts).
  */
 const BASE = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(
   /\/+$/,
   "",
 );
 
-/** 后端统一响应包：{code, message, data}，code=0 为成功。 */
+/** Unified backend response envelope: {code, message, data}; code=0 means success. */
 interface Envelope<T> {
   code: number;
   message: string;
@@ -36,24 +36,24 @@ async function request<T>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error("网络错误，请重试");
+    throw new Error("Network error, please try again");
   }
 
   if (resp.status === 401) {
     useAuthStore.getState().clearToken();
     window.location.href = "/login";
-    throw new Error("登录已过期，请重新登录");
+    throw new Error("Session expired, please sign in again");
   }
 
   let json: Envelope<T>;
   try {
     json = (await resp.json()) as Envelope<T>;
   } catch {
-    throw new Error("服务端响应格式错误");
+    throw new Error("Invalid response from server");
   }
 
   if (!json || json.code !== 0) {
-    throw new Error(json?.message || "请求失败");
+    throw new Error(json?.message || "Request failed");
   }
   return json.data as T;
 }
@@ -63,7 +63,7 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
 };
 
-/** SSE 已知事件名（与 pkg/sse/events.go 对齐）。 */
+/** Known SSE event names (aligned with pkg/sse/events.go). */
 export const SSE_EVENTS = [
   "message-start",
   "text-delta",
@@ -84,15 +84,15 @@ export type SseEventName = (typeof SSE_EVENTS)[number] | "message";
 export interface SseCallbacks {
   onOpen?: () => void;
   onEvent: (name: SseEventName, data: unknown) => void;
-  /** 连接异常断开（供调用方自动重连）。 */
+  /** The connection dropped unexpectedly (lets the caller auto-reconnect). */
   onDisconnect?: () => void;
   onClose?: () => void;
 }
 
 /**
- * 用浏览器原生 EventSource 连接 SSE GET 端点。
- * EventSource 无法设置自定义 Header，鉴权 token 通过 query 参数 ?token= 透传
- * （后端 JWT 中间件支持从 query 读 token）。
+ * Connects to the SSE GET endpoint with the browser-native EventSource.
+ * EventSource cannot set custom headers, so the auth token is passed via the ?token= query
+ * parameter (the backend JWT middleware supports reading the token from the query).
  */
 export function openSse(
   path: string,
@@ -127,11 +127,11 @@ export function openSse(
   for (const name of SSE_EVENTS) {
     es.addEventListener(name, (e) => dispatch(name, (e as MessageEvent).data));
   }
-  // 兜底：未命名 message 事件
+  // Fallback: unnamed message events
   es.onmessage = (e) => dispatch("message", e.data);
 
   es.onerror = () => {
-    // readyState=CONNECTING 时浏览器会自动重连；这里交给调用方决定是否手动重连回放。
+    // The browser auto-reconnects while readyState=CONNECTING; here the caller decides whether to manually reconnect and replay.
     if (!disconnected) {
       disconnected = true;
       callbacks.onDisconnect?.();

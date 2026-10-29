@@ -9,22 +9,22 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/repository"
 )
 
-// AttachSink 是 attach 产出的帧回调。历史补全标记由实现方自行处理。
+// AttachSink is the callback for frames produced by attach. Implementations handle the history-completion marker themselves.
 type AttachSink func(key string, raw string)
 
-// AttachOptions 控制 RunAttach 的行为。
+// AttachOptions controls RunAttach's behavior.
 type AttachOptions struct {
-	// LastSeq 是从断点续拉的起点（前端已消费的 chunk 数）。
+	// LastSeq is the resume point (the number of chunks the frontend has consumed).
 	LastSeq int64
-	// AsyncRepo 非 nil 时启用终态轮询（无新 chunk 时检查任务是否死了）。
+	// When AsyncRepo is non-nil, terminal-state polling is enabled (checking whether the task died when no new chunks arrive).
 	AsyncRepo repository.AsyncRequestRepository
-	// EndPush 是收到 EndTurn 或终态时推送的哨兵帧。
+	// EndPush is the sentinel frame pushed on EndTurn or a terminal state.
 	EndPush AttachSink
-	// ReconnectPush 在回放开始时推送 reconnect 帧。
+	// ReconnectPush pushes the reconnect frame when replay starts.
 	ReconnectPush AttachSink
-	// InterruptPush 在任务终态但无 EndTurn 时推送中断提示帧。
+	// InterruptPush pushes the interruption hint frame when the task is terminal but has no EndTurn.
 	InterruptPush AttachSink
-	// PollInterval 是兜底轮询间隔，默认 2s。
+	// PollInterval is the fallback polling interval, default 2s.
 	PollInterval time.Duration
 }
 
@@ -39,8 +39,8 @@ func RunAttachCore(ctx context.Context, msgID string, chunkStore infra.ChunkStor
 	}
 	cursor := opts.LastSeq
 
-	// 断点续拉（lastSeq>0）才推 reconnect 帧；全新请求不推，
-	// 避免前端把"首条消息"误判为"历史补全"。
+	// Only resume pulls (lastSeq>0) push the reconnect frame; brand-new requests do not,
+	// avoiding the frontend mistaking the "first message" for "history completion".
 	if opts.ReconnectPush != nil && opts.LastSeq > 0 {
 		opts.ReconnectPush(msgID, `{"type":"reconnect","msgId":"`+msgID+`","history":true}`)
 	}
@@ -65,12 +65,12 @@ func RunAttachCore(ctx context.Context, msgID string, chunkStore infra.ChunkStor
 			emit(msgID, "__FLOW_END__", opts.EndPush, sink)
 			return ctx.Err()
 		case <-notify:
-			// 有新 chunk，继续循环
+			// New chunks arrived; keep looping
 		case <-time.After(interval):
 			if opts.AsyncRepo != nil {
 				done, _ := isAsyncTerminal(ctx, opts.AsyncRepo, msgID)
 				if done {
-					// 任务终态但没等到 EndTurn → 中断提示
+					// Task terminal but no EndTurn arrived → interruption hint
 					if opts.InterruptPush != nil {
 						opts.InterruptPush(msgID, `{"type":"reconnect","msgId":"`+msgID+`","history":true,"interrupted":true}`)
 					}
@@ -78,13 +78,13 @@ func RunAttachCore(ctx context.Context, msgID string, chunkStore infra.ChunkStor
 					return nil
 				}
 			}
-			// 未终态 → 继续等待
+			// Not terminal → keep waiting
 		}
 	}
 }
 
-// emit 将 raw 帧分发到回调。`__FLOW_END__` 是控制哨兵，只走 endPush；
-// endPush 为空时丢弃，避免泄漏到内容 sink。其余帧走内容 sink。
+// emit dispatches raw frames to callbacks. `__FLOW_END__` is a control sentinel that only goes to endPush;
+// it is dropped when endPush is empty, avoiding leaks into the content sink. All other frames go to the content sink.
 func emit(key, raw string, endPush AttachSink, sink AttachSink) {
 	if raw == "__FLOW_END__" {
 		if endPush != nil {

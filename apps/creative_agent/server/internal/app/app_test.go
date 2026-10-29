@@ -15,7 +15,7 @@ func TestNewRequiresMySQLConnection(t *testing.T) {
 		Log:    config.LogConfig{Level: "error"},
 		MySQL: config.MySQLConfig{
 			Host:     "127.0.0.1",
-			Port:     "1", // 特权端口，本机不会有 MySQL 监听，连接立即被拒绝
+			Port:     "1", // privileged port; nothing listens on it locally, so the connection is refused immediately
 			User:     "test",
 			Password: "",
 			Database: "test_db",
@@ -28,6 +28,6 @@ func TestNewRequiresMySQLConnection(t *testing.T) {
 
 	_, err := app.New(cfg)
 	testx.Error(t, err)
-	// MySQL 不可达时，gorm 透出底层 dial 错误。
+	// When MySQL is unreachable, gorm surfaces the underlying dial error.
 	testx.Contains(t, err.Error(), "dial tcp")
 }

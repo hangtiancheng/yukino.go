@@ -5,8 +5,8 @@ import (
 	riskapp "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/service"
 )
 
-// 编译期断言：risk/points 的应用服务直接实现 creation 定义的跨域端口
-// （依赖方向 creation.app → risk.app / points.app，装配时直接注入具体实例）。
+// Compile-time assertions: the risk/points application services directly implement the cross-domain ports defined by creation
+// (dependency direction creation.app → risk.app / points.app; concrete instances are injected at assembly time).
 var (
 	_ RiskPort   = (*riskapp.RiskAuditApp)(nil)
 	_ PointsPort = (*application.PointsApp)(nil)

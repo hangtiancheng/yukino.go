@@ -1,7 +1,7 @@
-// Package suite 提供基于标准库 testing 的轻量 suite 运行器，
-// 取代 testify/suite：嵌入 suite.Suite、实现 Test* 方法、suite.Run 执行。
+// Package suite provides a lightweight suite runner built on the standard-library testing package,
+// replacing testify/suite: embed suite.Suite, implement Test* methods, and run with suite.Run.
 //
-// 兼容 testify/suite 的常见用法：
+// Compatible with common testify/suite usage:
 //
 //	type MySuite struct {
 //		suite.Suite
@@ -22,30 +22,30 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestingSuite 是所有 suite 必须满足的最小接口。
+// TestingSuite is the minimal interface every suite must satisfy.
 type TestingSuite interface {
 	T() *testing.T
 	SetT(*testing.T)
 }
 
-// Suite 是可嵌入的基础 suite 结构。
+// Suite is the embeddable base suite struct.
 type Suite struct {
 	t *testing.T
 }
 
-// T 返回当前测试的 *testing.T。
+// T returns the *testing.T of the current test.
 func (s *Suite) T() *testing.T { return s.t }
 
-// SetT 由 Run 调用，绑定当前测试的 *testing.T。
+// SetT is called by Run to bind the *testing.T of the current test.
 func (s *Suite) SetT(t *testing.T) { s.t = t }
 
-// Assert 返回绑定当前测试的断言助手。
+// Assert returns the assertion helper bound to the current test.
 func (s *Suite) Assert() *Assertions { return &Assertions{t: s.t} }
 
-// Require 返回绑定当前测试的断言助手（与 Assert 等价，均为 fail-fast）。
+// Require returns the assertion helper bound to the current test (equivalent to Assert; both are fail-fast).
 func (s *Suite) Require() *Assertions { return &Assertions{t: s.t} }
 
-// Assertions 将 testx 断言绑定到具体 *testing.T。
+// Assertions binds the testx assertions to a concrete *testing.T.
 type Assertions struct {
 	t *testing.T
 }
@@ -115,8 +115,8 @@ func (a *Assertions) Contains(container, element any, msgAndArgs ...any) {
 	testx.Contains(a.t, container, element, msgAndArgs...)
 }
 
-// Run 发现 suite 上所有 Test* 方法并逐个执行。
-// SetupSuite/TearDownSuite 各执行一次；SetupTest/TearDownTest 在每个测试前后执行。
+// Run discovers all Test* methods on the suite and executes them one by one.
+// SetupSuite/TearDownSuite run once each; SetupTest/TearDownTest run before/after each test.
 func Run(t *testing.T, s TestingSuite) {
 	t.Helper()
 	s.SetT(t)

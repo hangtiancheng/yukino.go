@@ -115,7 +115,7 @@ func TestRunAttach_ExitOnTimeout(t *testing.T) {
 	testx.Equal(t, "__FLOW_END__", diff[len(diff)-1])
 }
 
-// newTestDB 创建一个内存 SQLite 数据库，并迁移对话相关表。
+// newTestDB creates an in-memory SQLite database and migrates the conversation tables.
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -124,14 +124,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestConReader_SequentialMessages_GetDistinctMsgIDs 复现 Phase 2 串账 bug：
-// 同一 session 连续两次请求，第二次必须新建 message_record（新 msgID），
-// 而不是复用第一条 InProgress 记录的 msgID。
+// TestConReader_SequentialMessages_GetDistinctMsgIDs reproduces the Phase 2 account-mixing bug:
+// two consecutive requests in the same session — the second must create a new message_record (new msgID),
+// not reuse the first InProgress record's msgID.
 func TestConReader_SequentialMessages_GetDistinctMsgIDs(t *testing.T) {
 	db := newTestDB(t)
 	msgRepo := repository.NewMessageRecordRepository(db)
 	sessRepo := repository.NewSessionRepository(db)
-	// asyncRepo/streamQ/redis 传 nil，走同步路径
+	// Pass nil for asyncRepo/streamQ/redis to take the sync path
 	node := ops.NewConReaderNode(sessRepo, msgRepo, nil, nil, nil, false)
 
 	send := func(query string) (string, *seda.Context) {
@@ -148,19 +148,19 @@ func TestConReader_SequentialMessages_GetDistinctMsgIDs(t *testing.T) {
 		return msgID, ctx
 	}
 
-	// 第一次请求
+	// First request
 	msg1, _ := send("第一条消息")
-	// 第二次请求（第一条记录仍处于 InProgress，尚未跑完）
+	// Second request (the first record is still InProgress, not finished yet)
 	msg2, _ := send("第二条消息")
 
-	testx.NotEqual(t, msg1, msg2, "两条不同消息必须使用不同 msgID，不得串账")
+	testx.NotEqual(t, msg1, msg2, "two different messages must use different msgIDs; no account mixing")
 
-	// 数据库里应存在两条独立的记录
+	// Two independent records should exist in the database
 	var count int64
 	db.Model(&model.CGMessageRecord{}).Where("session_id = ?", "s-distinct").Count(&count)
-	testx.Equal(t, int64(2), count, "应生成两条 message_record")
+	testx.Equal(t, int64(2), count, "two message_record rows should be created")
 
-	// 每条记录都应带有各自独立的 query
+	// Each record should carry its own query
 	rec1, err := msgRepo.GetByMessageID(context.Background(), msg1)
 	testx.NoError(t, err)
 	rec2, err := msgRepo.GetByMessageID(context.Background(), msg2)

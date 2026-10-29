@@ -9,13 +9,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisAdapter 基于 *redis.Client 的 domain.RedisPort 实现。
-// 仅封装 Login/Logout 需要的原语。
+// RedisAdapter is the *redis.Client-based domain.RedisPort implementation.
+// It wraps only the primitives Login/Logout need.
 type RedisAdapter struct {
 	client *redis.Client
 }
 
-// NewRedisAdapter 创建实现。client 为 nil 时返回 nil（无 Redis 降级）。
+// NewRedisAdapter creates the implementation. Returns nil when client is nil (no-Redis degradation).
 func NewRedisAdapter(client *redis.Client) domain.RedisPort {
 	if client == nil {
 		return nil
@@ -23,35 +23,35 @@ func NewRedisAdapter(client *redis.Client) domain.RedisPort {
 	return &RedisAdapter{client: client}
 }
 
-// 编译期断言：确保实现满足 domain.RedisPort 接口。
+// Compile-time assertion: the implementation satisfies the domain.RedisPort interface.
 var _ domain.RedisPort = (*RedisAdapter)(nil)
 
-// Get 读取键值，键不存在返回 redis.Nil。
+// Get reads a key value; returns redis.Nil when the key does not exist.
 func (a *RedisAdapter) Get(ctx context.Context, key string) (string, error) {
 	return a.client.Get(ctx, key).Result()
 }
 
-// Set 写入键值并设置 TTL。
+// Set writes a key value with a TTL.
 func (a *RedisAdapter) Set(ctx context.Context, key, value string, ttl time.Duration) error {
 	return a.client.Set(ctx, key, value, ttl).Err()
 }
 
-// Del 删除键。
+// Del deletes a key.
 func (a *RedisAdapter) Del(ctx context.Context, key string) error {
 	return a.client.Del(ctx, key).Err()
 }
 
-// Incr 自增并返回新值（键不存在时从 1 开始）。
+// Incr increments and returns the new value (starting from 1 when the key does not exist).
 func (a *RedisAdapter) Incr(ctx context.Context, key string) (int64, error) {
 	return a.client.Incr(ctx, key).Result()
 }
 
-// Expire 设置键的过期时间。
+// Expire sets the key's expiry.
 func (a *RedisAdapter) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	return a.client.Expire(ctx, key, ttl).Err()
 }
 
-// Exists 键是否存在，返回存在的键个数。
+// Exists checks whether keys exist, returning the count of existing keys.
 func (a *RedisAdapter) Exists(ctx context.Context, key string) (int64, error) {
 	return a.client.Exists(ctx, key).Result()
 }

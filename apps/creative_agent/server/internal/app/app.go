@@ -59,13 +59,13 @@ type App struct {
 	Logger *zap.Logger
 	server *http.Server
 
-	// Phase 6: 模拟生成服务（本地联调用，随机延迟回调自身回调入口）。
+	// Phase 6: simulated generation service (for local integration; calls back its own callback entry after a random delay).
 	fakeGenServer *fakegen.Server
 
-	// OTel: 可观测性
+	// OTel: observability
 	TracerProvider trace.TracerProvider
 
-	// NX 锁（心跳/幂等）：Redis 可用时跨进程，否则进程内降级。
+	// NX lock (heartbeat/idempotency): cross-process when Redis is available, otherwise in-process degradation.
 	locker infra.Locker
 
 	// Phase 2 async pipeline
@@ -85,39 +85,39 @@ type App struct {
 	consumer     *taskflow.Consumer
 	poller       *taskflow.Poller
 
-	// Phase 4: cron 任务登记 DAO
+	// Phase 4: cron-task registration DAO
 	cronRepo repository.CronTaskRepository
 
-	// Phase 4: cron 多 agent 自动推进轮询器
+	// Phase 4: cron multi-agent auto-advance poller
 	cronPoller *taskflow.CronTaskPoller
 
-	// Phase 4: 快捷路径 + 意图记忆（异步 Worker 接线用）
+	// Phase 4: fast path + intent memory (for async Worker wiring)
 	fastPath *fastpath.FastPath
 	memory   *memory.IntentMemory
 
-	// base-server 域：monitor 常驻 job 的依赖（补偿重试 + 超时兜底 + 风控治理）。
+	// base-server domain: dependencies of the resident monitor jobs (compensation retry + timeout fallback + risk governance).
 	riskAudit     *riskapp.RiskAuditApp
 	dispatcher    *creationinfra.CallbackDispatcher
-	postCreate    *creationapp.PostCreateApp            // 超时兜底执行器（RefundAndFailTimeout）
-	projects      creationdomain.ProjectRepository      // creation 域（monitor 超时 job 用）
-	compensations creationdomain.CompensationRepository // 补偿表（monitor 补偿 job 用）
-	riskStats     riskdomain.RiskStatsRepository        // 风控治理统计（评估 job 读、消费写）
-	monitorCancel context.CancelFunc                    // 停止常驻 monitor job 的 cancel（优雅关机时调用）
+	postCreate    *creationapp.PostCreateApp            // timeout-fallback executor (RefundAndFailTimeout)
+	projects      creationdomain.ProjectRepository      // creation domain (used by the monitor timeout job)
+	compensations creationdomain.CompensationRepository // compensation table (used by the monitor compensation job)
+	riskStats     riskdomain.RiskStatsRepository        // risk-governance statistics (read by the evaluation job, written by the consumer)
+	monitorCancel context.CancelFunc                    // cancel that stops the resident monitor jobs (called on graceful shutdown)
 }
 
 // New initializes infrastructure, services, routes, and the HTTP server.
 //
-// 装配线（依赖倒置：应用层只依赖接口，基础设施由本处装配注入）：
-//  1. agent 域：auth/user + conversation + subtask + async worker 依赖
-//  2. points 上下文：repo → PointsApp
-//  3. risk 上下文：backend + records + 补偿 sink + 黑名单 → RiskAuditApp / AuditOutputApp
-//  4. creation 上下文：projects + records + comp + 跨域端口 → CreationApp + CallbackDispatcher
-//  5. 组装 handlers → router.Setup
+// Assembly line (dependency inversion: application layers depend on interfaces only; infrastructure is wired and injected here):
+//  1. agent domain: auth/user + conversation + subtask + async worker dependencies
+//  2. points context: repo → PointsApp
+//  3. risk context: backend + records + compensation sink + blacklist → RiskAuditApp / AuditOutputApp
+//  4. creation context: projects + records + comp + cross-domain ports → CreationApp + CallbackDispatcher
+//  5. assemble handlers → router.Setup
 func New(cfg *config.Config) (*App, error) {
 	zapLogger := logger.New(cfg.Log.Level)
 	zap.ReplaceGlobals(zapLogger)
 
-	// Sentry 错误上报（DSN 为空时不启用；Recovery 中间件自动捕获 panic 上报）。
+	// Sentry error reporting (disabled when the DSN is empty; the Recovery middleware automatically captures and reports panics).
 	if cfg.Sentry.DSN != "" {
 		if err := sentry.Init(sentry.ClientOptions{Dsn: cfg.Sentry.DSN}); err != nil {
 			zapLogger.Warn("sentry init failed, error reporting disabled", zap.Error(err))
@@ -126,8 +126,8 @@ func New(cfg *config.Config) (*App, error) {
 		}
 	}
 
-	// OpenTelemetry 初始化（trace → Jaeger）。
-	// 启用时设置全局 provider + W3C propagator；HTTP 中间件读入站 traceparent 建 child span。
+	// OpenTelemetry initialization (trace → Jaeger).
+	// When enabled it sets the global provider + W3C propagator; the HTTP middleware reads the inbound traceparent and creates a child span.
 	otelProvider, err := otelx.Init(cfg.OTel, zapLogger)
 	if err != nil {
 		zapLogger.Warn("otel init failed, trace disabled", zap.Error(err))
@@ -141,7 +141,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	// 雪花 ID 生成器（task_run / task_step / message 业务主键）。
+	// Snowflake ID generator (business primary keys for task_run / task_step / message).
 	if err := model.InitSnowflake(1); err != nil {
 		return nil, err
 	}
@@ -152,15 +152,15 @@ func New(cfg *config.Config) (*App, error) {
 		rdb = nil
 	}
 
-	// NX 锁：Redis 可用时跨进程；否则进程内实现（单二进制部署仍然可用）。
+	// NX lock: cross-process when Redis is available; otherwise the in-process implementation (still usable for single-binary deployments).
 	var locker infra.Locker = infra.NewMemoryLocker()
 	if rdb != nil {
 		locker = infra.NewRedisLocker(rdb)
 	}
 
-	// 真实 LLM（配置了 base_url 才启用；未配置回退 FakeLLM）。
-	// DefaultRealLLM 是子 Agent 通用注入点（auto tool_choice）；
-	// DefaultManagerLLM 是管家专用（强制 tool_choice=required）。
+	// Real LLM (enabled only when base_url is configured; falls back to FakeLLM otherwise).
+	// DefaultRealLLM is the generic sub-agent injection point (auto tool_choice);
+	// DefaultManagerLLM is manager-specific (forced tool_choice=required).
 	if cfg.LLM.BaseURL != "" {
 		llmCfg := appkitllm.Config{
 			Provider: cfg.LLM.Provider,
@@ -178,7 +178,7 @@ func New(cfg *config.Config) (*App, error) {
 	} else {
 		appkitllm.DefaultRealLLM = nil
 		appkitllm.DefaultManagerLLM = nil
-		zapLogger.Info("LLM 未配置，使用 FakeLLM（查表模拟）")
+		zapLogger.Info("LLM not configured, using FakeLLM (table-lookup simulation)")
 	}
 
 	authService := service.NewAuthService(cfg.JWT.Secret)
@@ -189,16 +189,16 @@ func New(cfg *config.Config) (*App, error) {
 	messageRecordRepo := repository.NewMessageRecordRepository(db)
 	thoughtRepo := repository.NewAgentThoughtRepository(db)
 
-	// 热点/选题检索 provider：配置了 IDEA_KING_BASE_URL 用自建 HTTP 服务；
-	// 否则默认用百度热搜（top.baidu.com 公开接口），网络失败降级 Mock（demo 恒可跑）。
+	// Hotspot/topic retrieval provider: with IDEA_KING_BASE_URL configured it uses the self-hosted HTTP service;
+	// otherwise it defaults to Baidu hot search (top.baidu.com public API), degrading to Mock on network failure (the demo always runs).
 	var ideaKing ideaking.IdeaKingProvider = ideaking.NewFallbackProvider(
 		ideaking.NewBaiduHotProvider(), ideaking.NewMockProvider())
 	if cfg.IdeaKing.BaseURL != "" {
 		ideaKing = ideaking.NewHTTPProvider(ideaking.HTTPConfig{BaseURL: cfg.IdeaKing.BaseURL})
 	}
 
-	// Phase 2: Async pipeline infrastructure。
-	// Redis 可用时用 Redis 实现（跨进程）；否则降级进程内实现（yukino_cache + 内存队列）。
+	// Phase 2: Async pipeline infrastructure.
+	// Redis implementations when Redis is available (cross-process); otherwise in-process degradation (yukino_cache + in-memory queue).
 	var asyncRepo repository.AsyncRequestRepository
 	var chunkStore infra.ChunkStore
 	var streamQ infra.StreamQueue
@@ -229,18 +229,18 @@ func New(cfg *config.Config) (*App, error) {
 	var cronRepo repository.CronTaskRepository
 	var cronPoller *taskflow.CronTaskPoller
 
-	// Phase 5: SKILL.md 动态工具源。扫描仓库根 skills/ 目录。
+	// Phase 5: SKILL.md dynamic tool source. Scans the repository-root skills/ directory.
 	skillRepo, err := appkitskill.NewFSRepository("skills")
 	if err != nil {
-		zapLogger.Warn("skills 目录加载失败，skill 工具不可用", zap.Error(err))
+		zapLogger.Warn("failed to load the skills directory, skill tools unavailable", zap.Error(err))
 	}
 	var skillProvider *appkitskill.SkillProvider
 	if skillRepo != nil {
 		skillProvider = appkitskill.NewSkillProvider(skillRepo, appkitskill.NewRemoteSkillExecutor(nil))
 	}
 
-	// Phase 6: base-server 域已并入本进程：HTTP client 默认指向自身 loopback，
-	// 工具经 /inner/* 调用同进程的 creation/risk 链路；fakegen 模拟生成服务照旧。
+	// Phase 6: the base-server domain is merged into this process: the HTTP client defaults to its own loopback;
+	// tools call the same-process creation/risk chain via /inner/*; the fakegen simulated generation service stays as before.
 	baseURL := cfg.BaseServer.BaseURL
 	if baseURL == "" {
 		baseURL = "http://localhost:" + cfg.Server.Port
@@ -250,7 +250,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	var fakeGenServer *fakegen.Server
 	if cfg.FakeGen.Enabled {
-		// fakegen listen 失败（如端口占用）会 panic，降级为不可用 + 回退假实现，不炸掉整个启动。
+		// A fakegen listen failure (e.g. port occupied) panics; degrade to unavailable + fall back to the fake implementation instead of blowing up startup.
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -267,8 +267,8 @@ func New(cfg *config.Config) (*App, error) {
 		}()
 	}
 
-	// Phase 6: 工具注册——注入 base-server client + fakegen + 回调地址（未配置回退假实现）。
-	// 回调入口在自身 /aigc/callback/task_detail（fakegen 生成完成后回调推进 Waiting 任务）。
+	// Phase 6: tool registration — inject the base-server client + fakegen + callback address (falling back to fake implementations when unconfigured).
+	// The callback entry is its own /aigc/callback/task_detail (fakegen calls back after generation completes, advancing Waiting tasks).
 	var tools appkittools.ToolsProvider
 	if fakeGenServer != nil {
 		tools = appkittools.NewSubAgentToolRegistry(&appkittools.RealRunnerDeps{
@@ -289,7 +289,7 @@ func New(cfg *config.Config) (*App, error) {
 			taskStreamQ = infra.NewMemoryStreamQueue("cg:stream:task", "cg:executors", cfg.Async.WorkerID)
 		}
 
-		// Phase 4: cron 登记 DAO（Worker 的 requestType=cron 注册用）。
+		// Phase 4: cron registration DAO (for the Worker's requestType=cron registration).
 		cronRepo = repository.NewCronTaskRepository(db)
 
 		if skillProvider != nil {
@@ -319,7 +319,7 @@ func New(cfg *config.Config) (*App, error) {
 			Logger:      zapLogger,
 		})
 
-		// Phase 4: Cron 多 agent 自动推进 Poller（默认每 30s 扫 Running cron 任务推进下一步）。
+		// Phase 4: Cron multi-agent auto-advance Poller (by default scans Running cron tasks every 30s and advances the next step).
 		cronPoller = taskflow.NewCronTaskPoller(taskflow.CronTaskPollerConfig{
 			CronRepo:    cronRepo,
 			TaskRunRepo: taskRunRepo,
@@ -328,11 +328,11 @@ func New(cfg *config.Config) (*App, error) {
 		})
 	}
 
-	// Step 3.6: 多 agent 串联的意图记忆（内存版，单进程）。
+	// Step 3.6: intent memory for multi-agent chaining (in-memory, single process).
 	intentMemory := memory.NewIntentMemory()
 
-	// Phase 4: 快捷路径。仅在 Async 启用（Submitter 非 nil）时注入，
-	// 否则传 nil → SupervisorAgentNode 跳过 FastPath 判断，走正常 ReAct。
+	// Phase 4: fast path. Injected only when Async is enabled (Submitter non-nil);
+	// otherwise nil is passed → SupervisorAgentNode skips the FastPath check and runs normal ReAct.
 	var fastPath *fastpath.FastPath
 	if submitter != nil {
 		fastPath = fastpath.NewFastPath(fastpath.FastPathConfig{
@@ -344,38 +344,38 @@ func New(cfg *config.Config) (*App, error) {
 		})
 	}
 
-	// ===== base-server 域装配（points / risk / creation）=====
+	// ===== base-server domain assembly (points / risk / creation) =====
 
-	// points 上下文
+	// points context
 	pointsRepo := pointsinfra.NewPointsRepositoryImpl(db)
 	pointsApp := pointsapp.NewPointsApp(pointsRepo)
 
-	// risk 基础设施（补偿 sink 由 creation 实现注入，依赖反转）
+	// risk infrastructure (the compensation sink is injected by the creation implementation; dependency inversion)
 	riskRecords := riskinfra.NewAuditRecordRepositoryImpl(db)
 	riskStatsRepo := riskinfra.NewRiskStatsRepositoryImpl(db)
 	auditBackend := riskinfra.NewLocalAuditBackend()
 
-	// creation 基础设施
+	// creation infrastructure
 	projRepo := creationinfra.NewProjectRepositoryImpl(db)
 	cbRepo := creationinfra.NewCallbackRecordRepositoryImpl(db)
 	compRepo := creationinfra.NewCompensationRepositoryImpl(db)
 
-	// creation → risk 的依赖反转：AuditResultSink（风控回调落定 project）由 creation 实现
+	// creation → risk dependency inversion: AuditResultSink (the risk callback settling the project) is implemented by creation
 	onAuditResult := creationinfra.NewOnAuditResultImpl(projRepo, pointsApp)
-	// risk → creation 的依赖反转：CompensationSink（异步风控提交失败写补偿表）由 creation 实现
+	// risk → creation dependency inversion: CompensationSink (writing the compensation table when async risk submission fails) is implemented by creation
 	compSink := creationinfra.NewCompensationSinkImpl(compRepo)
 
 	blacklistChecker := riskinfra.NewRedisBlacklistChecker(rdb)
 	riskAuditApp := riskapp.NewRiskAuditApp(auditBackend, riskRecords, compSink, blacklistChecker)
 	auditOutputApp := riskapp.NewAuditOutputApp(riskRecords, onAuditResult)
 
-	// creation 应用门面 + 回调分发器
+	// creation application facade + callback dispatcher
 	creationApp := creationapp.NewCreationApp(projRepo, cbRepo, riskAuditApp, pointsApp)
 	dispatcher := creationinfra.NewCallbackDispatcher(
 		creationinfra.NewCallbackDeps(projRepo, cbRepo, compRepo, riskAuditApp, pointsApp),
 	)
 
-	// base-server 域 handlers
+	// base-server domain handlers
 	creationCtl := creationHandler.NewCreationHandler(
 		creationApp.PreCreate, creationApp.Create, creationApp.PostCreate, creationApp.HandleError, dispatcher)
 	riskCtl := riskHandler.NewRiskHandler(auditOutputApp)
@@ -449,7 +449,7 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Run() error {
 	a.Logger.Info("server listening", zap.String("addr", a.server.Addr))
 
-	// 启动常驻 monitor jobs（补偿重试 + 超时兜底 + 风控治理），优雅关机时 cancel 停止。
+	// Start the resident monitor jobs (compensation retry + timeout fallback + risk governance); cancel stops them on graceful shutdown.
 	a.startMonitorJobs()
 
 	// Phase 2: Start async worker goroutines
@@ -471,8 +471,8 @@ func (a *App) Run() error {
 			TaskPoller:    a.poller,
 			CronRepo:      a.cronRepo,
 			TaskRunRepo:   a.taskRunRepo,
-			// 业务决策（快路径 / 管家策略+prompt / HIL 触发）由 app 装配注入。
-			// worker 本身只做"消费队列 + 锁/CAS/心跳/落库/ACK"。
+			// Business decisions (fast path / manager strategy+prompt / HIL triggering) are injected by the app wiring.
+			// The worker itself only does "queue consumption + lock/CAS/heartbeat/persistence/ACK".
 			Hooks: &worker.TaskRunnerHooks{
 				FastPath:           a.fastPath,
 				Memory:             a.memory,
@@ -480,13 +480,13 @@ func (a *App) Run() error {
 				CheckpointSave: func(sessionID string, cp *react.Checkpoint) {
 					a.memory.SaveCheckpoint(sessionID, cp)
 				},
-				// HIL 触发词：query 含"确认"（对齐原 consumer 的 strings.Contains 判据）。
+				// HIL trigger word: the query contains "确认" (aligned with the original consumer's strings.Contains criterion).
 				ShouldEnableHIL: func(query string) bool {
 					return strings.Contains(query, "确认")
 				},
-				// 每轮 LLM 落 thought 表（LLM 流式输出恢复副本的中间消息表）。
+				// Persist a thought row per LLM round (the intermediate message table for LLM streaming-output recovery copies).
 				ThoughtRepo: a.thoughtRepo,
-				// 热点/选题检索 provider（热点卡 strategy 直出用；未配置回退 MockProvider）。
+				// Hotspot/topic retrieval provider (for the hot-card strategy's direct emission; falls back to MockProvider when unconfigured).
 				IdeaKing: a.ideaKing,
 			},
 		})
@@ -511,7 +511,7 @@ func (a *App) Run() error {
 				zap.String("workerID", a.Config.Async.WorkerID))
 		}
 
-		// Phase 4: Cron 多 agent 自动推进 Poller（默认每 30s）。
+		// Phase 4: Cron multi-agent auto-advance Poller (every 30s by default).
 		if a.cronPoller != nil {
 			interval := a.Config.Cron.PollInterval.Std()
 			if interval <= 0 {
@@ -524,8 +524,8 @@ func (a *App) Run() error {
 		}
 	}
 
-	// Phase 6: 启动模拟生成服务（本地联调用，收到 /submit 后随机延迟回调自身回调入口）。
-	// 不依赖 Redis/workerCtx，故用独立 context.Background()；生命周期由优雅关机段的 Shutdown 收口。
+	// Phase 6: start the simulated generation service (for local integration; after receiving /submit it calls back its own callback entry after a random delay).
+	// It does not depend on Redis/workerCtx, so it uses an independent context.Background(); its lifecycle is closed by Shutdown in the graceful-shutdown section.
 	if a.fakeGenServer != nil {
 		go func() {
 			if err := a.fakeGenServer.Start(context.Background()); err != nil {
@@ -546,7 +546,7 @@ func (a *App) Run() error {
 	sig := <-quit
 	a.Logger.Info("shutting down server", zap.String("signal", sig.String()))
 
-	// 停止 monitor jobs（job 内部 select ctx.Done，立即退出）
+	// Stop the monitor jobs (jobs select on ctx.Done internally and exit immediately)
 	if a.monitorCancel != nil {
 		a.monitorCancel()
 	}
@@ -564,14 +564,14 @@ func (a *App) Run() error {
 		return err
 	}
 
-	// Phase 6: 关闭模拟生成服务（与主 HTTP server 同一超时 ctx）。
+	// Phase 6: shut down the simulated generation service (with the same timeout ctx as the main HTTP server).
 	if a.fakeGenServer != nil {
 		if err := a.fakeGenServer.Shutdown(ctx); err != nil {
 			a.Logger.Warn("fakegen shutdown error", zap.Error(err))
 		}
 	}
 
-	// Flush trace 数据到 Jaeger。
+	// Flush trace data to Jaeger.
 	if a.TracerProvider != nil {
 		if tp, ok := a.TracerProvider.(interface {
 			Shutdown(context.Context) error
@@ -582,22 +582,22 @@ func (a *App) Run() error {
 		}
 	}
 
-	// Flush Sentry 事件缓冲。
+	// Flush the Sentry event buffer.
 	sentry.Flush(2 * time.Second)
 
 	a.Logger.Info("server exited gracefully")
 	return nil
 }
 
-// startMonitorJobs 启动补偿重试 + 超时兜底 + 风控治理常驻定时任务。
-// Redis 不可用（rdb==nil）时 job 仍启动——补偿/超时只依赖 DB，不依赖 Redis。
+// startMonitorJobs starts the resident scheduled jobs for compensation retry + timeout fallback + risk governance.
+// The jobs start even when Redis is unavailable (rdb==nil) — compensation/timeout depend only on the DB, not Redis.
 //
-// ⚠️ 异步启动：monitor.LoopRun 内部 `<-ctx.Done()` 阻塞直到优雅关机，若同步调用
-// 会卡住主 goroutine，导致后面的 ListenAndServe 永不执行（服务不监听端口）。
-// 必须在 goroutine 中运行。
+// ⚠️ Started asynchronously: monitor.LoopRun blocks on `<-ctx.Done()` until graceful shutdown; calling it synchronously
+// would stall the main goroutine so the subsequent ListenAndServe never runs (the service never listens).
+// It must run in a goroutine.
 func (a *App) startMonitorJobs() {
 	if a.monitorCancel != nil {
-		return // 已启动，避免重复
+		return // already started; avoid duplicates
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.monitorCancel = cancel

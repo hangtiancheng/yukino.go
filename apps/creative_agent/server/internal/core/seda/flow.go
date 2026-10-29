@@ -5,23 +5,23 @@ import (
 	"sync"
 )
 
-// ---------- 图描述类型（构建期使用） ----------
+// ---------- Graph description types (used at build time) ----------
 
-// Edge 声明从 From 算子到 To 算子的有向边。
+// Edge declares a directed edge from the From operator to the To operator.
 type Edge struct{ From, To string }
 
-// FlowConf 描述一张 flow 图的静态结构。
+// FlowConf describes the static structure of a flow graph.
 type FlowConf struct {
 	Name  string
-	Ops   []string // 图中所有算子名
+	Ops   []string // all operator names in the graph
 	Edges []Edge
-	Start string // 根算子名
-	Last  string // 终结算子名（短路目标）
+	Start string // root operator name
+	Last  string // terminal operator name (short-circuit target)
 }
 
-// ---------- Flow（运行时实例） ----------
+// ---------- Flow (runtime instance) ----------
 
-// Flow 是一次图执行实例。每个 HTTP 请求创建一个新的 Flow。
+// Flow is one graph-execution instance. A new Flow is created per HTTP request.
 type Flow struct {
 	name    string
 	start   *node
@@ -32,8 +32,8 @@ type Flow struct {
 	retMsg  string
 }
 
-// BuildFlow 按 FlowConf 构建一个新的 Flow 实例。
-// 每个算子都会通过其注册的工厂函数全新实例化。
+// BuildFlow builds a new Flow instance from a FlowConf.
+// Every operator is freshly instantiated through its registered factory function.
 func BuildFlow(conf FlowConf) *Flow {
 	f := &Flow{
 		name:  conf.Name,
@@ -58,37 +58,37 @@ func BuildFlow(conf FlowConf) *Flow {
 	return f
 }
 
-// GetContext 返回 flow 的共享上下文。
-// 供调用方在 WaitExec 之前注入数据（如 HTTP body）。
+// GetContext returns the flow's shared context.
+// Callers use it to inject data (e.g. the HTTP body) before WaitExec.
 func (f *Flow) GetContext() *Context { return f.ctx }
 
-// WaitExec 从 start 节点开始驱动 flow，阻塞直到所有 goroutine 收敛。
-// 返回整体执行码和消息。
+// WaitExec drives the flow from the start node and blocks until all goroutines converge.
+// It returns the overall execution code and message.
 func (f *Flow) WaitExec() (int, string) {
 	f.run(f.start)
 	return f.retCode, f.retMsg
 }
 
-// run 从 n 开始正向驱动执行。
+// run drives execution forward starting from n.
 func (f *Flow) run(n *node) {
-	// --- 汇合：等齐所有必需上游 ---
+	// --- Join: wait for all required upstreams ---
 	n.mu.Lock()
 	n.arrived++
 	if n.arrived < n.prior {
 		n.mu.Unlock()
-		return // 还没等齐；最后一个上游会触发真正执行
+		return // not all arrived yet; the last upstream triggers the actual execution
 	}
 	if n.executed {
 		n.mu.Unlock()
-		return // 已被抢占（如 execLast 已执行）
+		return // already claimed (e.g. execLast has run)
 	}
 	n.executed = true
 	n.mu.Unlock()
 
-	// --- 执行 ---
+	// --- Execute ---
 	code, msg := f.safeDo(n)
 
-	// --- 短路 ---
+	// --- Short-circuit ---
 	if code < 0 {
 		f.retCode = code
 		f.retMsg = msg
@@ -96,7 +96,7 @@ func (f *Flow) run(n *node) {
 		return
 	}
 
-	// --- 正向驱动：fork 或链式 ---
+	// --- Forward drive: fork or chain ---
 	if len(n.nexts) == 1 {
 		f.run(n.nexts[0])
 	} else if len(n.nexts) > 1 {
@@ -110,10 +110,10 @@ func (f *Flow) run(n *node) {
 		}
 		wg.Wait()
 	}
-	// 无下游：叶子节点，不需要转发
+	// No downstream: leaf node, nothing to forward
 }
 
-// safeDo 带 panic 兜底地执行算子的 DoImpl。
+// safeDo executes the operator's DoImpl with panic protection.
 func (f *Flow) safeDo(n *node) (code int, msg string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -124,9 +124,9 @@ func (f *Flow) safeDo(n *node) (code int, msg string) {
 	return n.op.DoImpl(f.ctx)
 }
 
-// execLast 无条件执行最后一个算子（若尚未执行）。
-// 复用 tryClaim，与正常 join 路径共享同一个 executed 守卫，
-// 保证无论从哪条路径到达，最后算子至多执行一次。
+// execLast unconditionally executes the last operator (if not already executed).
+// It reuses tryClaim, sharing the same executed guard as the normal join path,
+// guaranteeing the last operator runs at most once regardless of the path taken.
 func (f *Flow) execLast() {
 	if !f.last.tryClaim() {
 		return

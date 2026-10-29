@@ -8,9 +8,9 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestNewFlowGraphShape 校验 conversation flow 图的静态结构。
-// 图定义是运行时正确性的根基，此处锁定 Start/Last/Ops/Edges，
-// 防止算子名或边拼写错误在编译期漏网。
+// TestNewFlowGraphShape validates the static structure of the conversation flow graph.
+// The graph definition is the foundation of runtime correctness; Start/Last/Ops/Edges are locked here,
+// preventing operator-name or edge typos from slipping past compile time.
 func TestNewFlowGraphShape(t *testing.T) {
 	conf := conversation.NewFlow(nil, conversation.FlowDeps{})
 
@@ -24,6 +24,6 @@ func TestNewFlowGraphShape(t *testing.T) {
 		{From: "con_writer", To: "con_end"},
 	}, conf.Edges)
 
-	// 冒烟：四个算子都已在 registry 注册，BuildFlow 不 panic。
+	// Smoke: all four operators are registered in the registry; BuildFlow does not panic.
 	testx.NotPanics(t, func() { seda.BuildFlow(conf) })
 }

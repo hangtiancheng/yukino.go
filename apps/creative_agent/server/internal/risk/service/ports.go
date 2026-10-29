@@ -6,20 +6,20 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/domain"
 )
 
-// CompensationSink 异步风控提交失败的补偿写入（creation 域实现并注入，依赖反转）。
+// CompensationSink writes compensation for failed async risk submissions (implemented and injected by the creation domain; dependency inversion).
 type CompensationSink interface {
-	// InsertAuditCompensation 写一条异步风控补偿记录（biz_type=1）。幂等：同 recordID 不重复写。
+	// InsertAuditCompensation writes one async-risk compensation record (biz_type=1). Idempotent: the same recordID is never written twice.
 	InsertAuditCompensation(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string, recordID int64) error
 }
 
-// AuditResultSink 风控审核结果落定通知（creation 域实现并注入，依赖反转）。
+// AuditResultSink is the risk-audit result settling notification (implemented and injected by the creation domain; dependency inversion).
 //
-// risk 侧落定 audit_record 终态后，通过本接口通知 creation 落定 project：
-//   - passed=true → project 置 done（终态短路覆盖重复通知）
-//   - passed=false → 退积分 + 置 fail（points_status 幂等退，仅 used 才退）
+// After the risk side settles the audit_record terminal state, it notifies creation through this interface to settle the project:
+//   - passed=true → project set done (the terminal short-circuit covers duplicate notifications)
+//   - passed=false → refund points + set fail (points_status refunds idempotently, only used refunds)
 //
-// 接口定义在 risk 侧、实现由 creation.infrastructure 提供（OnAuditResultImpl），
-// 保持依赖单向（creation → risk，risk 不感知 creation），组装时注入。
+// The interface is defined on the risk side; the implementation is provided by creation.infrastructure (OnAuditResultImpl),
+// keeping dependencies one-way (creation → risk; risk knows nothing about creation), injected at assembly time.
 type AuditResultSink interface {
 	Handle(ctx context.Context, projectID string, passed bool, reason string) error
 }

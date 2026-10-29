@@ -10,88 +10,88 @@ import (
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 )
 
-// ClarificationDeps 是点卡确认接口的依赖。
+// ClarificationDeps holds the dependencies of the card-confirmation endpoint.
 type ClarificationDeps struct {
 	Memory *memory.IntentMemory
 }
 
-// ClarificationRequest 是 POST /aigc/agent/submit_clarification 的请求体。
+// ClarificationRequest is the request body of POST /aigc/agent/submit_clarification.
 //
-// 对应真实系统 components.go:37 的 submit_clarification——
-// 用户点卡后，把卡片选择写回 intent_memory 并推进 FlowStage。
+// Mirrors submit_clarification in the reference system's components.go:37 —
+// after the user clicks a card, the selection is written back to intent_memory and FlowStage advances.
 type ClarificationRequest struct {
-	// SessionID 会话 ID（必填）。
+	// SessionID is the session ID (required).
 	SessionID string `json:"sessionId"`
-	// CardType 卡片类型：topic / category / params / script。
+	// CardType is the card type: topic / category / params / script.
 	CardType string `json:"cardType"`
-	// Value 用户的选择（卡片选项的值）。
+	// Value is the user's selection (the card option value).
 	Value string `json:"value"`
-	// AgentID 当前 agent（推进后记录，供 GetNextAgent 计算下一个）。
+	// AgentID is the current agent (recorded after advancing, used by GetNextAgent to compute the next one).
 	AgentID string `json:"agentId"`
-	// Pipeline 当前产线（如 mix_video）。
+	// Pipeline is the current pipeline (e.g. mix_video).
 	Pipeline string `json:"pipeline"`
-	// MsgID 触发本轮产出的 server 消息 ID（脚本卡必填）。
-	// 点卡时前端回传，服务端作为 OriginMsgID 回传，供下一轮请求
-	// fastpath 追溯前序脚本（对齐真实系统 OriginMsgID 链路）。
+	// MsgID is the server message ID that triggered this round's output (required for script cards).
+	// The frontend sends it when clicking the card; the server echoes it back as OriginMsgID so the next request's
+	// fastpath can trace the preceding script (aligned with the reference system's OriginMsgID chain).
 	MsgID string `json:"msgId"`
-	// SelectedEid 用户点选的热点 eid（热点卡 topic 确认时回传）。
+	// SelectedEid is the hot-topic eid the user clicked (sent on hot-topic card confirmation).
 	SelectedEid string `json:"selectedEid"`
-	// TopicTitle 用户点选的选题标题（热点卡 topic 确认时回传）。
+	// TopicTitle is the topic title the user clicked (sent on hot-topic card confirmation).
 	TopicTitle string `json:"topicTitle"`
 }
 
-// ClarificationResponse 返回推进后的意图记忆快照。
+// ClarificationResponse returns the intent-memory snapshot after advancing.
 type ClarificationResponse struct {
 	Stage    string `json:"stage"`
 	Pipeline string `json:"pipeline,omitempty"`
 	Agent    string `json:"agent,omitempty"`
-	// NextAgent 下一步应执行的 agent（由 GetNextAgent 算出，空表示链结束）。
+	// NextAgent is the agent to execute next (computed by GetNextAgent; empty means the chain ends).
 	NextAgent string `json:"nextAgent,omitempty"`
-	// OriginMsgID 回传点卡时的 msgId，前端下一轮请求带回（组织上下文用）。
+	// OriginMsgID echoes the msgId from the card click; the frontend sends it back on the next request (for context assembly).
 	OriginMsgID string `json:"originMsgId,omitempty"`
-	// SelectedEid 回传用户点选的热点 eid（热点卡 topic 确认后）。
+	// SelectedEid echoes the hot-topic eid the user clicked (after hot-topic card confirmation).
 	SelectedEid string `json:"selectedEid,omitempty"`
-	// TopicTitle 回传用户点选的选题标题。
+	// TopicTitle echoes the topic title the user clicked.
 	TopicTitle string `json:"topicTitle,omitempty"`
 }
 
-// SubmitClarificationHandler 返回点卡确认的 HTTP handler。
+// SubmitClarificationHandler returns the HTTP handler for card confirmation.
 //
-// 对应真实系统 §5.5 路径 A ③：用户点卡 → POST /submit_clarification
-// → updateIntentMemoryOnCardClick 把 memory.FlowStage 推进。
-// 推进后的 FlowStage 是下一次请求 CanFastTask 判断的依据。
+// Mirrors §5.5 path A ③ of the reference system: user clicks a card → POST /submit_clarification
+// → updateIntentMemoryOnCardClick advances memory.FlowStage.
+// The advanced FlowStage is the basis for the next request's CanFastTask decision.
 func SubmitClarificationHandler(deps ClarificationDeps) yukino.Middleware {
 	return func(c *yukino.Context, _ func()) {
 		var req ClarificationRequest
 		if err := c.BindJSON(&req); err != nil {
-			response.Fail(c, http.StatusBadRequest, 40000, "请求体格式错误")
+			response.Fail(c, http.StatusBadRequest, 40000, "malformed request body")
 			return
 		}
 		if req.SessionID == "" {
-			response.Fail(c, http.StatusBadRequest, 40001, "sessionId 是必填字段")
+			response.Fail(c, http.StatusBadRequest, 40001, "sessionId is required")
 			return
 		}
 
 		nextStage := mapCardTypeToStage(req.CardType)
 		if nextStage == "" {
-			response.Fail(c, http.StatusBadRequest, 40002, "cardType 不合法（topic/category/params/plan/script）")
+			response.Fail(c, http.StatusBadRequest, 40002, "invalid cardType (topic/category/params/plan/script)")
 			return
 		}
-		// 脚本卡必带 msgId：fastpath 投递下一个 agent 时要靠它追溯前序脚本
-		// （对齐真实系统 OriginMsgID 链路，script 卡确认后必须能组织上下文）。
+		// Script cards must carry msgId: fastpath needs it to trace the preceding script when dispatching the next agent
+		// (aligned with the reference system's OriginMsgID chain; context must be assemblable after script-card confirmation).
 		if nextStage == memory.FlowStageScriptConfirmed && req.MsgID == "" {
-			response.Fail(c, http.StatusBadRequest, 40003, "脚本卡确认必须携带 msgId（用于追溯前序脚本）")
+			response.Fail(c, http.StatusBadRequest, 40003, "script card confirmation must carry msgId (used to trace the preceding script)")
 			return
 		}
 
-		// 写回 intent_memory 并推进 FlowStage
+		// Write back to intent_memory and advance FlowStage
 		if req.Pipeline != "" {
 			deps.Memory.SetPipeline(req.SessionID, req.Pipeline)
 		}
 		if req.AgentID != "" {
 			deps.Memory.SetAgent(req.SessionID, req.AgentID)
 		}
-		// 热点卡（topic）确认：记录用户点选的热点 eid + 选题标题
+		// Hot-topic card confirmation: record the clicked hot-topic eid + topic title
 		if nextStage == memory.FlowStageTopicConfirmed {
 			if req.SelectedEid != "" {
 				deps.Memory.SetTopicEid(req.SessionID, req.SelectedEid)
@@ -102,7 +102,7 @@ func SubmitClarificationHandler(deps ClarificationDeps) yukino.Middleware {
 		}
 		deps.Memory.SetStage(req.SessionID, nextStage)
 
-		// 计算下一个 agent（脚本确认后进入下一阶段；其他卡片确认不推进 agent）
+		// Compute the next agent (script confirmation enters the next stage; other card confirmations do not advance the agent)
 		nextAgent := ""
 		if nextStage == memory.FlowStageScriptConfirmed && req.Pipeline != "" && req.AgentID != "" {
 			next, err := subtask.GetNextAgent(subtask.Pipeline(req.Pipeline), subtask.AgentID(req.AgentID))
@@ -124,13 +124,13 @@ func SubmitClarificationHandler(deps ClarificationDeps) yukino.Middleware {
 	}
 }
 
-// mapCardTypeToStage 把卡片类型映射为要推进到的 FlowStage。
+// mapCardTypeToStage maps a card type to the FlowStage to advance to.
 //
-//	选题卡 topic    → topic_confirmed
-//	品类卡 category → category_confirmed
-//	参数卡 params   → params_confirmed
-//	策划卡 plan     → plan_confirmed
-//	脚本卡 script   → script_confirmed（投递下一个 agent 的触发点）
+//	topic card    → topic_confirmed
+//	category card → category_confirmed
+//	params card   → params_confirmed
+//	plan card     → plan_confirmed
+//	script card   → script_confirmed (the trigger for dispatching the next agent)
 func mapCardTypeToStage(cardType string) memory.FlowStage {
 	switch cardType {
 	case "topic":

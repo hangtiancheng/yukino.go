@@ -6,15 +6,15 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/business/subtask"
 )
 
-// ============ pipeline 校验错误提示（manager 专属）============
+// ============ Pipeline validation error hints (manager-specific) ============
 //
-// 产线数据定义在 subtask（pipeline.go / pipeline_registry.go）；此处只保留
-// manager 校验流程使用的纠错提示文本（报错回显 + 供 ActionRetry 注入）。
+// Pipeline data is defined in subtask (pipeline.go / pipeline_registry.go); only the correction-hint
+// text used by the manager validation flow is kept here (error echo + injection for ActionRetry).
 
-// pipelineErrorHint 是 pipeline 相关校验失败的统一纠错提示前缀。
+// pipelineErrorHint is the unified correction-hint prefix for pipeline validation failures.
 const pipelineErrorHint = "agents_pipeline 取值不合法，必须是以下产线之一："
 
-// listValidPipelines 拼接可选的产线名（报错回显用）。
+// listValidPipelines joins the selectable pipeline names (for error echo).
 func listValidPipelines() string {
 	return strings.Join(subtask.ValidPipelineNames(), " / ")
 }

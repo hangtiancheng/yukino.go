@@ -14,7 +14,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/tracex"
 )
 
-// startServer 启动 fakegen Server 并返回其实例（随机端口 + 固定 50ms 延迟）。
+// startServer starts the fakegen Server and returns the instance (random port + fixed 50ms delay).
 func startServer(t *testing.T) *fakegen.Server {
 	t.Helper()
 	srv := fakegen.NewServer(fakegen.Config{
@@ -25,7 +25,7 @@ func startServer(t *testing.T) *fakegen.Server {
 	return srv
 }
 
-// newCallbackServer 起一个记录回调 body 与 traceparent 头的回调服务，返回通道与地址。
+// newCallbackServer starts a callback service recording the callback body and traceparent header, returning the channel and address.
 func newCallbackServer(t *testing.T) (chan map[string]any, chan map[string]string, string) {
 	t.Helper()
 	gotBody := make(chan map[string]any, 1)
@@ -43,19 +43,19 @@ func newCallbackServer(t *testing.T) (chan map[string]any, chan map[string]strin
 	return gotBody, gotHeaders, srv.URL + "/cb"
 }
 
-// waitCallback 最多等 2s 取一次回调结果。
+// waitCallback waits up to 2s for one callback result.
 func waitCallback[T any](t *testing.T, ch chan T) T {
 	t.Helper()
 	select {
 	case v := <-ch:
 		return v
 	case <-time.After(2 * time.Second):
-		t.Fatal("回调未触发")
+		t.Fatal("callback was not triggered")
 		panic("unreachable")
 	}
 }
 
-// submit 向 fakegen /submit 提交一个 JSON body，返回响应。
+// submit posts a JSON body to fakegen /submit and returns the response.
 func submit(t *testing.T, srv *fakegen.Server, body []byte) *http.Response {
 	t.Helper()
 	resp, err := http.Post(srv.Addr()+"/submit", "application/json", bytes.NewReader(body))
@@ -64,7 +64,7 @@ func submit(t *testing.T, srv *fakegen.Server, body []byte) *http.Response {
 	return resp
 }
 
-// TestServer_SubmitAndCallback 验证 /submit 收任务，延迟后回调 callback_url。
+// TestServer_SubmitAndCallback verifies that /submit accepts the task and callback_url is called after the delay.
 func TestServer_SubmitAndCallback(t *testing.T) {
 	gotBody, _, callbackURL := newCallbackServer(t)
 	srv := startServer(t)
@@ -83,12 +83,12 @@ func TestServer_SubmitAndCallback(t *testing.T) {
 	cb := waitCallback(t, gotBody)
 	testx.Equal(t, float64(42), cb["task_id"])
 	testx.Equal(t, "success", cb["task_status"])
-	testx.Equal(t, "s1", cb["project_id"], "回调 body project_id 应透传 submit 的 session_id")
-	testx.Equal(t, float64(7), cb["user_id"], "回调 body user_id 应透传 submit 的 user_id")
+	testx.Equal(t, "s1", cb["project_id"], "the callback body project_id should pass through the submit session_id")
+	testx.Equal(t, float64(7), cb["user_id"], "the callback body user_id should pass through the submit user_id")
 }
 
-// TestServer_AutoIncrementTaskID 验证 task_id=0（或不传）时服务端自增。
-// 断言 SubmitResp.Data.TaskID 与回调 body 的 task_id 都是同一自增值（>0）。
+// TestServer_AutoIncrementTaskID verifies server-side auto-increment when task_id=0 (or absent).
+// Asserts that SubmitResp.Data.TaskID and the callback body's task_id are the same auto-incremented value (>0).
 func TestServer_AutoIncrementTaskID(t *testing.T) {
 	gotBody, _, callbackURL := newCallbackServer(t)
 	srv := startServer(t)
@@ -103,34 +103,34 @@ func TestServer_AutoIncrementTaskID(t *testing.T) {
 
 	var submitResp fakegen.SubmitResp
 	testx.NoError(t, json.NewDecoder(resp.Body).Decode(&submitResp))
-	testx.Greater(t, submitResp.Data.TaskID, int64(0), "响应里的 task_id 应自增 > 0")
+	testx.Greater(t, submitResp.Data.TaskID, int64(0), "the response task_id should auto-increment > 0")
 
 	cb := waitCallback(t, gotBody)
 	testx.Equal(t, float64(submitResp.Data.TaskID), cb["task_id"],
-		"回调 body 的 task_id 应与响应一致")
+		"the callback body task_id should match the response")
 }
 
-// TestServer_RejectTrailingGarbage 验证一次请求只解一个 JSON 对象，尾随垃圾直接 400。
+// TestServer_RejectTrailingGarbage verifies that one request parses exactly one JSON object; trailing garbage yields 400.
 func TestServer_RejectTrailingGarbage(t *testing.T) {
 	srv := startServer(t)
 
-	// {"task_id":1}{"task_id":2} 两个 JSON 连一起：应被整体拒绝，而不是静默忽略第二个。
+	// {"task_id":1}{"task_id":2} two concatenated JSON objects: the whole request should be rejected, not silently ignoring the second.
 	resp := submit(t, srv, []byte(`{"task_id":1}{"task_id":2}`))
 	testx.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-// TestServer_RandomPortAddr 验证 Addr 为空时绑定随机端口，Addr() 返回可用的实际地址。
+// TestServer_RandomPortAddr verifies that an empty Addr binds a random port and Addr() returns the usable actual address.
 func TestServer_RandomPortAddr(t *testing.T) {
 	srv := startServer(t)
 
-	// 走真实 HTTP 请求：能收到 400 说明随机端口监听生效。
+	// Issue a real HTTP request: receiving 400 proves the random-port listener works.
 	resp := submit(t, srv, []byte(`{`))
 	testx.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-// TestServer_TraceparentPassthrough 验证 /submit 请求带真实 span 时，回调请求透传 traceparent 头。
+// TestServer_TraceparentPassthrough verifies that when the /submit request carries a real span, the callback request propagates the traceparent header.
 func TestServer_TraceparentPassthrough(t *testing.T) {
-	setupGlobal(t) // 设全局 W3C propagator + 采样 provider
+	setupGlobal(t) // set the global W3C propagator + sampling provider
 	gotBody, gotHeaders, callbackURL := newCallbackServer(t)
 	srv := startServer(t)
 
@@ -145,8 +145,8 @@ func TestServer_TraceparentPassthrough(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.Addr()+"/submit", bytes.NewReader(raw))
 	testx.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
-	// 模拟 go-learn 调用方（baseapi 风格）：用 tracex.InjectCarrier 把当前 span 序列化为
-	// traceparent 头。http.DefaultClient 不会自动注入，必须手动设头（与 baseapi.do 一致）。
+	// Simulate the go-learn caller (baseapi style): serialize the current span into the traceparent header
+	// with tracex.InjectCarrier. http.DefaultClient does not inject automatically; the header must be set manually (consistent with baseapi.do).
 	carrier := tracex.InjectCarrier(ctx)
 	req.Header.Set(tracex.TraceParentKey, carrier[tracex.TraceParentKey])
 	resp, err := http.DefaultClient.Do(req)
@@ -158,8 +158,8 @@ func TestServer_TraceparentPassthrough(t *testing.T) {
 	testx.Equal(t, float64(7), cb["task_id"])
 
 	tp := waitCallback(t, gotHeaders)
-	testx.NotEmpty(t, tp["traceparent"], "回调请求应带 traceparent 头")
-	// 子 span 是 submit-parent 的下游，traceparent 头应继承同一 trace id。
+	testx.NotEmpty(t, tp["traceparent"], "the callback request should carry the traceparent header")
+	// The child span is downstream of submit-parent; the traceparent header should inherit the same trace id.
 	testx.Equal(t, span.SpanContext().TraceID().String(),
-		traceIDFromHeader(tp["traceparent"]), "回调 traceparent 应与父 span 同 trace id")
+		traceIDFromHeader(tp["traceparent"]), "the callback traceparent should share the parent span's trace id")
 }

@@ -56,8 +56,8 @@ type ChunkStore interface {
 //
 // All keys expire after 1 hour (TTL) to prevent leaks from abandoned messages.
 type RedisChunkStore struct {
-	rdb *redis.Client // Redis 客户端
-	ttl time.Duration // 所有 key 的过期时间，默认 1h
+	rdb *redis.Client // Redis client
+	ttl time.Duration // expiry for all keys, default 1h
 }
 
 // NewRedisChunkStore creates a Redis-backed ChunkStore.
@@ -77,8 +77,8 @@ func (cs *RedisChunkStore) Write(ctx context.Context, msgID, payload string, end
 	listKey := chunkListKey(msgID)
 	notifyCh := chunkNotifyCh(msgID)
 
-	// 计算真实序号（1-based）：LLEN 取当前长度，+1 得到本条位置。
-	// 此前 seq 一直是 0，导致前端按"帧数"续拉时与 LRANGE 游标错位。
+	// Compute the real sequence number (1-based): LLEN gives the current length; +1 yields this entry's position.
+	// Previously seq was always 0, causing the frontend's "frame count" resume cursor to drift from the LRANGE cursor.
 	curLen, err := cs.rdb.LLen(ctx, listKey).Result()
 	if err != nil {
 		return fmt.Errorf("chunk_store: llen: %w", err)

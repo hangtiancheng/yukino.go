@@ -22,8 +22,8 @@ func RunAttach(ctx context.Context, msgID string, chunkStore infra.ChunkStore,
 		ReconnectPush: func(_ string, raw string) { flowCtx.Push(reconnectKey, raw) },
 		InterruptPush: func(_ string, raw string) { flowCtx.Push(reconnectKey, raw) },
 	}, func(_ string, raw string) {
-		// 原样透传 chunk 里的 SSEFrame JSON。Worker 侧产出的是完整帧
-		// （含 msgId / textId），con_writer 会提取 type 作事件名。
+		// Pass the SSEFrame JSON from the chunk through as-is. The Worker side produces complete frames
+		// (with msgId / textId); con_writer extracts type as the event name.
 		flowCtx.Push(reconnectKey, raw)
 	})
 }

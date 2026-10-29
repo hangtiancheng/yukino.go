@@ -58,8 +58,8 @@ func TestRunner_WithoutSuffix(t *testing.T) {
 	testx.Contains(t, frames, "message-complete")
 }
 
-// TestRunner_HILInterrupt 验证 Runner 注入 HIL strategy 后，含触发词的 query 触发 Interrupt，
-// 并产出 interrupt 帧（而非普通 text-delta）。
+// TestRunner_HILInterrupt verifies that after injecting the HIL strategy, a query containing the trigger word fires Interrupt
+// and produces an interrupt frame (instead of ordinary text-deltas).
 func TestRunner_HILInterrupt(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(&appkitfake.FakeHILLLM{}, appkitfake.FakeHILStrategy{}, &appkitfake.FakeHooks{})
@@ -69,14 +69,14 @@ func TestRunner_HILInterrupt(t *testing.T) {
 		types = append(types, frame.Type)
 	})
 	testx.NoError(t, err)
-	testx.Contains(t, types, "interrupt", "含触发词应产出 interrupt 帧")
+	testx.Contains(t, types, "interrupt", "a trigger word should produce an interrupt frame")
 	testx.Contains(t, types, "message-complete")
-	testx.NotContains(t, types, "text-delta", "中断时不应拆 text-delta")
+	testx.NotContains(t, types, "text-delta", "no text-delta should be split out on interrupt")
 }
 
-// TestRunner_Resume 验证 RunResume 用 checkpoint 预置后从断点恢复（Interrupted=true → Terminal）。
-// 强化点：断言 Terminal friendly_reply 内容，证明 cp.Messages/cp.Step 预载真实生效——
-// 若预载被删除，strategy 会走首次 Interrupt 分支，内容不同（"我需要你确认…"），测试即失败。
+// TestRunner_Resume verifies that RunResume pre-loads the checkpoint and resumes from the breakpoint (Interrupted=true → Terminal).
+// Strengthened: asserting the Terminal friendly_reply content proves the cp.Messages/cp.Step preload really takes effect —
+// if the preload were removed, the strategy would take the first-run Interrupt branch with different content ("我需要你确认…") and the test would fail.
 func TestRunner_Resume(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(&appkitfake.FakeHILLLM{}, appkitfake.FakeHILStrategy{}, &appkitfake.FakeHooks{})
@@ -92,14 +92,14 @@ func TestRunner_Resume(t *testing.T) {
 		types = append(types, frame.Type)
 	}, cp)
 	testx.NoError(t, err)
-	testx.Equal(t, "好的，继续完成你的任务。", content, "resume 应产出 strategy 的 Terminal friendly_reply")
+	testx.Equal(t, "好的，继续完成你的任务。", content, "resume should produce the strategy's Terminal friendly_reply")
 	testx.Contains(t, types, "text-delta")
 	testx.Contains(t, types, "message-complete")
-	testx.NotContains(t, types, "interrupt", "resume 轮不应再 Interrupt")
+	testx.NotContains(t, types, "interrupt", "the resume round should not Interrupt again")
 }
 
-// TestRunner_HILInterrupt_Callback 验证 Interrupt 分支触发 onInterrupt 回调，
-// 且回调携带引擎保存的完整 checkpoint（Messages 非空、Step ≥ 1），调用方可据此持久化。
+// TestRunner_HILInterrupt_Callback verifies that the Interrupt branch triggers the onInterrupt callback,
+// and the callback carries the full checkpoint saved by the engine (non-empty Messages, Step ≥ 1) for the caller to persist.
 func TestRunner_HILInterrupt_Callback(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(&appkitfake.FakeHILLLM{}, appkitfake.FakeHILStrategy{}, &appkitfake.FakeHooks{})
@@ -108,23 +108,23 @@ func TestRunner_HILInterrupt_Callback(t *testing.T) {
 
 	_, err := r.Run(context.Background(), "生成一个海报脚本（中途需要确认）", "msg-hil-cb", func(appkitrunner.SSEFrame) {})
 	testx.NoError(t, err)
-	testx.NotNil(t, gotCp, "Interrupt 应触发 onInterrupt 回调")
+	testx.NotNil(t, gotCp, "Interrupt should trigger the onInterrupt callback")
 	testx.NotEmpty(t, gotCp.Messages)
 	testx.GreaterOrEqual(t, gotCp.Step, 1)
 }
 
-// TestRunner_DefaultAssistantPrepare 验证未注入 SetPrepare 时，
-// Run 走 DefaultAssistantPrepare 兜底 prompt（通用 assistant，无业务语义）。
+// TestRunner_DefaultAssistantPrepare verifies that without SetPrepare injection,
+// Run falls back to the DefaultAssistantPrepare prompt (generic assistant, no business semantics).
 func TestRunner_DefaultAssistantPrepare(t *testing.T) {
 	prepare := appkitrunner.DefaultAssistantPrepare("你好")
-	testx.Len(t, prepare, 2, "默认 prompt 应含 system + user 两条")
+	testx.Len(t, prepare, 2, "the default prompt should contain system + user messages")
 	testx.Equal(t, "system", prepare[0].Role)
-	testx.Contains(t, prepare[0].Content, "AI 助手", "默认 system prompt 是通用 assistant")
+	testx.Contains(t, prepare[0].Content, "AI 助手", "the default system prompt is the generic assistant")
 	testx.Equal(t, "user", prepare[1].Role)
 	testx.Equal(t, "你好", prepare[1].Content)
 }
 
-// TestRunner_SetPrepare 验证 SetPrepare 注入的 prompt 生效（覆盖默认 assistant）。
+// TestRunner_SetPrepare verifies that the prompt injected via SetPrepare takes effect (overriding the default assistant).
 func TestRunner_SetPrepare(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(&appkitfake.FakeLLM{}, &appkitfake.FakeStrategy{}, &appkitfake.FakeHooks{})
@@ -140,13 +140,13 @@ func TestRunner_SetPrepare(t *testing.T) {
 
 	_, err := r.Run(context.Background(), "帮我做个混剪", "msg-prep", func(appkitrunner.SSEFrame) {})
 	testx.NoError(t, err)
-	testx.Equal(t, "帮我做个混剪", gotQ, "注入的 prompt 应收到用户 query")
+	testx.Equal(t, "帮我做个混剪", gotQ, "the injected prompt should receive the user query")
 }
 
-// planOutputStrategy 是本地管家策略桩：模拟 ManagerStrategy 的约束链行为——
-// 对 generate_response 工具调用直接校验通过并 Terminal，把 PlanOutput 完整 JSON
-// 透传到 Metadata.plan_output（引擎转入 AgentResult.Ext）。不依赖 manager 业务包，
-// 仅用于覆盖 RunWithOutput 的 onOutput 回调链路（appkit/runner 自身应保持零业务依赖）。
+// planOutputStrategy is a local manager-strategy stub: it simulates ManagerStrategy's constraint-chain behavior —
+// a generate_response tool call passes validation directly and terminates, with the full PlanOutput JSON
+// passed through to Metadata.plan_output (the engine moves it into AgentResult.Ext). It does not depend on the manager business package;
+// it only covers RunWithOutput's onOutput callback chain (appkit/runner itself must stay free of business dependencies).
 type planOutputStrategy struct{}
 
 func (planOutputStrategy) GetTools(c *react.AgentContext) []react.FunctionDef {
@@ -158,7 +158,7 @@ func (planOutputStrategy) Decide(c *react.AgentContext) *react.Decision {
 	if len(resp.ToolCalls) == 0 {
 		return &react.Decision{Action: react.ActionRetry}
 	}
-	// 取首个 generate_response 调用的 arguments，按其内容构造 plan_output
+	// Take the arguments of the first generate_response call and build plan_output from them
 	args := resp.ToolCalls[0].Args
 	var gen struct {
 		FriendlyReply  string `json:"friendly_reply"`
@@ -187,8 +187,8 @@ func (planOutputStrategy) Decide(c *react.AgentContext) *react.Decision {
 	}
 }
 
-// streamingFakeLLM 是流式 Fake LLM：ChatStream 逐 chunk 回调 content，返回完整响应。
-// 用于验证 runner EnableStreaming 后逐 chunk 实时出 text-delta 帧。
+// streamingFakeLLM is a streaming fake LLM: ChatStream calls back content chunk by chunk and returns the complete response.
+// Used to verify that after EnableStreaming the runner emits text-delta frames per chunk in realtime.
 type streamingFakeLLM struct{}
 
 func (streamingFakeLLM) Chat(ctx context.Context, messages []react.Message, tools []react.FunctionDef) (*react.LLMResponse, error) {
@@ -209,7 +209,7 @@ func (streamingFakeLLM) ChatStream(ctx context.Context, messages []react.Message
 	return &react.LLMResponse{Content: "流式回答"}, nil
 }
 
-// streamingStrategy 直接 Terminal（单轮，不调工具）。
+// streamingStrategy terminates directly (single round, no tool calls).
 type streamingStrategy struct{}
 
 func (streamingStrategy) GetTools(c *react.AgentContext) []react.FunctionDef { return nil }
@@ -218,8 +218,8 @@ func (streamingStrategy) Decide(c *react.AgentContext) *react.Decision {
 	return &react.Decision{Action: react.ActionTerminal, Metadata: map[string]any{"friendly_reply": "流式回答"}}
 }
 
-// TestRunner_Streaming_EmitsTextDeltaPerChunk 验证 EnableStreaming 开启后：
-// 流式 chunk 逐个实时转 text-delta 帧（4 帧），而非终态后一次性切块。
+// TestRunner_Streaming_EmitsTextDeltaPerChunk verifies that with EnableStreaming on:
+// streaming chunks are converted into text-delta frames one by one in realtime (4 frames), instead of one-shot chunking after the terminal state.
 func TestRunner_Streaming_EmitsTextDeltaPerChunk(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(streamingFakeLLM{}, streamingStrategy{}, &appkitfake.FakeHooks{})
@@ -232,19 +232,19 @@ func TestRunner_Streaming_EmitsTextDeltaPerChunk(t *testing.T) {
 	testx.NoError(t, err)
 	testx.Equal(t, "流式回答", content)
 
-	// 收集 text-delta 帧内容
+	// Collect text-delta frame contents
 	var deltas []string
 	for _, f := range frames {
 		if f.Type == "text-delta" {
 			deltas = append(deltas, f.Content)
 		}
 	}
-	// 流式：4 个 chunk 各自成帧，不合并成 10-rune 切块
-	testx.Equal(t, []string{"流", "式", "回", "答"}, deltas, "流式 chunk 应逐个成 text-delta 帧")
+	// Streaming: the 4 chunks each become a frame, not merged into 10-rune chunks
+	testx.Equal(t, []string{"流", "式", "回", "答"}, deltas, "streaming chunks should each become a text-delta frame")
 }
 
-// TestRunner_Streaming_Off_DefaultBehavior 验证 EnableStreaming 默认关闭时：
-// 走终态 10-rune 切块（行为与改造前一致）。
+// TestRunner_Streaming_Off_DefaultBehavior verifies that with EnableStreaming off by default:
+// terminal 10-rune chunking is used (behavior identical to before the change).
 func TestRunner_Streaming_Off_DefaultBehavior(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(streamingFakeLLM{}, streamingStrategy{}, &appkitfake.FakeHooks{})
@@ -261,12 +261,12 @@ func TestRunner_Streaming_Off_DefaultBehavior(t *testing.T) {
 			deltas = append(deltas, f.Content)
 		}
 	}
-	// "流式回答" 4 个 rune → 10-rune 切块 → 单帧 "流式回答"
-	testx.Equal(t, []string{"流式回答"}, deltas, "非流式应保留终态切块")
+	// "流式回答" is 4 runes → 10-rune chunking → a single frame "流式回答"
+	testx.Equal(t, []string{"流式回答"}, deltas, "non-streaming should keep terminal chunking")
 }
 
-// TestRunner_Streaming_DefaultOff_ExistingTests 验证默认 runner 不带 streaming 时
-// 原测试桩（fakeLLM）仍走 Chat（FakeLLM 降级 ChatStream 转发 Chat），帧序列不变。
+// TestRunner_Streaming_DefaultOff_ExistingTests verifies that a default runner without streaming
+// still routes the original test stub (fakeLLM) through Chat (FakeLLM degrades ChatStream to Chat), keeping the frame sequence unchanged.
 func TestRunner_Streaming_DefaultOff_ExistingTests(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	var types []string
@@ -279,9 +279,9 @@ func TestRunner_Streaming_DefaultOff_ExistingTests(t *testing.T) {
 	testx.Equal(t, "message-complete", types[len(types)-1])
 }
 
-// TestRunner_Streaming_RunWithOutput_OnOutputStillFires 验证流式开启 + RunWithOutput：
-// 流式 tool_calls 后 onOutput 仍触发（终态结构化输出不受流式旁路影响）。
-// mock server 返回 SSE 流式 tool_call（id/name 首包 + arguments 分片）。
+// TestRunner_Streaming_RunWithOutput_OnOutputStillFires verifies streaming on + RunWithOutput:
+// onOutput still fires after streamed tool_calls (terminal structured output is unaffected by the streaming side channel).
+// The mock server returns an SSE-streamed tool_call (id/name in the first chunk + arguments fragments).
 func TestRunner_Streaming_RunWithOutput_OnOutputStillFires(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -312,21 +312,21 @@ func TestRunner_Streaming_RunWithOutput_OnOutputStillFires(t *testing.T) {
 		gotPlan = plan
 	})
 	testx.NoError(t, err)
-	testx.NotNil(t, gotPlan, "流式开启时 onOutput 仍应触发")
+	testx.NotNil(t, gotPlan, "onOutput should still fire with streaming enabled")
 	testx.Len(t, gotPlan.PlanSteps.Agents, 1)
 	testx.Equal(t, "gold_scriptwriter", gotPlan.PlanSteps.Agents[0].AgentID)
 
-	// 终态 friendly_reply 帧仍发（new_agents_plan 分支）
+	// The terminal friendly_reply frame is still sent (new_agents_plan branch)
 	var hasFriendly bool
 	for _, f := range frames {
 		if f.Type == "text-delta" && f.Content == "已派发" {
 			hasFriendly = true
 		}
 	}
-	testx.True(t, hasFriendly, "new_agents_plan 的 friendly_reply 帧应发送")
+	testx.True(t, hasFriendly, "the friendly_reply frame of new_agents_plan should be sent")
 }
 
-// TestRunner_Streaming_RunResume 验证流式开启 + RunResume 帧序列正常。
+// TestRunner_Streaming_RunResume verifies the frame sequence of streaming-on + RunResume.
 func TestRunner_Streaming_RunResume(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(streamingFakeLLM{}, streamingStrategy{}, &appkitfake.FakeHooks{})
@@ -348,10 +348,10 @@ func TestRunner_Streaming_RunResume(t *testing.T) {
 	testx.Contains(t, types, "message-complete")
 }
 
-// TestRunner_RunWithOutput_ManagerStrategy 验证：注入 mock LLM（返回 generate_response
-// 协议调用）+ 管家策略桩后，RunWithOutput 解析出 plan 并触发 onOutput 回调。
+// TestRunner_RunWithOutput_ManagerStrategy verifies: after injecting a mock LLM (returning a generate_response
+// protocol call) + the manager-strategy stub, RunWithOutput parses the plan and triggers the onOutput callback.
 func TestRunner_RunWithOutput_ManagerStrategy(t *testing.T) {
-	// mock LLM：返回合法 new_agents_plan 的 generate_response 调用（§8.4.4 顶层 agents_pipeline 协议）
+	// mock LLM: returns a generate_response call with a valid new_agents_plan (§8.4.4 top-level agents_pipeline protocol)
 	mockResp := `{"choices":[{"message":{"content":"","role":"assistant","tool_calls":[{"id":"c1","type":"function","function":{"name":"generate_response","arguments":"{\"thought\":\"t\",\"friendly_reply\":\"已派发\",\"task_type\":\"new_agents_plan\",\"agents_pipeline\":\"mix_video\",\"task_arguments\":\"{\\\"agents\\\":[{\\\"agent_id\\\":\\\"gold_scriptwriter\\\",\\\"input\\\":\\\"生成海报\\\"}]}\"}"}}]}}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -369,15 +369,15 @@ func TestRunner_RunWithOutput_ManagerStrategy(t *testing.T) {
 		gotPlan = plan
 	})
 	testx.NoError(t, err)
-	testx.NotNil(t, gotPlan, "应触发 onOutput 回调")
+	testx.NotNil(t, gotPlan, "the onOutput callback should fire")
 	testx.Len(t, gotPlan.PlanSteps.Agents, 1)
 	testx.Equal(t, "gold_scriptwriter", gotPlan.PlanSteps.Agents[0].AgentID)
 }
 
-// toolCallOnlyStreamingLLM 模拟强制 tool_choice=required 的流式场景：
-// ChatStream 不回调任何 content（LLM 只返回 generate_response 工具调用），
-// 但完整响应含 friendly_reply。用于回归测试：流式开启但无 content 帧时，
-// 终态必须补发文本，否则前端零内容。
+// toolCallOnlyStreamingLLM simulates the forced tool_choice=required streaming scenario:
+// ChatStream calls back no content (the LLM returns only the generate_response tool call),
+// but the complete response contains friendly_reply. Used for regression: when streaming is on but no content frames arrive,
+// the terminal text must still be emitted, otherwise the frontend gets nothing.
 type toolCallOnlyStreamingLLM struct{}
 
 func (toolCallOnlyStreamingLLM) Chat(ctx context.Context, messages []react.Message, tools []react.FunctionDef) (*react.LLMResponse, error) {
@@ -387,14 +387,14 @@ func (toolCallOnlyStreamingLLM) Chat(ctx context.Context, messages []react.Messa
 }
 
 func (toolCallOnlyStreamingLLM) ChatStream(ctx context.Context, messages []react.Message, tools []react.FunctionDef, cb react.StreamCallbackFunc) (*react.LLMResponse, error) {
-	// 不回调任何 content（模拟 tool_choice=required 返回 tool_call，content 空）
+	// No content callbacks (simulating tool_choice=required returning a tool_call with empty content)
 	_ = cb(ctx, &react.StreamedChatResponsePayload{
 		Choices: []react.StreamedChatChoice{{Delta: react.StreamedChatDelta{Role: "assistant", Content: ""}}},
 	}, true)
 	return toolCallOnlyStreamingLLM{}.Chat(ctx, messages, tools)
 }
 
-// toolCallOnlyStrategy 把终态 JSON 里的 friendly_reply 透传给 Metadata（模拟 ManagerStrategy）。
+// toolCallOnlyStrategy passes the friendly_reply from the terminal JSON through to Metadata (simulating ManagerStrategy).
 type toolCallOnlyStrategy struct{}
 
 func (toolCallOnlyStrategy) GetTools(c *react.AgentContext) []react.FunctionDef { return nil }
@@ -408,10 +408,10 @@ func (toolCallOnlyStrategy) Decide(c *react.AgentContext) *react.Decision {
 	return &react.Decision{Action: react.ActionTerminal, Metadata: map[string]any{"friendly_reply": out.FriendlyReply}}
 }
 
-// TestRunner_Streaming_NoContent_FallbackToTerminalText 回归测试：
-// 流式开启但 LLM 不回调 content（强制 tool_choice=required 场景）时，
-// 终态必须补发 friendly_reply 文本——否则前端收到零 text-delta 卡住。
-// 修复前：普通回复分支被 `else if !r.streaming` 跳过，零帧。
+// TestRunner_Streaming_NoContent_FallbackToTerminalText regression test:
+// when streaming is on but the LLM calls back no content (forced tool_choice=required scenario),
+// the terminal friendly_reply text must still be emitted — otherwise the frontend receives zero text-deltas and stalls.
+// Before the fix: the plain-reply branch was skipped by `else if !r.streaming`, producing zero frames.
 func TestRunner_Streaming_NoContent_FallbackToTerminalText(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(toolCallOnlyStreamingLLM{}, toolCallOnlyStrategy{}, &appkitfake.FakeHooks{})
@@ -422,7 +422,7 @@ func TestRunner_Streaming_NoContent_FallbackToTerminalText(t *testing.T) {
 		frames = append(frames, f)
 	})
 	testx.NoError(t, err)
-	// strategy 把 friendly_reply 从终态 JSON 透传到 result.Content
+	// The strategy passes friendly_reply from the terminal JSON through to result.Content
 	testx.Equal(t, "功能列表：1.混剪成片 2.文章生成", content)
 
 	var deltas []string
@@ -431,13 +431,13 @@ func TestRunner_Streaming_NoContent_FallbackToTerminalText(t *testing.T) {
 			deltas = append(deltas, f.Content)
 		}
 	}
-	// 流式无 content 帧 → 终态必须补发 friendly_reply（整体拼接后含该文本）
+	// No streamed content frames → the terminal friendly_reply must be emitted (the joined text contains it)
 	joined := strings.Join(deltas, "")
 	testx.Contains(t, joined, "功能列表：1.混剪成片 2.文章生成",
-		"流式无 content 时终态应补发 friendly_reply，不能零帧")
+		"the terminal friendly_reply must be emitted when streaming produced no content; zero frames is not acceptable")
 }
 
-// hotCardStrategy 直接 Terminal + 透传 hot_card（模拟 ManagerStrategy 直出热点卡）。
+// hotCardStrategy terminates directly + passes hot_card through (simulating ManagerStrategy emitting a hot-topic card).
 type hotCardStrategy struct{}
 
 func (hotCardStrategy) GetTools(c *react.AgentContext) []react.FunctionDef { return nil }
@@ -459,9 +459,9 @@ func (hotCardStrategy) Decide(c *react.AgentContext) *react.Decision {
 	}
 }
 
-// TestRunner_HotCard_EmitsUIBlockFrames 验证 RunWithOutput 产出热点卡帧序：
-// message-start → text-delta(hotspot) → ui-block-start → ui-block-complete → message-complete。
-// ui-block-start 的 promptItems 带 eid（用户点卡回传定位热点）。
+// TestRunner_HotCard_EmitsUIBlockFrames verifies that RunWithOutput produces the hot-card frame sequence:
+// message-start → text-delta(hotspot) → ui-block-start → ui-block-complete → message-complete.
+// ui-block-start's promptItems carry eid (echoed on card click to locate the hotspot).
 func TestRunner_HotCard_EmitsUIBlockFrames(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(streamingFakeLLM{}, hotCardStrategy{}, &appkitfake.FakeHooks{})
@@ -477,9 +477,9 @@ func TestRunner_HotCard_EmitsUIBlockFrames(t *testing.T) {
 		types = append(types, f.Type)
 	}
 	testx.Equal(t, []string{"message-start", "text-delta", "ui-block-start", "ui-block-complete", "message-complete"}, types,
-		"热点卡应产出 message-start → text-delta(hotspot) → ui-block-start → ui-block-complete → message-complete")
+		"the hot card should produce message-start → text-delta(hotspot) → ui-block-start → ui-block-complete → message-complete")
 
-	// ui-block-start 帧的 promptItems 带 eid
+	// The ui-block-start frame's promptItems carry eid
 	var start *appkitrunner.SSEFrame
 	for i := range frames {
 		if frames[i].Type == "ui-block-start" {
@@ -487,19 +487,19 @@ func TestRunner_HotCard_EmitsUIBlockFrames(t *testing.T) {
 			break
 		}
 	}
-	testx.NotNil(t, start, "应有 ui-block-start 帧")
-	testx.NotNil(t, start.UIData, "ui-block-start 应有 uiData")
+	testx.NotNil(t, start, "a ui-block-start frame should exist")
+	testx.NotNil(t, start.UIData, "ui-block-start should carry uiData")
 	uiData, ok := start.UIData.(appkitrunner.PromptOptionGroupUIData)
-	testx.True(t, ok, "uiData 应为 PromptOptionGroupUIData")
+	testx.True(t, ok, "uiData should be PromptOptionGroupUIData")
 	testx.Len(t, uiData.PromptItems, 2)
 	testx.Equal(t, "选题一", uiData.PromptItems[0].Title)
 	testx.Equal(t, "eid-1", uiData.PromptItems[0].Eid)
 	testx.Equal(t, "eid-2", uiData.PromptItems[1].Eid)
 	testx.Equal(t, -1, uiData.SelectedIndex)
-	testx.NotEmpty(t, start.BlockID, "ui-block-start 应有 blockId")
+	testx.NotEmpty(t, start.BlockID, "ui-block-start should carry a blockId")
 }
 
-// creationCardStrategy 直接 Terminal + 透传 image-text 创作功能卡（模拟 push_card）。
+// creationCardStrategy terminates directly + passes through the image-text creation-feature card (simulating push_card).
 type creationCardStrategy struct{}
 
 func (creationCardStrategy) GetTools(c *react.AgentContext) []react.FunctionDef { return nil }
@@ -522,8 +522,8 @@ func (creationCardStrategy) Decide(c *react.AgentContext) *react.Decision {
 	}
 }
 
-// TestRunner_CreationCard_ImageTextFrames 验证创作功能卡产出 image-text 布局的
-// ui-block-start 帧（promptItems 带 pipeline）。
+// TestRunner_CreationCard_ImageTextFrames verifies that the creation-feature card produces a ui-block-start
+// frame with the image-text layout (promptItems carrying pipeline).
 func TestRunner_CreationCard_ImageTextFrames(t *testing.T) {
 	r := appkitrunner.NewRunner()
 	r.SetProviders(streamingFakeLLM{}, creationCardStrategy{}, &appkitfake.FakeHooks{})
@@ -538,7 +538,7 @@ func TestRunner_CreationCard_ImageTextFrames(t *testing.T) {
 	for _, f := range frames {
 		types = append(types, f.Type)
 	}
-	testx.Contains(t, types, "ui-block-start", "创作功能卡应产出 ui-block-start")
+	testx.Contains(t, types, "ui-block-start", "the creation-feature card should produce ui-block-start")
 
 	var start *appkitrunner.SSEFrame
 	for i := range frames {
@@ -547,10 +547,10 @@ func TestRunner_CreationCard_ImageTextFrames(t *testing.T) {
 			break
 		}
 	}
-	testx.NotNil(t, start, "应有 ui-block-start 帧")
+	testx.NotNil(t, start, "a ui-block-start frame should exist")
 	uiData, ok := start.UIData.(appkitrunner.PromptOptionGroupUIData)
 	testx.True(t, ok)
-	testx.Equal(t, "image-text", uiData.Layout, "创作功能卡应是 image-text 布局")
+	testx.Equal(t, "image-text", uiData.Layout, "the creation-feature card should use the image-text layout")
 	testx.Len(t, uiData.PromptItems, 2)
 	testx.Equal(t, "AI成片", uiData.PromptItems[0].Title)
 }

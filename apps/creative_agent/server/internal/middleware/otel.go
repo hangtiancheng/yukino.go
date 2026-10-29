@@ -11,25 +11,25 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// OTelTracing 为每个请求创建 HTTP span，并把带 span 的 ctx 注入 ctx.Request。
-// 顺序必须放在 RequestID 之后、Logger 之前，让 Logger 能读到 trace 字段。
+// OTelTracing creates an HTTP span for each request and injects the span-carrying ctx into ctx.Request.
+// It must run after RequestID and before Logger so the Logger can read the trace fields.
 //
-// 入站请求若带 traceparent 头（上游 baseapi/fakegen/外部服务透传），先 Extract
-// 恢复远端父 span，再建 child span，让 调用方 → 本服务 → 回调 在 Jaeger 里是一条 trace。
-// tp 为 nil（OTel 未启用）时直接放行，不建 span。
+// If an inbound request carries a traceparent header (propagated by upstream baseapi/fakegen/external services), it is Extracted first
+// to restore the remote parent span, then a child span is created so caller → this service → callback forms a single trace in Jaeger.
+// When tp is nil (OTel disabled) the request passes through without creating a span.
 func OTelTracing(serviceName string, tp trace.TracerProvider) yukino.Middleware {
 	if serviceName == "" {
 		serviceName = "creative-agent"
 	}
 	return func(ctx *yukino.Context, next func()) {
 		if tp == nil {
-			// OTel 未启用：直接放行，不建 span、不 Extract。
+			// OTel disabled: pass through without creating a span or extracting.
 			next()
 			return
 		}
 
-		// 从入站 HTTP 头恢复 W3C tracecontext（上游透传的 traceparent）。
-		// 无 traceparent 头时 Extract 返回原 ctx，等价于新建根 span。
+		// Restore the W3C tracecontext from inbound HTTP headers (the traceparent propagated by upstream).
+		// Without a traceparent header, Extract returns the original ctx, equivalent to creating a new root span.
 		rctx := otel.GetTextMapPropagator().Extract(
 			ctx.Request.Context(), propagation.HeaderCarrier(ctx.Request.Header))
 
@@ -38,8 +38,8 @@ func OTelTracing(serviceName string, tp trace.TracerProvider) yukino.Middleware 
 		rctx, span := tracer.Start(rctx, "HTTP "+ctx.Request.Method+" "+route)
 		defer span.End()
 
-		// 从 RequestID 中间件注入的 State 取 request_id（客户端未带 X-Request-ID 时也会生成 uuid），
-		// 作为 span 属性便于 Jaeger 搜索。
+		// Read request_id from the State injected by the RequestID middleware (a uuid is generated even when the client sends no X-Request-ID).
+		// Recorded as a span attribute for easier Jaeger searching.
 		if rid, ok := ctx.State[ContextRequestID].(string); ok && rid != "" {
 			span.SetAttributes(attribute.String("http.request_id", rid))
 		}

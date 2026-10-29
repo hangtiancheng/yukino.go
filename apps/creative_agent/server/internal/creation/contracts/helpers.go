@@ -8,18 +8,18 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/domain"
 )
 
-// Base64Encode 对下游算子入参做 base64 编码（对齐契约 §3.2 的 project_input 字段）。
+// Base64Encode base64-encodes the downstream operator inputs (aligned with the contract §3.2 project_input field).
 func Base64Encode(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// BuildFailReason 组装失败原因（阶段 3 起可扩展为结构化文案）。
+// BuildFailReason assembles the failure reason (extensible to structured copy from stage 3).
 func BuildFailReason(stage, detail string) string {
 	return fmt.Sprintf("%s: %s", stage, detail)
 }
 
-// ParseOutputImages 从 base64 的 specialInfo 里解析图片列表。
-// 本地复现：specialInfo 为 base64(JSON)，JSON 里含 images 数组；解析失败返回空。
+// ParseOutputImages parses the image list from the base64 specialInfo.
+// Local reproduction: specialInfo is base64(JSON) where the JSON contains an images array; returns empty on parse failure.
 func ParseOutputImages(specialInfo string) []domain.AuditImage {
 	if specialInfo == "" {
 		return nil
@@ -47,7 +47,7 @@ func ParseOutputImages(specialInfo string) []domain.AuditImage {
 	return images
 }
 
-// ExtractOutputText 从 base64 的 specialInfo 里提取产出文本（标题/描述）。
+// ExtractOutputText extracts the output text (title/description) from the base64 specialInfo.
 func ExtractOutputText(specialInfo string) string {
 	if specialInfo == "" {
 		return ""

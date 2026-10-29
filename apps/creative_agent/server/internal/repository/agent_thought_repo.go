@@ -9,11 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// AgentThoughtRepository 封装 cg_agent_thought 表的数据访问。
+// AgentThoughtRepository encapsulates data access to the cg_agent_thought table.
 type AgentThoughtRepository interface {
-	// Insert 插入一条 thought 记录，返回自增主键 id。
+	// Insert inserts one thought record and returns the auto-increment primary key id.
 	Insert(ctx context.Context, t *model.CGAgentThought) (int64, error)
-	// UpdateByID 按主键更新字段。
+	// UpdateByID updates fields by primary key.
 	UpdateByID(ctx context.Context, id int64, assigns map[string]any) error
 }
 
@@ -21,7 +21,7 @@ type agentThoughtRepository struct {
 	db *gorm.DB
 }
 
-// NewAgentThoughtRepository 基于 gorm.DB 创建 AgentThoughtRepository。
+// NewAgentThoughtRepository creates an AgentThoughtRepository on top of gorm.DB.
 func NewAgentThoughtRepository(db *gorm.DB) AgentThoughtRepository {
 	return &agentThoughtRepository{db: db}
 }

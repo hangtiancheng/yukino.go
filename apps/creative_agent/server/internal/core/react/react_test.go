@@ -203,9 +203,9 @@ func TestSupervisor_AllBranches(t *testing.T) {
 	testx.Equal(t, 1, result.StepCount, "post-relay should count steps from 1")
 }
 
-// ---------- HIL resume 测试 ----------
+// ---------- HIL resume tests ----------
 
-// resumeLLM 第一次返回 tool_call，之后返回 terminal 文本。
+// resumeLLM returns a tool_call on the first call and terminal text afterwards.
 type resumeLLM struct{ turn int }
 
 func (l *resumeLLM) Chat(ctx context.Context, messages []react.Message, tools []react.FunctionDef) (*react.LLMResponse, error) {
@@ -229,7 +229,7 @@ func (l *resumeLLM) ChatStream(ctx context.Context, messages []react.Message, to
 	return streamDegraded(ctx, resp, err, cb)
 }
 
-// streamDegraded 是测试桩的流式降级：同步结果 + 触发一次 isEndingChunk=true 回调。
+// streamDegraded is the test stub's streaming degradation: synchronous result + one isEndingChunk=true callback.
 func streamDegraded(ctx context.Context, resp *react.LLMResponse, err error, cb react.StreamCallbackFunc) (*react.LLMResponse, error) {
 	if err != nil {
 		return resp, err
@@ -248,7 +248,7 @@ func (resumeTools) Execute(name, args string) (string, bool, error) {
 	return "probe-ok", true, nil
 }
 
-// resumeStrategy 在 step==0 时产出 Interrupt，其余产出 Terminal。
+// resumeStrategy produces Interrupt at step==0 and Terminal otherwise.
 type resumeStrategy struct{}
 
 func (resumeStrategy) GetTools(*react.AgentContext) []react.FunctionDef { return nil }
@@ -260,8 +260,8 @@ func (resumeStrategy) Decide(c *react.AgentContext) *react.Decision {
 	return &react.Decision{Action: react.ActionTerminal, Metadata: map[string]any{"friendly_reply": "resume-terminal"}}
 }
 
-// TestResumeFromCheckpoint 验证 HIL 中断后从断点恢复：
-// 第一次 Run 中断 → 保存 checkpoint；第二次用 checkpoint 预置状态 → 从原步数继续而非重头。
+// TestResumeFromCheckpoint verifies resuming from the breakpoint after an HIL interrupt:
+// the first Run interrupts → checkpoint saved; the second pre-loads the checkpoint → continues from the original step instead of restarting.
 func TestResumeFromCheckpoint(t *testing.T) {
 	llm := &resumeLLM{}
 	sup := &react.Supervisor{}
@@ -276,20 +276,20 @@ func TestResumeFromCheckpoint(t *testing.T) {
 		return []react.Message{{Role: "user", Content: q}}
 	})
 
-	// 第一次 Run：走一步 tool_call 后，strategy 决定 Interrupt
+	// First Run: after one tool_call step, the strategy decides Interrupt
 	ctx := react.NewAgentContext("resume-test")
 	_, err := sup.Run(ctx)
 	testx.NoError(t, err)
 
-	// 中断时保存了 checkpoint（完整结构：messages + step）
+	// The checkpoint was saved at the interrupt (full structure: messages + step)
 	cpRaw := ctx.Get(react.CheckpointKey)
-	testx.NotNil(t, cpRaw, "Interrupt 时应保存 checkpoint")
+	testx.NotNil(t, cpRaw, "a checkpoint should be saved on Interrupt")
 	cp, ok := cpRaw.(*react.Checkpoint)
-	testx.True(t, ok, "checkpoint 应为 *react.Checkpoint 结构")
+	testx.True(t, ok, "the checkpoint should be a *react.Checkpoint")
 	testx.NotEmpty(t, cp.Messages)
 	testx.GreaterOrEqual(t, cp.Step, 1)
 
-	// 第二次 Run：预置 checkpoint 后从断点继续
+	// Second Run: pre-load the checkpoint and continue from the breakpoint
 	resumedCtx := react.NewAgentContext("resume-test")
 	resumedCtx.Runtime.Messages = cp.Messages
 	resumedCtx.Runtime.Step = cp.Step
@@ -298,5 +298,5 @@ func TestResumeFromCheckpoint(t *testing.T) {
 	result, err := sup.Run(resumedCtx)
 	testx.NoError(t, err)
 	testx.Equal(t, "resume-terminal", result.Content)
-	testx.GreaterOrEqual(t, result.StepCount, 2, "resume 应从断点步数继续而非重头")
+	testx.GreaterOrEqual(t, result.StepCount, 2, "resume should continue from the breakpoint step instead of restarting")
 }

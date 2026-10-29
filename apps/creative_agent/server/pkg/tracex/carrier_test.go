@@ -13,8 +13,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// setupGlobal 设置全局 provider 与 W3C propagator（默认都是 no-op），
-// 并在测试结束时恢复旧值，避免污染同进程其他测试的全局状态。
+// setupGlobal sets the global provider and W3C propagator (both no-op by default)
+// and restores the old values when the test ends, avoiding pollution of global state for other tests in the same process.
 func setupGlobal(t *testing.T) {
 	t.Helper()
 	tp, _ := otelx.NewMemoryExporter()
@@ -32,7 +32,7 @@ func setupGlobal(t *testing.T) {
 	})
 }
 
-// TestCarrierRoundTrip 验证 span context → carrier → 恢复 往返一致。
+// TestCarrierRoundTrip verifies the span context → carrier → restore round trip is consistent.
 func TestCarrierRoundTrip(t *testing.T) {
 	setupGlobal(t)
 	tracer := otel.Tracer("test")
@@ -40,25 +40,25 @@ func TestCarrierRoundTrip(t *testing.T) {
 	defer span.End()
 
 	carrier := tracex.InjectCarrier(ctx)
-	testx.NotEmpty(t, carrier["traceparent"], "应产出 traceparent")
+	testx.NotEmpty(t, carrier["traceparent"], "a traceparent should be produced")
 
 	restored := tracex.ContextFromCarrier(context.Background(), carrier)
 	restoredSpan := trace.SpanFromContext(restored)
 
 	testx.Equal(t, span.SpanContext().TraceID().String(), restoredSpan.SpanContext().TraceID().String(),
-		"恢复的 traceID 应一致")
+		"the restored traceID should match")
 	testx.Equal(t, span.SpanContext().SpanID().String(), restoredSpan.SpanContext().SpanID().String(),
-		"恢复的 spanID 应一致")
+		"the restored spanID should match")
 }
 
-// TestCarrierEmpty 验证空 carrier 返回原 ctx（不 panic）。
+// TestCarrierEmpty verifies that an empty carrier returns the original ctx (no panic).
 func TestCarrierEmpty(t *testing.T) {
 	ctx := context.Background()
 	restored := tracex.ContextFromCarrier(ctx, nil)
-	testx.Equal(t, ctx, restored, "空 carrier 应返回原 ctx")
+	testx.Equal(t, ctx, restored, "an empty carrier should return the original ctx")
 }
 
-// TestContextFromCarrierGarbage 验证非法 traceparent 不 panic、返回原 ctx。
+// TestContextFromCarrierGarbage verifies that an invalid traceparent does not panic and returns the original ctx.
 func TestContextFromCarrierGarbage(t *testing.T) {
 	ctx := context.Background()
 	restored := tracex.ContextFromCarrier(ctx, map[string]string{"traceparent": "garbage"})

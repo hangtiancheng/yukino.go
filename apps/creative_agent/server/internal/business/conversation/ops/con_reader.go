@@ -20,7 +20,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/tracex"
 )
 
-// con_reader 写入 flowcontext 的 key 常量。
+// Key constants written to the flow context by con_reader.
 const (
 	FCKRequest     = "request"
 	FCKServerMsgID = "serverMsgId"
@@ -30,56 +30,56 @@ const (
 	FCKQuery       = "query"
 	FCKGdpCtx      = "gdpCtx"
 
-	// Phase 4: 快捷路径参数
+	// Phase 4: fast-path parameters
 	FCKRequestType = "requestType"
 	FCKResume      = "resume"
-	// FCKOriginMsgID 点卡确认后前端回传的上一步消息 ID（组织上下文用）。
-	// 由前端从 submit_clarification 响应拿到 originMsgId，下一轮请求带回，
-	// fastpath 用它追溯前序脚本（对齐真实系统 OriginMsgID 链路）。
+	// FCKOriginMsgID is the previous-step message ID echoed by the frontend after card confirmation (for context assembly).
+	// The frontend takes originMsgId from the submit_clarification response and sends it back on the next request;
+	// fastpath uses it to trace the preceding script (aligned with the reference system's OriginMsgID chain).
 	FCKOriginMsgID = "origin_msg_id"
 )
 
-// ConversationRequest 是 con_reader 解析的 HTTP JSON 请求体。
+// ConversationRequest is the HTTP JSON request body parsed by con_reader.
 type ConversationRequest struct {
 	UserID    int64  `json:"userId"`
 	SessionID string `json:"sessionId"`
 	AgentID   string `json:"agentId"`
 	Query     string `json:"query"`
-	// Reconnect 断线重连回放参数（前端在 EventSource 断线后携带）
+	// Reconnect holds reconnect-replay parameters (sent by the frontend after an EventSource disconnect)
 	Reconnect bool   `json:"reconnect"`
 	MsgID     string `json:"msgId"`
 	LastSeq   int64  `json:"lastSeq"`
 
-	// Phase 4: 快捷路径参数
+	// Phase 4: fast-path parameters
 	RequestType string `json:"requestType"` // "" / "retry" / "cron"
-	Resume      bool   `json:"resume"`      // HIL 断点恢复
-	// OriginMsgID 点卡确认后前端回传的上一步消息 ID（fastpath 追溯前序脚本用）。
+	Resume      bool   `json:"resume"`      // HIL breakpoint resume
+	// OriginMsgID is the previous-step message ID echoed by the frontend after card confirmation (fastpath uses it to trace the preceding script).
 	OriginMsgID string `json:"originMsgId"`
 }
 
-// ConversationLoadResult 保存 con_reader 在 LoadInput 阶段产出的数据。
+// ConversationLoadResult holds the data produced by con_reader during LoadInput.
 type ConversationLoadResult struct {
 	Request ConversationRequest
 }
 
-// ConReaderNode 是 conversation flow 的入口算子。
+// ConReaderNode is the entry operator of the conversation flow.
 //
-// 职责：解析 HTTP 请求 → 查/建 session 和 message_record → (异步分流) → 写 flowcontext。
+// Responsibilities: parse the HTTP request → find/create session and message_record → (async branching) → write the flow context.
 //
-// Phase 2：当 asyncEnabled=true 时，tryEnqueueAsync 会将请求发送到 Redis Stream
-// 由后台 Worker 异步执行；任何步骤失败都静默回退同步路径。
+// Phase 2: when asyncEnabled=true, tryEnqueueAsync sends the request to a Redis Stream
+// for background Workers to execute asynchronously; any step failing silently falls back to the sync path.
 type ConReaderNode struct {
-	sessionRepo       repository.SessionRepository       // cg_session DAO（查/建会话）
-	messageRecordRepo repository.MessageRecordRepository // cg_message_record DAO（建消息记录）
-	asyncRepo         repository.AsyncRequestRepository  // cg_async_request DAO（异步请求落库，nil 时异步禁用）
-	streamQ           infra.StreamQueue                  // 消息队列（XADD 投递异步任务，nil 时异步禁用）
-	locker            infra.Locker                       // 幂等锁（SETNX；nil 时异步禁用）
-	asyncEnabled      bool                               // 异步开关，由 ASYNC_ENABLED 环境变量控制
+	sessionRepo       repository.SessionRepository       // cg_session DAO (find/create sessions)
+	messageRecordRepo repository.MessageRecordRepository // cg_message_record DAO (create message records)
+	asyncRepo         repository.AsyncRequestRepository  // cg_async_request DAO (persist async requests; async disabled when nil)
+	streamQ           infra.StreamQueue                  // message queue (XADD dispatches async tasks; async disabled when nil)
+	locker            infra.Locker                       // idempotency lock (SETNX; async disabled when nil)
+	asyncEnabled      bool                               // async switch, controlled by the ASYNC_ENABLED env var
 
 	In ConversationLoadResult
 }
 
-// NewConReaderNode 创建 ConReaderNode。
+// NewConReaderNode creates a ConReaderNode.
 func NewConReaderNode(
 	sessionRepo repository.SessionRepository,
 	msgRepo repository.MessageRecordRepository,
@@ -98,21 +98,21 @@ func NewConReaderNode(
 	}
 }
 
-// Name 返回算子名（flow 配置里引用用）。
+// Name returns the operator name (referenced in the flow config).
 func (op *ConReaderNode) Name() string { return "con_reader" }
 
-// DoImpl 实现四阶段算子骨架：LoadInput → Call → (tryEnqueueAsync) → WriteOutput。
+// DoImpl implements the four-stage operator skeleton: LoadInput → Call → (tryEnqueueAsync) → WriteOutput.
 func (op *ConReaderNode) DoImpl(ctx *seda.Context) (int, string) {
 	httpBody, ok := ctx.Get(FCKGdpCtx).([]byte)
 	if !ok {
-		return -1, "con_reader: 上下文中没有 HTTP body"
+		return -1, "con_reader: no HTTP body in the context"
 	}
 	if err := op.loadInput(httpBody); err != nil {
-		return -1, fmt.Sprintf("con_reader: 解析错误: %v", err)
+		return -1, fmt.Sprintf("con_reader: parse error: %v", err)
 	}
 
-	// 从 flow context 恢复 HTTP span，包 con_reader.* span。
-	// 后续 session/message_record 的 SQL、Redis SetNX、XADD traceparent 全部挂进 HTTP trace。
+	// Restore the HTTP span from the flow context and wrap con_reader.* spans.
+	// The subsequent session/message_record SQL, Redis SetNX, and XADD traceparent all hang under the HTTP trace.
 	gctx := tracex.ContextFromFlow(ctx)
 	gctx, span := otel.Tracer("github.com/hangtiancheng/yukino.go/apps/creative_agent/server/operators").Start(gctx, "con_reader.process")
 	defer span.End()
@@ -122,7 +122,7 @@ func (op *ConReaderNode) DoImpl(ctx *seda.Context) (int, string) {
 		return -1, fmt.Sprintf("con_reader: %v", err)
 	}
 
-	// Phase 2.5: 断线重连 → 复用已有记录 → 强制走 attach 回放
+	// Phase 2.5: reconnect → reuse the existing record → force the attach replay
 	if req := op.In.Request; req.Reconnect && req.MsgID != "" {
 		if _, ok := ctx.Get("_reconnectMsgID").(string); ok {
 			ctx.Set("asyncShortCircuit", true)
@@ -138,20 +138,20 @@ func (op *ConReaderNode) DoImpl(ctx *seda.Context) (int, string) {
 func (op *ConReaderNode) loadInput(body []byte) error {
 	var req ConversationRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return fmt.Errorf("非法 JSON: %w", err)
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
-	// 断线重连回放不携带 query（前端 openReplay 只带 msgId+lastSeq），跳过必填校验。
+	// Reconnect replays carry no query (the frontend openReplay sends only msgId+lastSeq); skip the required-field check.
 	if req.Query == "" && !(req.Reconnect && req.MsgID != "") {
-		return fmt.Errorf("query 是必填字段")
+		return fmt.Errorf("query is required")
 	}
 	if req.SessionID == "" {
-		return fmt.Errorf("sessionId 是必填字段")
+		return fmt.Errorf("sessionId is required")
 	}
 	if req.AgentID == "" {
-		return fmt.Errorf("agentId 是必填字段")
+		return fmt.Errorf("agentId is required")
 	}
 	if req.UserID == 0 {
-		return fmt.Errorf("userId 是必填字段")
+		return fmt.Errorf("userId is required")
 	}
 	op.In.Request = req
 	return nil
@@ -160,7 +160,7 @@ func (op *ConReaderNode) loadInput(body []byte) error {
 func (op *ConReaderNode) call(gctx context.Context, ctx *seda.Context) error {
 	req := op.In.Request
 
-	// 1. 断线重连：复用前端指定的已有记录，跳过建账
+	// 1. Reconnect: reuse the existing record specified by the frontend; skip record creation
 	if req.Reconnect && req.MsgID != "" {
 		existing, err := op.messageRecordRepo.GetByMessageID(gctx, req.MsgID)
 		if err == nil && existing != nil {
@@ -169,15 +169,15 @@ func (op *ConReaderNode) call(gctx context.Context, ctx *seda.Context) error {
 			ctx.Set("_lastSeq", req.LastSeq)
 			return nil
 		}
-		// 记录不存在 → 回退同步新建（普通请求）
+		// Record missing → fall back to sync creation (a normal request)
 	}
 
-	// 2. 确定 message_id：每次请求都新建（雪花 ID）。
-	//    不复用"最近一条 InProgress"记录——那会让同一会话连发的两条消息
-	//    串到同一个 msgID（串账）。断线续传由前端显式带 msgId 定位（见 reconnect）。
+	// 2. Determine message_id: create a new one per request (snowflake ID).
+	//    Do not reuse the "latest InProgress" record — that would cross-wire two consecutive messages
+	//    in the same session onto one msgID (account mixing). Resume is located by the frontend explicitly sending msgId (see reconnect).
 	msgID := model.NextIDString()
 
-	// 3. 查或建 session
+	// 3. Find or create the session
 	_, err := op.sessionRepo.GetBySessionID(gctx, req.SessionID)
 	if errors.Is(err, repository.ErrSessionNotFound) {
 		sess := &model.CGSession{
@@ -189,17 +189,17 @@ func (op *ConReaderNode) call(gctx context.Context, ctx *seda.Context) error {
 			SessionName: "默认会话",
 		}
 		if err := op.sessionRepo.Insert(gctx, sess); err != nil {
-			return fmt.Errorf("创建 session 失败: %w", err)
+			return fmt.Errorf("create session: %w", err)
 		}
 	} else if err != nil {
-		return fmt.Errorf("查询 session 失败: %w", err)
+		return fmt.Errorf("query session: %w", err)
 	}
 
-	// 3. 新建 message_record
+	// 3. Create message_record
 	ct := model.NewChatText(req.Query)
 	ctJSON, err := json.Marshal(ct)
 	if err != nil {
-		return fmt.Errorf("序列化 chat_text 失败: %w", err)
+		return fmt.Errorf("marshal chat_text: %w", err)
 	}
 	rec := &model.CGMessageRecord{
 		MessageID: msgID,
@@ -210,12 +210,12 @@ func (op *ConReaderNode) call(gctx context.Context, ctx *seda.Context) error {
 		Status:    model.MessageStatusInProgress,
 		Pd:        "mini",
 	}
-	// 写入 trace_id 到 log_id，便于 DB 反查链路。
+	// Write trace_id into log_id so the DB can be queried back to the trace.
 	if sc := trace.SpanContextFromContext(gctx); sc.IsValid() {
 		rec.LogID = sc.TraceID().String()
 	}
 	if err := op.messageRecordRepo.Insert(gctx, rec); err != nil {
-		return fmt.Errorf("创建 message_record 失败: %w", err)
+		return fmt.Errorf("create message_record: %w", err)
 	}
 
 	ctx.Set("_messageID", msgID)
@@ -233,12 +233,12 @@ func (op *ConReaderNode) writeOutput(ctx *seda.Context) {
 	ctx.Set(FCKAgentID, req.AgentID)
 	ctx.Set(FCKQuery, req.Query)
 
-	// Phase 4: 快捷路径参数透传
+	// Phase 4: fast-path parameter pass-through
 	ctx.Set(FCKRequestType, req.RequestType)
 	ctx.Set(FCKResume, req.Resume)
 	ctx.Set(FCKOriginMsgID, req.OriginMsgID)
 
-	// Phase 2.5: 断线重连透传
+	// Phase 2.5: reconnect pass-through
 	if rID, ok := ctx.Get("_reconnectMsgID").(string); ok && rID != "" {
 		ctx.Set("reconnectMsgId", rID)
 	}
@@ -247,21 +247,21 @@ func (op *ConReaderNode) writeOutput(ctx *seda.Context) {
 	}
 }
 
-// tryEnqueueAsync 尝试将请求异步化：幂等锁 → 写库 → 推 stream。
-// 任何一步失败都静默回退同步路径（不阻断请求）。
-// gctx 带 flow context 恢复的 HTTP span：SetNX/Insert/XADD 全部挂进 HTTP trace。
+// tryEnqueueAsync attempts to make the request async: idempotency lock → persist → push to stream.
+// Any step failing silently falls back to the sync path (the request is not blocked).
+// gctx carries the HTTP span restored from the flow context: SetNX/Insert/XADD all hang under the HTTP trace.
 func (op *ConReaderNode) tryEnqueueAsync(gctx context.Context, ctx *seda.Context) {
 	req := op.In.Request
 	msgID, _ := ctx.Get("_messageID").(string)
 
-	// 1. 5s 时间窗幂等：防用户快速重复点击
+	// 1. 5s-window idempotency: prevents rapid duplicate clicks
 	dedupKey := computeDedupKey(req.SessionID, msgID, req.Query)
 	if op.locker == nil {
-		return // 锁不可用 → 回退同步
+		return // lock unavailable → fall back to sync
 	}
 	acquired, err := op.locker.SetNX(gctx, dedupKey, msgID, 5*time.Second)
 	if err != nil || !acquired {
-		return // 幂等冲突或锁不可用 → 回退同步
+		return // idempotency conflict or lock unavailable → fall back to sync
 	}
 
 	// 2. INSERT cg_async_request (Status=Pending)
@@ -275,12 +275,12 @@ func (op *ConReaderNode) tryEnqueueAsync(gctx context.Context, ctx *seda.Context
 		Query:          req.Query,
 		DedupKey:       dedupKey,
 	}
-	// 写入 trace_id 到 log_id，便于 DB 反查链路。
+	// Write trace_id into log_id so the DB can be queried back to the trace.
 	if tid := tracex.TraceIDFromFlow(ctx); tid != "" {
 		asyncReq.LogID = tid
 	}
 	if err := op.asyncRepo.InsertPending(gctx, asyncReq); err != nil {
-		_ = op.locker.Del(gctx, dedupKey) // 释放幂等锁
+		_ = op.locker.Del(gctx, dedupKey) // release the idempotency lock
 		return
 	}
 
@@ -298,15 +298,15 @@ func (op *ConReaderNode) tryEnqueueAsync(gctx context.Context, ctx *seda.Context
 		"traceparent":      tracex.InjectCarrier(gctx)["traceparent"],
 	})
 	if err := op.streamQ.Push(gctx, msgID, body); err != nil {
-		return // DB 已落，recovery 兜底
+		return // already persisted; recovery covers it
 	}
 
-	// 4. 成功：标记异步短路
+	// 4. Success: mark the async short-circuit
 	ctx.Set("asyncShortCircuit", true)
 	ctx.Set("asyncRequestId", asyncReqID)
 }
 
-// computeDedupKey 根据 session+msgID+query 生成 5s 窗口的幂等去重 key。
+// computeDedupKey generates the 5s-window idempotency dedup key from session+msgID+query.
 func computeDedupKey(sessionID, msgID, query string) string {
 	raw := sessionID + "|" + msgID + "|" + query
 	sum := md5.Sum([]byte(raw))

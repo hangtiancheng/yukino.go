@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// newExecutorDB 创建内存 sqlite DB（迁移 task_run/task_step 两张表）。
+// newExecutorDB creates an in-memory sqlite DB (migrating the task_run/task_step tables).
 func newExecutorDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -28,7 +28,7 @@ func newExecutorDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestPoller_StreamsIncrementalSteps 验证 poll 只推增量 + 终态推 task-done。
+// TestPoller_StreamsIncrementalSteps verifies that poll pushes only increments + task-done at terminal state.
 func TestPoller_StreamsIncrementalSteps(t *testing.T) {
 	db := newExecutorDB(t)
 	ctx := context.Background()
@@ -37,7 +37,7 @@ func TestPoller_StreamsIncrementalSteps(t *testing.T) {
 	taskRunRepo := repository.NewTaskRunRepository(db)
 	stepRepo := repository.NewTaskStepRepository(db)
 
-	// 建 task_run + 两个步骤
+	// Create task_run + two steps
 	run := &model.CGTaskRun{
 		TaskRunID:     model.NextID(),
 		UserID:        1,
@@ -69,31 +69,31 @@ func TestPoller_StreamsIncrementalSteps(t *testing.T) {
 	var frames []taskflow.TaskStepFrame
 	onFrame := func(f taskflow.TaskStepFrame) { frames = append(frames, f) }
 
-	// 第一轮：task_run 还 Pending → 只推 task-step，不推 task-done
+	// Round 1: task_run still Pending → only task-step is pushed, no task-done
 	done := poller.PollOnce(ctx, run.TaskRunID, "msg-1", onFrame)
-	testx.False(t, done, "task_run 未终态，不应停")
+	testx.False(t, done, "task_run not terminal; should not stop")
 	testx.Len(t, frames, 1)
 	testx.Equal(t, sse.EventTaskStep, frames[0].Type)
 
-	// 推进：step1 → Finished + 写 step_output；task_run → Finished
+	// Advance: step1 → Finished + write step_output; task_run → Finished
 	testx.NoError(t, stepRepo.UpdateByTaskStepID(ctx, step1.TaskStepID, map[string]any{
 		"status":      model.TaskStepStatusFinished,
 		"step_output": `{"final_product":"海报已交付"}`,
 	}))
 	testx.NoError(t, taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFinished, ""))
 
-	// 第二轮：run 终态 → 推 task-done（携带最近 Finished 顶层步骤的输出）
+	// Round 2: run terminal → push task-done (carrying the newest Finished top-level step's output)
 	frames = nil
 	done = poller.PollOnce(ctx, run.TaskRunID, "msg-1", onFrame)
-	testx.True(t, done, "task_run Finished 后应停")
-	testx.Len(t, frames, 1, "第二轮应推一条 run 终态 task-done")
+	testx.True(t, done, "polling should stop after task_run Finished")
+	testx.Len(t, frames, 1, "the second round should push one run-terminal task-done")
 	testx.Equal(t, sse.EventTaskDone, frames[0].Type)
-	testx.Contains(t, frames[0].Output, "海报已交付", "task-done 应携带交付产物")
+	testx.Contains(t, frames[0].Output, "海报已交付", "task-done should carry the delivered product")
 	testx.Equal(t, step1.TaskStepID, frames[0].TaskStepID)
 }
 
-// TestPoller_NeedWaitYes_StopsWithoutDone 验证 NeedWait=Yes：
-// task_run 置 Waiting 时 poll 停止，但不推 task-done（终态未到，等产线回调）。
+// TestPoller_NeedWaitYes_StopsWithoutDone verifies NeedWait=Yes:
+// when task_run is set to Waiting, polling stops but no task-done is pushed (terminal state not reached; awaiting the pipeline callback).
 func TestPoller_NeedWaitYes_StopsWithoutDone(t *testing.T) {
 	db := newExecutorDB(t)
 	ctx := context.Background()
@@ -124,7 +124,7 @@ func TestPoller_NeedWaitYes_StopsWithoutDone(t *testing.T) {
 	}
 	testx.NoError(t, stepRepo.Insert(ctx, agentStep))
 
-	// task_run → Waiting（模拟 NeedWait=Yes 分流后的状态）
+	// task_run → Waiting (simulating the state after the NeedWait=Yes branch)
 	testx.NoError(t, taskRunRepo.UpdateByTaskRunID(ctx, run.TaskRunID, map[string]any{
 		"status": model.TaskRunStatusWaiting,
 	}))
@@ -139,13 +139,13 @@ func TestPoller_NeedWaitYes_StopsWithoutDone(t *testing.T) {
 	done := poller.PollOnce(ctx, run.TaskRunID, "msg-1", func(f taskflow.TaskStepFrame) {
 		frames = append(frames, f)
 	})
-	testx.True(t, done, "Waiting 也应停止轮询")
+	testx.True(t, done, "Waiting should also stop polling")
 	for _, f := range frames {
-		testx.NotEqual(t, sse.EventTaskDone, f.Type, "Waiting 阶段不应推 task-done")
+		testx.NotEqual(t, sse.EventTaskDone, f.Type, "no task-done should be pushed during Waiting")
 	}
 }
 
-// TestPoller_PollUntilDone 验证 PollUntilDone 阻塞到终态并推完所有增量。
+// TestPoller_PollUntilDone verifies that PollUntilDone blocks until terminal and pushes all increments.
 func TestPoller_PollUntilDone(t *testing.T) {
 	db := newExecutorDB(t)
 	ctx := context.Background()
@@ -164,7 +164,7 @@ func TestPoller_PollUntilDone(t *testing.T) {
 	}
 	testx.NoError(t, taskRunRepo.Insert(ctx, run))
 
-	// 模拟 SubAgent 执行：后台建步骤 + 终态化
+	// Simulate SubAgent execution: create steps in the background + terminate
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		step := &model.CGTaskStep{
@@ -199,7 +199,7 @@ func TestPoller_PollUntilDone(t *testing.T) {
 		frames = append(frames, f)
 	}, 100*time.Millisecond)
 
-	// 应至少推：step Running（task-step）+ run 终态（task-done 携带交付产物）
+	// Should push at least: step Running (task-step) + run terminal (task-done carrying the delivered product)
 	testx.NotEmpty(t, frames)
 	hasDone := false
 	doneOutput := ""
@@ -211,6 +211,6 @@ func TestPoller_PollUntilDone(t *testing.T) {
 			}
 		}
 	}
-	testx.True(t, hasDone, "应收到 task-done")
-	testx.Contains(t, doneOutput, "海报已交付", "task-done 应携带交付产物")
+	testx.True(t, hasDone, "a task-done should be received")
+	testx.Contains(t, doneOutput, "海报已交付", "task-done should carry the delivered product")
 }

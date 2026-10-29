@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// 雪花 ID 生成器（标准库实现，替代 bwmarrin/snowflake）。
-// 结构：1 bit 符号位 + 41 bit 毫秒时间戳 + 10 bit 节点 ID + 12 bit 序列号。
+// Snowflake ID generator (standard-library implementation, replacing bwmarrin/snowflake).
+// Layout: 1 sign bit + 41-bit millisecond timestamp + 10-bit node ID + 12-bit sequence number.
 const (
-	idEpoch int64 = 1577836800000 // 2020-01-01T00:00:00Z 毫秒时间戳
+	idEpoch int64 = 1577836800000 // 2020-01-01T00:00:00Z in milliseconds
 
 	nodeBits     = 10
 	sequenceBits = 12
@@ -38,7 +38,7 @@ type snowflakeNode struct {
 
 func newSnowflakeNode(node int64) (*snowflakeNode, error) {
 	if node < 0 || node > maxNode {
-		return nil, errors.New("node 必须在 0-1023 之间")
+		return nil, errors.New("node must be within 0-1023")
 	}
 	return &snowflakeNode{epoch: idEpoch, node: node}, nil
 }
@@ -51,7 +51,7 @@ func (n *snowflakeNode) generate() int64 {
 	if now == n.lastStamp {
 		n.sequence = (n.sequence + 1) & maxSequence
 		if n.sequence == 0 {
-			// 当前毫秒序列号用尽，自旋等待下一毫秒。
+			// The sequence for the current millisecond is exhausted; spin until the next millisecond.
 			for now <= n.lastStamp {
 				now = time.Now().UnixMilli()
 			}
@@ -60,7 +60,7 @@ func (n *snowflakeNode) generate() int64 {
 		n.sequence = 0
 	}
 	if now < n.lastStamp {
-		// 时钟回拨：沿用上次时间戳继续发号，避免生成重复/负值 ID。
+		// Clock rollback: keep issuing IDs with the last timestamp to avoid duplicate/negative IDs.
 		now = n.lastStamp
 	}
 	n.lastStamp = now
@@ -68,8 +68,8 @@ func (n *snowflakeNode) generate() int64 {
 	return (now-n.epoch)<<timestampShift | n.node<<nodeShift | n.sequence
 }
 
-// InitSnowflake 初始化雪花 ID 生成器。
-// workerID 应在进程间唯一（0-1023）。
+// InitSnowflake initializes the snowflake ID generator.
+// workerID should be unique across processes (0-1023).
 func InitSnowflake(workerID int64) error {
 	var initErr error
 	idOnce.Do(func() {
@@ -85,7 +85,7 @@ func InitSnowflake(workerID int64) error {
 	return initErr
 }
 
-// NextID 生成下一个 int64 雪花 ID。
+// NextID generates the next int64 snowflake ID.
 func NextID() int64 {
 	idNodeMu.Lock()
 	node := idNode
@@ -99,7 +99,7 @@ func NextID() int64 {
 	return node.generate()
 }
 
-// NextIDString 生成下一个雪花 ID 的十进制字符串表示。
+// NextIDString generates the decimal string representation of the next snowflake ID.
 func NextIDString() string {
 	return strconv.FormatInt(NextID(), 10)
 }

@@ -10,31 +10,31 @@ import (
 	riskapplication "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/service"
 )
 
-// CompensationSinkImpl 实现 risk 域调用的异步风控补偿写入（CompensationSink）。
+// CompensationSinkImpl implements the async-risk compensation write called by the risk domain (CompensationSink).
 //
-// 依赖反转：接口定义在 risk.application，由 creation.infrastructure 实现并注入，
-// 保持依赖单向（creation → risk，risk 不感知 creation）。
+// Dependency inversion: the interface is defined in risk.application, implemented and injected by creation.infrastructure,
+// keeping dependencies one-way (creation → risk; risk knows nothing about creation).
 //
-// payload 格式与 risk.application.RiskAuditApp.RetryAsyncAudit 的解析字段严格一致：
+// The payload format strictly matches the fields parsed by risk.application.RiskAuditApp.RetryAsyncAudit:
 //   - biz_id / sub_product / third_id / callback_url / user_id / record_id / content_text
 //
-// biz_id 同时是 cg_audit_compensation 的对账纽带（同 recordID 幂等：GetByBizID 查重）。
+// biz_id is also the reconciliation bond of cg_audit_compensation (idempotent per recordID: GetByBizID dedup).
 type CompensationSinkImpl struct {
 	comp domain.CompensationRepository
 }
 
-// NewCompensationSinkImpl 创建实现。
+// NewCompensationSinkImpl creates the implementation.
 func NewCompensationSinkImpl(comp domain.CompensationRepository) *CompensationSinkImpl {
 	return &CompensationSinkImpl{comp: comp}
 }
 
-// 编译期断言：确保实现满足 risk 侧的 CompensationSink 接口。
+// Compile-time assertion: the implementation satisfies the risk-side CompensationSink interface.
 var _ riskapplication.CompensationSink = (*CompensationSinkImpl)(nil)
 
-// InsertAuditCompensation 异步风控提交失败时写补偿表（biz_type=1）。
-// 幂等：同 recordID（biz_id）不重复写。
+// InsertAuditCompensation writes the compensation table when async risk submission fails (biz_type=1).
+// Idempotent: the same recordID (biz_id) is never written twice.
 func (s *CompensationSinkImpl) InsertAuditCompensation(ctx context.Context, req *riskmodel.RiskSubmitRequest, subProduct string, recordID int64) error {
-	// 幂等：同一 recordID 已存在补偿记录则不重复写
+	// Idempotent: skip when a compensation record for the same recordID already exists
 	if _, err := s.comp.GetByBizID(ctx, fmt.Sprintf("%d", recordID), domain.BizTypeAsyncAudit); err == nil {
 		return nil
 	}

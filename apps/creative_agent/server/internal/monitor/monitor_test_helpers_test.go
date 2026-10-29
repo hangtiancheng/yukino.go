@@ -1,9 +1,9 @@
 //go:build integration
 
-// Package monitor 集成测试共享装配：用 testdb 构建新架构（DDD）的 monitor Deps。
+// Package monitor integration-test shared assembly: builds the new-architecture (DDD) monitor Deps against testdb.
 //
-// 对齐 internal/app/app.go 的装配线，但连 testdb（monitor 测试共用），
-// 返回 Deps + 各仓储（供测试造数据/断言）。
+// Aligned with internal/app/app.go's assembly line but connecting to testdb (shared by monitor tests);
+// returns Deps + the repositories (for tests to seed data/assert).
 package monitor
 
 import (
@@ -31,8 +31,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// monitorDepsBuild 用 testdb + redis 构建新架构的 monitor 依赖。
-// 返回 Deps 与各仓储（测试造数据/断言用）。
+// monitorDepsBuild builds the new-architecture monitor dependencies with testdb + redis.
+// Returns Deps and the repositories (for tests to seed data/assert).
 type monitorDeps struct {
 	deps      Deps
 	db        *gorm.DB
@@ -45,7 +45,7 @@ type monitorDeps struct {
 	riskStats riskdomain.RiskStatsRepository
 }
 
-// openMySQLTestDB 切到仓库根目录读 config，打开 testdb MySQL 连接。
+// openMySQLTestDB switches to the repository root to read config and opens the testdb MySQL connection.
 func openMySQLTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	_, filename, _, _ := runtime.Caller(0)
@@ -61,7 +61,7 @@ func openMySQLTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// openRedisTestDB 打开 testdb Redis（独立 db，避免污染开发缓存）。
+// openRedisTestDB opens the testdb Redis (separate db, avoiding pollution of the development cache).
 func openRedisTestDB(t *testing.T) *redis.Client {
 	t.Helper()
 	_, filename, _, _ := runtime.Caller(0)
@@ -74,7 +74,7 @@ func openRedisTestDB(t *testing.T) *redis.Client {
 	return rdb
 }
 
-// buildMonitorDeps 构建新架构的 monitor 依赖（装配线等价于 internal/app/app.go）。
+// buildMonitorDeps builds the new-architecture monitor dependencies (assembly line equivalent to internal/app/app.go).
 func buildMonitorDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *monitorDeps {
 	t.Helper()
 
@@ -103,7 +103,7 @@ func buildMonitorDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *monitorDeps
 		creationinfra.NewCallbackDeps(projRepo, cbRepo, compRepo, riskAuditApp, pointsApp),
 	)
 
-	_ = auditOutputApp // risk 回调闭环在 monitor 测试不直接触达
+	_ = auditOutputApp // the risk-callback loop is not directly exercised by monitor tests
 
 	return &monitorDeps{
 		deps: Deps{
@@ -128,7 +128,7 @@ func buildMonitorDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *monitorDeps
 	}
 }
 
-// seedBalance 给用户造初始余额（flow_type=2 入账，等价旧 monitorSeedBalance）。
+// seedBalance gives the user an initial balance (flow_type=2 credit, equivalent to the old monitorSeedBalance).
 func seedBalance(t *testing.T, db *gorm.DB, userID int64, amount int) {
 	t.Helper()
 	now := time.Now().Unix()
@@ -138,7 +138,7 @@ func seedBalance(t *testing.T, db *gorm.DB, userID int64, amount int) {
 	).Error)
 }
 
-// truncateMonitorTables 清空 monitor 测试涉及的表（与旧 truncateCreationTables 等价）。
+// truncateMonitorTables clears the tables involved in monitor tests (equivalent to the old truncateCreationTables).
 func truncateMonitorTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	testx.NoError(t, db.Exec("TRUNCATE TABLE cg_creation_project").Error)

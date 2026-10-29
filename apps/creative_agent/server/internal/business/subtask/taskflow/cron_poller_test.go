@@ -22,7 +22,7 @@ func newCronPollerDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// stubSubmitter 是测试用内存 Submitter（不走 Redis）。
+// stubSubmitter is the in-memory Submitter for tests (no Redis).
 type stubSubmitter struct {
 	submitted []*model.CGTaskRun
 }
@@ -35,7 +35,7 @@ func (s *stubSubmitter) Submit(ctx context.Context, run *model.CGTaskRun) (int64
 	return run.TaskRunID, nil
 }
 
-// TestCronPoller_AdvanceStep 验证：当前 agent Finished 后推进到下一个 agent 并投递。
+// TestCronPoller_AdvanceStep verifies: after the current agent is Finished, advance to the next agent and dispatch.
 func TestCronPoller_AdvanceStep(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -50,18 +50,18 @@ func TestCronPoller_AdvanceStep(t *testing.T) {
 		Logger:      zap.NewNop(),
 	})
 
-	// 建 cron 任务：两个 agent
+	// Create the cron task: two agents
 	cron := &model.CGCronTask{
 		CronTaskID:       2001,
 		SessionID:        "s-cron",
-		MsgID:            "butler-2001", // 管家 message_id（首个 agent 由管家投递）
+		MsgID:            "butler-2001", // manager message_id (the first agent is dispatched by the manager)
 		PlanSteps:        `{"agents":[{"agent_id":"idea_king","input":"选题"},{"agent_id":"gold_scriptwriter","input":"写脚本"}]}`,
 		CurrentStepIndex: 0,
 		Status:           model.CronTaskStatusRunning,
 	}
 	testx.NoError(t, cronRepo.Insert(ctx, cron))
 
-	// 当前步骤（idea_king）的 task_run 已 Finished（index==0 按管家 msg_id 查）
+	// The current step's (idea_king) task_run is Finished (index==0 looked up by the manager msg_id)
 	testx.NoError(t, taskRunRepo.Insert(ctx, &model.CGTaskRun{
 		TaskRunID:     3001,
 		UserID:        1,
@@ -73,21 +73,21 @@ func TestCronPoller_AdvanceStep(t *testing.T) {
 	}))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.True(t, advanced, "当前 agent 已完成应推进")
-	testx.Len(t, submitter.submitted, 1, "应投递下一个 agent")
+	testx.True(t, advanced, "a finished current agent should advance")
+	testx.Len(t, submitter.submitted, 1, "the next agent should be dispatched")
 	plan := model.MustParsePlanSteps(submitter.submitted[0])
 	testx.Len(t, plan.Agents, 1)
-	testx.Equal(t, "gold_scriptwriter", plan.Agents[0].AgentID, "第二个 agent")
+	testx.Equal(t, "gold_scriptwriter", plan.Agents[0].AgentID, "the second agent")
 
-	// 投递的 task_run msg_id 应遵循 "cron-{id}-{index}" 规则
+	// The dispatched task_run msg_id should follow the "cron-{id}-{index}" rule
 	testx.Equal(t, "cron-2001-1", submitter.submitted[0].MsgID)
 
-	// cron 记录 current_step_index 应翻到 1
+	// The cron record's current_step_index should flip to 1
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2001)
 	testx.Equal(t, int32(1), got.CurrentStepIndex)
 }
 
-// TestCronPoller_AdvanceStep_IndexOne 验证：index>0 的当前 agent 按 "cron-{id}-{idx}" 规则查。
+// TestCronPoller_AdvanceStep_IndexOne verifies: the current agent at index>0 is looked up by the "cron-{id}-{idx}" rule.
 func TestCronPoller_AdvanceStep_IndexOne(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -102,7 +102,7 @@ func TestCronPoller_AdvanceStep_IndexOne(t *testing.T) {
 		Logger:      zap.NewNop(),
 	})
 
-	// 三个 agent，当前已推进到 index=1（gold_scriptwriter）
+	// Three agents; currently advanced to index=1 (gold_scriptwriter)
 	cron := &model.CGCronTask{
 		CronTaskID:       2011,
 		SessionID:        "s-cron11",
@@ -113,7 +113,7 @@ func TestCronPoller_AdvanceStep_IndexOne(t *testing.T) {
 	}
 	testx.NoError(t, cronRepo.Insert(ctx, cron))
 
-	// index=1 的 task_run 已 Finished（msg_id 符合 "cron-2011-1"）
+	// The index=1 task_run is Finished (msg_id matches "cron-2011-1")
 	testx.NoError(t, taskRunRepo.Insert(ctx, &model.CGTaskRun{
 		TaskRunID:     3011,
 		UserID:        1,
@@ -125,18 +125,18 @@ func TestCronPoller_AdvanceStep_IndexOne(t *testing.T) {
 	}))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.True(t, advanced, "index=1 已完成应推进")
-	testx.Len(t, submitter.submitted, 1, "应投递第三个 agent")
+	testx.True(t, advanced, "a finished index=1 should advance")
+	testx.Len(t, submitter.submitted, 1, "the third agent should be dispatched")
 	plan := model.MustParsePlanSteps(submitter.submitted[0])
 	testx.Len(t, plan.Agents, 1)
-	testx.Equal(t, "edit_master", plan.Agents[0].AgentID, "第三个 agent")
+	testx.Equal(t, "edit_master", plan.Agents[0].AgentID, "the third agent")
 	testx.Equal(t, "cron-2011-2", submitter.submitted[0].MsgID)
 
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2011)
 	testx.Equal(t, int32(2), got.CurrentStepIndex)
 }
 
-// TestCronPoller_NotFinished_Waits 验证：当前 agent 未完成时不推进、不投递。
+// TestCronPoller_NotFinished_Waits verifies: no advancement or dispatch while the current agent is unfinished.
 func TestCronPoller_NotFinished_Waits(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -161,7 +161,7 @@ func TestCronPoller_NotFinished_Waits(t *testing.T) {
 	}
 	testx.NoError(t, cronRepo.Insert(ctx, cron))
 
-	// 当前 agent 的 task_run 是 Running（未完成）
+	// The current agent's task_run is Running (unfinished)
 	testx.NoError(t, taskRunRepo.Insert(ctx, &model.CGTaskRun{
 		TaskRunID:     3002,
 		UserID:        1,
@@ -173,15 +173,15 @@ func TestCronPoller_NotFinished_Waits(t *testing.T) {
 	}))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.False(t, advanced, "当前 agent 未完成不应推进")
-	testx.Len(t, submitter.submitted, 0, "不应投递")
+	testx.False(t, advanced, "an unfinished current agent should not advance")
+	testx.Len(t, submitter.submitted, 0, "nothing should be dispatched")
 
-	// 索引不变
+	// The index stays unchanged
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2002)
 	testx.Equal(t, int32(0), got.CurrentStepIndex)
 }
 
-// TestCronPoller_MissingRun_Waits 验证：当前 agent 的 task_run 不存在时等待（不误判）。
+// TestCronPoller_MissingRun_Waits verifies: when the current agent's task_run does not exist, wait (no misjudgment).
 func TestCronPoller_MissingRun_Waits(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -206,17 +206,17 @@ func TestCronPoller_MissingRun_Waits(t *testing.T) {
 	}
 	testx.NoError(t, cronRepo.Insert(ctx, cron))
 
-	// 不插入 task_run：当前 agent 未投递 → 等待
+	// Do not insert a task_run: the current agent was not dispatched → wait
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.False(t, advanced, "当前 agent 的 task_run 不存在不应推进")
-	testx.Len(t, submitter.submitted, 0, "不应投递")
+	testx.False(t, advanced, "a missing current-agent task_run should not advance")
+	testx.Len(t, submitter.submitted, 0, "nothing should be dispatched")
 
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2004)
 	testx.Equal(t, int32(0), got.CurrentStepIndex)
-	testx.Equal(t, model.CronTaskStatusRunning, got.Status, "未完成不应 MarkDone")
+	testx.Equal(t, model.CronTaskStatusRunning, got.Status, "unfinished should not MarkDone")
 }
 
-// TestCronPoller_AllDone 验证：最后一个 agent Finished 后 MarkDone 收口。
+// TestCronPoller_AllDone verifies: MarkDone closes out after the last agent is Finished.
 func TestCronPoller_AllDone(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -231,7 +231,7 @@ func TestCronPoller_AllDone(t *testing.T) {
 		Logger:      zap.NewNop(),
 	})
 
-	// 单 agent cron：index=0 是最后一个
+	// Single-agent cron: index=0 is the last
 	cron := &model.CGCronTask{
 		CronTaskID:       2003,
 		SessionID:        "s-cron3",
@@ -253,14 +253,14 @@ func TestCronPoller_AllDone(t *testing.T) {
 	}))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.True(t, advanced, "最后一个 agent 完成应推进")
-	testx.Len(t, submitter.submitted, 0, "无下一个 agent 不应投递")
+	testx.True(t, advanced, "a finished last agent should advance")
+	testx.Len(t, submitter.submitted, 0, "no next agent means no dispatch")
 
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2003)
-	testx.Equal(t, model.CronTaskStatusDone, got.Status, "应 MarkDone")
+	testx.Equal(t, model.CronTaskStatusDone, got.Status, "it should MarkDone")
 }
 
-// TestCronPoller_IndexOOB_MarkDone 验证：索引已越界（无对应 agent）时直接 MarkDone 收口。
+// TestCronPoller_IndexOOB_MarkDone verifies: an out-of-bounds index (no corresponding agent) closes out with MarkDone directly.
 func TestCronPoller_IndexOOB_MarkDone(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -275,7 +275,7 @@ func TestCronPoller_IndexOOB_MarkDone(t *testing.T) {
 		Logger:      zap.NewNop(),
 	})
 
-	// 单 agent cron，index 已被推进到 1（越界）→ 直接收口
+	// Single-agent cron with the index already advanced to 1 (out of bounds) → close out directly
 	cron := &model.CGCronTask{
 		CronTaskID:       2005,
 		SessionID:        "s-cron5",
@@ -287,14 +287,14 @@ func TestCronPoller_IndexOOB_MarkDone(t *testing.T) {
 	testx.NoError(t, cronRepo.Insert(ctx, cron))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.False(t, advanced, "越界收口不算推进")
-	testx.Len(t, submitter.submitted, 0, "不应投递")
+	testx.False(t, advanced, "closing out on out-of-bounds does not count as advancement")
+	testx.Len(t, submitter.submitted, 0, "nothing should be dispatched")
 
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2005)
-	testx.Equal(t, model.CronTaskStatusDone, got.Status, "越界应 MarkDone")
+	testx.Equal(t, model.CronTaskStatusDone, got.Status, "out of bounds should MarkDone")
 }
 
-// TestCronPoller_BadPlan_MarksFailed 验证：plan_steps 解析失败时 MarkFailed。
+// TestCronPoller_BadPlan_MarksFailed verifies: MarkFailed when plan_steps fails to parse.
 func TestCronPoller_BadPlan_MarksFailed(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -320,15 +320,15 @@ func TestCronPoller_BadPlan_MarksFailed(t *testing.T) {
 	testx.NoError(t, cronRepo.Insert(ctx, cron))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.False(t, advanced, "解析失败不推进")
-	testx.Len(t, submitter.submitted, 0, "不应投递")
+	testx.False(t, advanced, "a parse failure does not advance")
+	testx.Len(t, submitter.submitted, 0, "nothing should be dispatched")
 
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2006)
-	testx.Equal(t, model.CronTaskStatusFailed, got.Status, "应 MarkFailed")
-	testx.Equal(t, "plan_steps 解析失败", got.Reason)
+	testx.Equal(t, model.CronTaskStatusFailed, got.Status, "it should MarkFailed")
+	testx.Equal(t, "failed to parse plan_steps", got.Reason)
 }
 
-// TestCronPoller_Scan 验证 Scan 遍历多个 Running 任务并推进可推进者。
+// TestCronPoller_Scan verifies that Scan iterates multiple Running tasks and advances the advanceable ones.
 func TestCronPoller_Scan(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -343,7 +343,7 @@ func TestCronPoller_Scan(t *testing.T) {
 		Logger:      zap.NewNop(),
 	})
 
-	// 任务 A：当前已完成 → 应推进
+	// Task A: current step finished → should advance
 	cronA := &model.CGCronTask{
 		CronTaskID:       2007,
 		SessionID:        "s-cron7",
@@ -363,7 +363,7 @@ func TestCronPoller_Scan(t *testing.T) {
 		OriginalQuery: "选题",
 	}))
 
-	// 任务 B：当前未完成 → 不应推进
+	// Task B: current step unfinished → should not advance
 	cronB := &model.CGCronTask{
 		CronTaskID:       2008,
 		SessionID:        "s-cron8",
@@ -384,7 +384,7 @@ func TestCronPoller_Scan(t *testing.T) {
 	}))
 
 	poller.Scan(ctx)
-	testx.Len(t, submitter.submitted, 1, "只推进任务 A 的第二个 agent")
+	testx.Len(t, submitter.submitted, 1, "only task A's second agent is advanced")
 	testx.Equal(t, "edit_master", model.MustParsePlanSteps(submitter.submitted[0]).Agents[0].AgentID)
 
 	gotA, _ := cronRepo.GetByCronTaskID(ctx, 2007)
@@ -393,7 +393,7 @@ func TestCronPoller_Scan(t *testing.T) {
 	testx.Equal(t, int32(0), gotB.CurrentStepIndex)
 }
 
-// TestCronPoller_FailedStep_MarksFailed 验证：当前 agent task_run 失败 → cron MarkFailed 收口（不再无限等待）。
+// TestCronPoller_FailedStep_MarksFailed verifies: the current agent's task_run failed → cron MarkFailed closes out (no infinite waiting).
 func TestCronPoller_FailedStep_MarksFailed(t *testing.T) {
 	ctx := context.Background()
 	db := newCronPollerDB(t)
@@ -411,7 +411,7 @@ func TestCronPoller_FailedStep_MarksFailed(t *testing.T) {
 	cron := &model.CGCronTask{
 		CronTaskID:       2009,
 		SessionID:        "s-cron9",
-		MsgID:            "butler-2009", // index==0 按 cron.MsgID 查
+		MsgID:            "butler-2009", // index==0 is looked up by cron.MsgID
 		PlanSteps:        `{"agents":[{"agent_id":"idea_king","input":"选题"},{"agent_id":"gold_scriptwriter","input":"写脚本"}]}`,
 		CurrentStepIndex: 0,
 		Status:           model.CronTaskStatusRunning,
@@ -430,10 +430,10 @@ func TestCronPoller_FailedStep_MarksFailed(t *testing.T) {
 	}))
 
 	advanced := poller.AdvanceStep(ctx, cron)
-	testx.False(t, advanced, "失败不应推进")
-	testx.Len(t, submitter.submitted, 0, "失败不应投递")
+	testx.False(t, advanced, "a failure should not advance")
+	testx.Len(t, submitter.submitted, 0, "a failure should not dispatch")
 
 	got, _ := cronRepo.GetByCronTaskID(ctx, 2009)
-	testx.Equal(t, model.CronTaskStatusFailed, got.Status, "应 MarkFailed")
-	testx.Contains(t, got.Reason, "模拟失败", "失败原因应透传")
+	testx.Equal(t, model.CronTaskStatusFailed, got.Status, "it should MarkFailed")
+	testx.Contains(t, got.Reason, "模拟失败", "the failure reason should be passed through")
 }

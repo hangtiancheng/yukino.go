@@ -15,7 +15,7 @@ import (
 
 func timeNowMs() int64 { return time.Now().UnixMilli() }
 
-// newTaskTestDB 创建内存 sqlite 数据库，注册 task_run + task_step 两张表。
+// newTaskTestDB creates an in-memory sqlite database with the task_run + task_step tables registered.
 func newTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -36,7 +36,7 @@ func newTaskRun(agentID, sessionID string) *model.CGTaskRun {
 	}
 }
 
-// TestTaskRun_Insert_Get 验证 Insert → GetByTaskRunID 往返。
+// TestTaskRun_Insert_Get verifies the Insert → GetByTaskRunID round trip.
 func TestTaskRun_Insert_Get(t *testing.T) {
 	db := newTaskTestDB(t)
 	repo := repository.NewTaskRunRepository(db)
@@ -44,7 +44,7 @@ func TestTaskRun_Insert_Get(t *testing.T) {
 
 	run := newTaskRun("gold_scriptwriter", "s1")
 	testx.NoError(t, repo.Insert(ctx, run))
-	testx.NotZero(t, run.ID, "自增主键应回填")
+	testx.NotZero(t, run.ID, "the auto-increment primary key should be backfilled")
 
 	got, err := repo.GetByTaskRunID(ctx, run.TaskRunID)
 	testx.NoError(t, err)
@@ -52,12 +52,12 @@ func TestTaskRun_Insert_Get(t *testing.T) {
 	testx.Equal(t, model.TaskRunStatusPending, got.Status)
 	testx.Contains(t, got.PlanSteps, "gold_scriptwriter")
 
-	// 不存在 → ErrTaskRunNotFound
+	// Not found → ErrTaskRunNotFound
 	_, err = repo.GetByTaskRunID(ctx, model.NextID())
 	testx.ErrorIs(t, err, repository.ErrTaskRunNotFound)
 }
 
-// TestTaskRun_UpdateCAS 验证 CAS 抢占语义：只有 status 匹配时才更新成功。
+// TestTaskRun_UpdateCAS verifies CAS claim semantics: the update succeeds only when the status matches.
 func TestTaskRun_UpdateCAS(t *testing.T) {
 	db := newTaskTestDB(t)
 	repo := repository.NewTaskRunRepository(db)
@@ -66,29 +66,29 @@ func TestTaskRun_UpdateCAS(t *testing.T) {
 	run := newTaskRun("gold_scriptwriter", "s1")
 	testx.NoError(t, repo.Insert(ctx, run))
 
-	// 抢占 Pending→Running：应该成功
+	// Claim Pending→Running: should succeed
 	ok, err := repo.UpdateCAS(ctx, run.TaskRunID, model.TaskRunStatusPending, map[string]any{
 		"status":     model.TaskRunStatusRunning,
 		"start_time": timeNowMs(),
 	})
 	testx.NoError(t, err)
-	testx.True(t, ok, "Pending→Running 抢占应成功")
+	testx.True(t, ok, "the Pending→Running claim should succeed")
 
-	// 再次抢占 Pending→Running：CAS 冲突（当前已是 Running）
+	// Claim Pending→Running again: CAS conflict (already Running)
 	ok2, err := repo.UpdateCAS(ctx, run.TaskRunID, model.TaskRunStatusPending, map[string]any{
 		"status": model.TaskRunStatusRunning,
 	})
 	testx.NoError(t, err)
-	testx.False(t, ok2, "再次 Pending→Running 应失败（状态已变）")
+	testx.False(t, ok2, "a second Pending→Running claim should fail (status changed)")
 
-	// 校验最终状态
+	// Verify the final status
 	got, err := repo.GetByTaskRunID(ctx, run.TaskRunID)
 	testx.NoError(t, err)
 	testx.Equal(t, model.TaskRunStatusRunning, got.Status)
 	testx.NotZero(t, got.StartTime)
 }
 
-// TestTaskRun_MarkTerminal 验证终态标记会写 end_time。
+// TestTaskRun_MarkTerminal verifies that marking terminal writes end_time.
 func TestTaskRun_MarkTerminal(t *testing.T) {
 	db := newTaskTestDB(t)
 	repo := repository.NewTaskRunRepository(db)
@@ -104,7 +104,7 @@ func TestTaskRun_MarkTerminal(t *testing.T) {
 	testx.NotZero(t, got.EndTime)
 }
 
-// TestTaskStep_Insert_Tree 验证 task_step 的树形结构插入与按 task_run 查询。
+// TestTaskStep_Insert_Tree verifies tree-structured task_step inserts and querying by task_run.
 func TestTaskStep_Insert_Tree(t *testing.T) {
 	db := newTaskTestDB(t)
 	runRepo := repository.NewTaskRunRepository(db)
@@ -114,7 +114,7 @@ func TestTaskStep_Insert_Tree(t *testing.T) {
 	run := newTaskRun("gold_scriptwriter", "s1")
 	testx.NoError(t, runRepo.Insert(ctx, run))
 
-	// 顶层步骤（子智能体级）
+	// Top-level step (sub-agent level)
 	agentStep := &model.CGTaskStep{
 		TaskStepID:   model.NextID(),
 		TaskRunID:    run.TaskRunID,
@@ -128,7 +128,7 @@ func TestTaskStep_Insert_Tree(t *testing.T) {
 	}
 	testx.NoError(t, stepRepo.Insert(ctx, agentStep))
 
-	// 工具调用子步骤（parent=agentStep）
+	// Tool-call sub-step (parent=agentStep)
 	toolStep := &model.CGTaskStep{
 		TaskStepID:   model.NextID(),
 		TaskRunID:    run.TaskRunID,
@@ -142,12 +142,12 @@ func TestTaskStep_Insert_Tree(t *testing.T) {
 	}
 	testx.NoError(t, stepRepo.Insert(ctx, toolStep))
 
-	// 按 task_run 查询：应同时返回顶层与子步骤
+	// Query by task_run: both the top-level and sub-steps should be returned
 	steps, err := stepRepo.GetByTaskRunID(ctx, run.TaskRunID)
 	testx.NoError(t, err)
 	testx.Len(t, steps, 2)
 
-	// 更新子步骤输出
+	// Update the sub-step output
 	testx.NoError(t, stepRepo.UpdateByTaskStepID(ctx, toolStep.TaskStepID, map[string]any{
 		"status":              model.TaskStepStatusFinished,
 		"step_output":         `{"image":"http://img/1.png"}`,
@@ -160,8 +160,8 @@ func TestTaskStep_Insert_Tree(t *testing.T) {
 	testx.Contains(t, got.StepOutput, "img/1.png")
 }
 
-// TestTaskStep_GetNewestFinishedOutput 验证「最近一条 Finished 顶层步骤输出」查询
-// （NeedWait 分支最终交付产物）。
+// TestTaskStep_GetNewestFinishedOutput verifies the "newest Finished top-level step output" query
+// (the final delivered product of the NeedWait branch).
 func TestTaskStep_GetNewestFinishedOutput(t *testing.T) {
 	db := newTaskTestDB(t)
 	runRepo := repository.NewTaskRunRepository(db)
@@ -171,7 +171,7 @@ func TestTaskStep_GetNewestFinishedOutput(t *testing.T) {
 	run := newTaskRun("video_agent", "s3")
 	testx.NoError(t, runRepo.Insert(ctx, run))
 
-	// 两条顶层步骤：第一条 Running（中间结果），第二条 Finished（交付）
+	// Two top-level steps: the first Running (intermediate result), the second Finished (delivered)
 	for i, status := range []int32{model.TaskStepStatusRunning, model.TaskStepStatusFinished} {
 		testx.NoError(t, stepRepo.Insert(ctx, &model.CGTaskStep{
 			TaskStepID:   model.NextID(),
@@ -188,5 +188,5 @@ func TestTaskStep_GetNewestFinishedOutput(t *testing.T) {
 
 	out, err := stepRepo.GetNewestFinishedOutput(ctx, run.TaskRunID)
 	testx.NoError(t, err)
-	testx.Contains(t, out, "v/1.mp4", "应返回最新一条 Finished 的输出")
+	testx.Contains(t, out, "v/1.mp4", "the output of the newest Finished step should be returned")
 }

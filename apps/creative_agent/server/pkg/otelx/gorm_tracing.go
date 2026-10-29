@@ -11,24 +11,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// GormTracing 是极简的 GORM tracing 插件，取代 gorm.io/plugin/opentelemetry（零额外依赖）。
-// 每条 SQL 建一个 client span（gorm.Create / gorm.Query / gorm.Update / gorm.Delete / gorm.Raw，
-// db.Exec 走 raw processor），记录 db.system / db.statement / db.rows_affected，
-// 出错时 RecordError + Error status。span 挂在 db.Statement.Context 上，
-// 与调用方 ctx（HTTP 入站 span）自动形成父子链。
+// GormTracing is a minimal GORM tracing plugin replacing gorm.io/plugin/opentelemetry (zero extra dependencies).
+// It creates one client span per SQL statement (gorm.Create / gorm.Query / gorm.Update / gorm.Delete / gorm.Raw;
+// db.Exec goes through the raw processor), records db.system / db.statement / db.rows_affected,
+// and on error calls RecordError + sets Error status. The span hangs off db.Statement.Context,
+// automatically forming a parent-child chain with the caller's ctx (the inbound HTTP span).
 type GormTracing struct {
 	provider trace.TracerProvider
 }
 
-// GormTracingOption 配置 GormTracing。
+// GormTracingOption configures GormTracing.
 type GormTracingOption func(*GormTracing)
 
-// WithTracerProvider 指定 TracerProvider（默认全局 otel.GetTracerProvider()）。
+// WithTracerProvider specifies the TracerProvider (defaults to the global otel.GetTracerProvider()).
 func WithTracerProvider(tp trace.TracerProvider) GormTracingOption {
 	return func(p *GormTracing) { p.provider = tp }
 }
 
-// NewGormTracing 创建 GORM tracing 插件。
+// NewGormTracing creates the GORM tracing plugin.
 func NewGormTracing(opts ...GormTracingOption) *GormTracing {
 	p := &GormTracing{}
 	for _, opt := range opts {
@@ -40,16 +40,16 @@ func NewGormTracing(opts ...GormTracingOption) *GormTracing {
 	return p
 }
 
-// Name 实现 gorm.Plugin。
+// Name implements gorm.Plugin.
 func (p *GormTracing) Name() string { return "otelx:gorm-tracing" }
 
-// Initialize 实现 gorm.Plugin：为五类 SQL 操作注册 before/after 回调。
+// Initialize implements gorm.Plugin: registers before/after callbacks for the five kinds of SQL operations.
 func (p *GormTracing) Initialize(db *gorm.DB) error {
 	tracer := p.provider.Tracer("github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/otelx")
 
-	// addTracing 给一类 SQL 操作挂 before/after 回调：
-	// before 建 span 塞进 Statement.Context，after 收属性并 End。
-	// gorm 的 processor 是未导出类型，由调用方传入绑定好 Before/After 锚点的 Register 闭包。
+	// addTracing attaches before/after callbacks to one kind of SQL operation:
+	// before creates a span and puts it into Statement.Context; after collects attributes and ends it.
+	// gorm's processor types are unexported, so the caller passes a Register closure with the Before/After anchors bound.
 	addTracing := func(spanName string,
 		registerBefore, registerAfter func(cbName string, fn func(*gorm.DB)) error,
 	) error {
@@ -132,5 +132,5 @@ func (p *GormTracing) Initialize(db *gorm.DB) error {
 	)
 }
 
-// 编译期断言：GormTracing 实现 gorm.Plugin。
+// Compile-time assertion: GormTracing implements gorm.Plugin.
 var _ gorm.Plugin = (*GormTracing)(nil)

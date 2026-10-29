@@ -2,16 +2,16 @@ package appkitllm
 
 import "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 
-// DefaultRealLLM 是全局可注入的真实 LLM（app.go 启动时若配置了 LLM 则设置）。
-// 设置后 Run/RunWithOutput/RunResume 的 llmOr/planLLMOr 优先用它。
-// 未设置 → 回退 FakeLLM/FakePlanLLM（Phase 3 行为不变）。
+// DefaultRealLLM is the globally injectable real LLM (set by app.go at startup when an LLM is configured).
+// Once set, llmOr/planLLMOr of Run/RunWithOutput/RunResume prefer it.
+// Unset → falls back to FakeLLM/FakePlanLLM (Phase 3 behavior unchanged).
 //
-// ⚠️ 并发约束：仅在启动时（app.New）写入一次，之后被各 Runner goroutine 并发读。
-// 不要在运行期或测试中写入——会构成数据竞争。
+// ⚠️ Concurrency constraint: written once at startup (app.New), then read concurrently by Runner goroutines.
+// Do not write at runtime or in tests — that would be a data race.
 var DefaultRealLLM react.LLM
 
-// DefaultManagerLLM 是管家 ReAct 专用真实 LLM（强制 tool_choice=required，第 8 章 §8.2.1）。
-// 与 DefaultRealLLM（auto，子 Agent 用）分离：管家必须结构化输出，子 Agent 保持 auto。
+// DefaultManagerLLM is the manager-ReAct-dedicated real LLM (forced tool_choice=required, chapter 8 §8.2.1).
+// Separate from DefaultRealLLM (auto, for sub-agents): the manager must output structured results; sub-agents stay auto.
 //
-// ⚠️ 并发约束：与 DefaultRealLLM 相同，仅在启动时写入一次。
+// ⚠️ Concurrency constraint: same as DefaultRealLLM, written once at startup only.
 var DefaultManagerLLM react.LLM

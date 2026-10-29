@@ -11,12 +11,12 @@ import (
 	yukino "github.com/hangtiancheng/yukino.go/libs/yukino_http"
 )
 
-// AuthHandler 处理认证相关请求。
+// AuthHandler handles authentication requests.
 type AuthHandler struct {
 	app *application.AuthApp
 }
 
-// NewAuthHandler 创建 AuthHandler。
+// NewAuthHandler creates an AuthHandler.
 func NewAuthHandler(app *application.AuthApp) *AuthHandler {
 	return &AuthHandler{app: app}
 }
@@ -32,7 +32,7 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// Register 注册新用户。
+// Register creates a new user.
 func (h *AuthHandler) Register(c *yukino.Context, _ func()) {
 	var req registerRequest
 	if err := c.BindJSON(&req); err != nil {
@@ -56,7 +56,7 @@ func (h *AuthHandler) Register(c *yukino.Context, _ func()) {
 	}
 }
 
-// Login 校验用户名密码后签发 JWT。
+// Login validates the username/password and issues a JWT.
 func (h *AuthHandler) Login(c *yukino.Context, _ func()) {
 	var req loginRequest
 	if err := c.BindJSON(&req); err != nil {
@@ -82,7 +82,7 @@ func (h *AuthHandler) Login(c *yukino.Context, _ func()) {
 	response.OK(c, yukino.H{"token": token})
 }
 
-// Logout 将当前 token 拉黑。jti/exp 由 JWT 中间件注入 context。
+// Logout blacklists the current token. jti/exp are injected into the context by the JWT middleware.
 func (h *AuthHandler) Logout(c *yukino.Context, _ func()) {
 	jti, _ := c.State[middleware.ContextJTI].(string)
 	if jti == "" {

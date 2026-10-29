@@ -15,38 +15,38 @@ import (
 	"go.uber.org/zap"
 )
 
-// FastTaskRequest 是 CheckFastTask 判断所需上下文。
-// 由外壳（同步 DoImpl / 异步 Worker）从请求/flowcontext 组装。
+// FastTaskRequest is the context needed by CheckFastTask.
+// Assembled by the shell (sync DoImpl / async Worker) from the request/flow context.
 type FastTaskRequest struct {
 	SessionID string
 	UserID    int64
 	AgentID   string
 	Query     string
-	// RequestType 请求类型：""（普通）/ "retry"（重试上次失败）/ "cron"（定时任务）。
+	// RequestType is the request type: "" (normal) / "retry" (retry the last failure) / "cron" (scheduled task).
 	RequestType string
-	// Resume 是否为 HIL 断点恢复请求（前端点"继续"后携带）。
+	// Resume marks an HIL breakpoint-resume request (carried after the frontend clicks "Continue").
 	Resume bool
-	// MsgID 关联的 message_id（cron/task_run 关联用）。
+	// MsgID is the associated message_id (for cron/task_run association).
 	MsgID string
-	// OriginMsgID 点卡确认后前端回传的上一步消息 ID。
-	// 投递下一个 agent 时用它追溯前序脚本（对齐真实系统 OriginMsgID 链路）。
+	// OriginMsgID is the previous-step message ID echoed by the frontend after card confirmation.
+	// Dispatching the next agent uses it to trace the preceding script (aligned with the reference system's OriginMsgID chain).
 	OriginMsgID string
 }
 
-// FastPath 是快捷路径统一入口（Phase 4 4.1/4.2）。
+// FastPath is the unified fast-path entry (Phase 4 4.1/4.2).
 //
-// 对应真实系统 op.Call 的一串"命中就 return"短路（03-supervisor.md §3.2）：
-// HIL resume → Retry → CanFastTask → （未命中走 ReAct）。
-// 同步 DoImpl 与异步 Worker 共用同一份判断逻辑（双胞胎结构）。
+// Mirrors the reference system's op.Call chain of "return on hit" short-circuits (03-supervisor.md §3.2):
+// HIL resume → Retry → CanFastTask → (no hit runs ReAct).
+// The sync DoImpl and async Worker share the same decision logic (twin structure).
 type FastPath struct {
 	Memory      *memory.IntentMemory
-	Submitter   *subtaskexecutor.Submitter // nil 时投递类快路径返回 handled=false
+	Submitter   *subtaskexecutor.Submitter // dispatch-class fast paths return handled=false when nil
 	TaskRunRepo repository.TaskRunRepository
-	StepRepo    repository.TaskStepRepository // 取前序脚本（step_output）用
+	StepRepo    repository.TaskStepRepository // used to fetch the preceding script (step_output)
 	Logger      *zap.Logger
 }
 
-// FastPathConfig 持有 FastPath 的依赖。
+// FastPathConfig holds the FastPath's dependencies.
 type FastPathConfig struct {
 	Memory      *memory.IntentMemory
 	Submitter   *subtaskexecutor.Submitter
@@ -55,7 +55,7 @@ type FastPathConfig struct {
 	Logger      *zap.Logger
 }
 
-// NewFastPath 创建 FastPath。
+// NewFastPath creates a FastPath.
 func NewFastPath(cfg FastPathConfig) *FastPath {
 	return &FastPath{
 		Memory:      cfg.Memory,
@@ -66,33 +66,33 @@ func NewFastPath(cfg FastPathConfig) *FastPath {
 	}
 }
 
-// CheckFastTask 判断并执行快捷路径。返回 handled=true 表示命中，
-// 调用方应直接返回（不跑 ReAct）。
+// CheckFastTask decides and executes the fast path. handled=true means a hit;
+// the caller should return directly (no ReAct).
 func (f *FastPath) CheckFastTask(ctx context.Context, req *FastTaskRequest) (bool, error) {
-	// 分支 1: HIL resume —— 恢复 checkpoint 里的 ReAct 上下文（不投递）。
-	// 必须最优先：中断发生在 params/plan/script_confirmed 等 CanFastTask stage，
-	// 若 resume 请求先被 CanFastTask 拦截会错误投递新 agent 而非恢复。
+	// Branch 1: HIL resume — restore the ReAct context from the checkpoint (no dispatch).
+	// Must come first: interrupts happen at CanFastTask stages like params/plan/script_confirmed;
+	// if CanFastTask intercepted the resume request first, it would wrongly dispatch a new agent instead of resuming.
 	if req.Resume {
 		cp := f.Memory.LoadCheckpoint(req.SessionID)
 		if cp != nil {
-			f.Logger.Info("fastpath: HIL resume 命中",
+			f.Logger.Info("fastpath: HIL resume hit",
 				zap.String("sessionID", req.SessionID))
 			return true, nil
 		}
 	}
 
-	// 分支 2: Retry —— 复用上次失败 task_run 的 plan 重跑
+	// Branch 2: Retry — rerun reusing the last failed task_run's plan
 	if req.RequestType == "retry" {
 		return f.tryRetry(ctx, req)
 	}
 
-	// 分支 3: CanFastTask —— FlowStage 命中（点卡确认后的下一次请求）
+	// Branch 3: CanFastTask — FlowStage hit (the request after a card confirmation)
 	stage := f.Memory.GetStage(req.SessionID)
 	if stage.CanFastTask() {
 		return f.tryFastTask(ctx, req)
 	}
 
-	f.Logger.Debug("fastpath: 未命中快捷路径，走 ReAct",
+	f.Logger.Debug("fastpath: no fast-path hit, running ReAct",
 		zap.String("sessionID", req.SessionID),
 		zap.Bool("resume", req.Resume),
 		zap.String("requestType", req.RequestType),
@@ -100,23 +100,23 @@ func (f *FastPath) CheckFastTask(ctx context.Context, req *FastTaskRequest) (boo
 	return false, nil
 }
 
-// tryFastTask 点卡确认后的快任务：GetNextAgent 算下一个 agent → 提取前序脚本 → Submit。
+// tryFastTask is the fast task after a card confirmation: GetNextAgent computes the next agent → extract the preceding script → Submit.
 //
-// 对齐真实系统 buildExecuteAgent（judge.go:172）：脚本确认后，用 OriginMsgID
-// 追溯前序脚本（gold_scriptwriter 的 step_output），拼进下一个 agent 的 input。
-// 脚本为空时不投递（judge.go:200-205 skip）——避免给下一个 agent 空上下文。
+// Aligned with the reference system's buildExecuteAgent (judge.go:172): after script confirmation, OriginMsgID
+// traces the preceding script (gold_scriptwriter's step_output) and splices it into the next agent's input.
+// When the script is empty it does not dispatch (judge.go:200-205 skip) — avoiding an empty context for the next agent.
 func (f *FastPath) tryFastTask(ctx context.Context, req *FastTaskRequest) (bool, error) {
 	if f.Submitter == nil {
-		return false, nil // 未接线投递器，不命中
+		return false, nil // no submitter wired; no hit
 	}
 	pipeline := f.Memory.GetPipeline(req.SessionID)
 	currentAgent := f.Memory.GetAgent(req.SessionID)
 	if pipeline == "" || currentAgent == "" {
-		return false, nil // 缺 pipeline/agent 记忆，走正常 ReAct
+		return false, nil // missing pipeline/agent memory; run normal ReAct
 	}
 
-	// 提取前序脚本：用 OriginMsgID 查到脚本 task_run，取其 step_output 的 final_product。
-	// 脚本内容存 cg_task_step.step_output（不在 chat_text 的 sceneItems——go-learn 差异点）。
+	// Extract the preceding script: look up the script task_run by OriginMsgID and take its step_output's final_product.
+	// The script content lives in cg_task_step.step_output (not chat_text's sceneItems — a go-learn difference).
 	scriptContent := ""
 	scriptResolved := false
 	if req.OriginMsgID != "" && f.StepRepo != nil && f.TaskRunRepo != nil {
@@ -126,7 +126,7 @@ func (f *FastPath) tryFastTask(ctx context.Context, req *FastTaskRequest) (bool,
 				scriptContent = extractFinalProduct(out)
 			}
 		}
-		// OriginMsgID 非空但脚本查不到：标记"本应能拿到脚本却没拿到"。
+		// OriginMsgID is non-empty but the script is not found: mark "the script should have been available but was not".
 		scriptResolved = scriptContent != ""
 	}
 
@@ -137,16 +137,16 @@ func (f *FastPath) tryFastTask(ctx context.Context, req *FastTaskRequest) (bool,
 		return false, fmt.Errorf("fastpath: BuildExecuteAgent: %w", err)
 	}
 	if agents == nil {
-		// 链结束：无下一个 agent，不投递，交回正常 ReAct（回复完成）
-		f.Logger.Info("fastpath: agent 链结束",
+		// Chain end: no next agent; do not dispatch; hand back to normal ReAct (reply completes)
+		f.Logger.Info("fastpath: agent chain ended",
 			zap.String("sessionID", req.SessionID))
 		return false, nil
 	}
-	// 带 OriginMsgID 但前序脚本没解析出来（如脚本 task_run 缺失/无产物）：
-	// 不投递空上下文（对齐真实系统 judge.go:200-205 skip 语义），交回 ReAct 由管家补上下文。
-	// 注意：无 OriginMsgID 时（旧链路/直接测试）保持原行为照常投递，子 agent 自行处理。
+	// OriginMsgID present but the preceding script did not parse (e.g. the script task_run is missing/has no product):
+	// do not dispatch an empty context (aligned with the reference system's judge.go:200-205 skip semantics); hand back to ReAct so the manager fills the context.
+	// Note: without OriginMsgID (legacy chain / direct tests) the original behavior dispatches as usual and the sub-agent copes.
 	if req.OriginMsgID != "" && !scriptResolved {
-		f.Logger.Info("fastpath: 前序脚本未解析到，跳过快任务投递（交回 ReAct）",
+		f.Logger.Info("fastpath: preceding script not resolved, skipping fast-task dispatch (handing back to ReAct)",
 			zap.String("sessionID", req.SessionID),
 			zap.String("nextAgent", agents[0].AgentID),
 			zap.String("originMsgID", req.OriginMsgID))
@@ -167,31 +167,31 @@ func (f *FastPath) tryFastTask(ctx context.Context, req *FastTaskRequest) (bool,
 	if _, err := f.Submitter.Submit(ctx, run); err != nil {
 		return false, fmt.Errorf("fastpath: submit: %w", err)
 	}
-	f.Logger.Info("fastpath: 快任务投递下一个 agent",
+	f.Logger.Info("fastpath: fast task dispatching the next agent",
 		zap.String("pipeline", pipeline),
 		zap.String("currentAgent", currentAgent),
 		zap.String("sessionID", req.SessionID))
 	return true, nil
 }
 
-// tryRetry 复用上次失败 task_run 的 plan_steps 重跑。
+// tryRetry reruns reusing the last failed task_run's plan_steps.
 func (f *FastPath) tryRetry(ctx context.Context, req *FastTaskRequest) (bool, error) {
 	if f.Submitter == nil {
 		return false, nil
 	}
 	failedID := f.Memory.GetLastFailedTaskRun(req.SessionID)
 	if failedID == 0 {
-		return false, nil // 无失败记录，不命中
+		return false, nil // no failure record; no hit
 	}
 	failedRun, err := f.TaskRunRepo.GetByTaskRunID(ctx, failedID)
 	if err != nil {
 		if errors.Is(err, repository.ErrTaskRunNotFound) {
-			// 记忆里的失败 id 已失效（如被清理）→ 静默 no-op
-			f.Logger.Debug("fastpath: 失败 task_run 已不存在，跳过 retry",
+			// The remembered failed id is stale (e.g. cleaned up) → silent no-op
+			f.Logger.Debug("fastpath: the failed task_run no longer exists, skipping retry",
 				zap.Int64("taskRunID", failedID))
 			return false, nil
 		}
-		return false, fmt.Errorf("fastpath: 读取失败 task_run: %w", err)
+		return false, fmt.Errorf("fastpath: read failed task_run: %w", err)
 	}
 
 	plan, err := failedRun.ParsePlanSteps()
@@ -213,16 +213,16 @@ func (f *FastPath) tryRetry(ctx context.Context, req *FastTaskRequest) (bool, er
 	if _, err := f.Submitter.Submit(ctx, run); err != nil {
 		return false, fmt.Errorf("fastpath: retry submit: %w", err)
 	}
-	f.Logger.Info("fastpath: Retry 重投上次失败任务",
+	f.Logger.Info("fastpath: Retry redispatching the last failed task",
 		zap.Int64("failedTaskRunID", failedID),
 		zap.String("sessionID", req.SessionID))
 	return true, nil
 }
 
-// extractFinalProduct 从 step_output JSON 中提取 final_product 内容。
+// extractFinalProduct extracts the final_product content from the step_output JSON.
 //
-// step_output 结构为 {"final_product":"<交付产物>"}（task_executor.go:139 落库格式）。
-// 解析失败或字段缺失时原样返回（兼容旧格式/纯文本 step_output）。
+// The step_output structure is {"final_product":"<delivered product>"} (the persistence format at task_executor.go:139).
+// On parse failure or a missing field it returns the input as-is (compatible with legacy formats / plain-text step_output).
 func extractFinalProduct(stepOutput string) string {
 	var m struct {
 		FinalProduct string `json:"final_product"`

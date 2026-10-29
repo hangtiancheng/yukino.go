@@ -15,7 +15,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// emulator 是 OpenAI 兼容协议的 httptest 桩：记录最后一次请求体，按 respond 回调应答。
+// emulator is an httptest stub of the OpenAI-compatible protocol: it records the last request body and responds via the respond callback.
 type emulator struct {
 	mu       sync.Mutex
 	lastBody map[string]any
@@ -64,7 +64,7 @@ func writeJSON(w http.ResponseWriter, body string) {
 	_, _ = w.Write([]byte(body))
 }
 
-// writeSSE 按 OpenAI 流式协议输出 data: 行（含 [DONE] 终止符）。
+// writeSSE outputs data: lines per the OpenAI streaming protocol (including the [DONE] terminator).
 func writeSSE(w http.ResponseWriter, lines ...string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	fl, _ := w.(http.Flusher)
@@ -76,7 +76,7 @@ func writeSSE(w http.ResponseWriter, lines ...string) {
 	}
 }
 
-// ---------- Chat（非流式） ----------
+// ---------- Chat (non-streaming) ----------
 
 func TestEinoLLM_Chat(t *testing.T) {
 	srv, em := newEmulator(t, func(w http.ResponseWriter) {
@@ -101,7 +101,7 @@ func TestEinoLLM_Chat(t *testing.T) {
 	body := em.body()
 	testx.Equal(t, "test-model", body["model"])
 	_, hasToolChoice := body["tool_choice"]
-	testx.False(t, hasToolChoice, "ToolChoice 为空时请求体不应含 tool_choice 字段")
+	testx.False(t, hasToolChoice, "the request body should not contain tool_choice when ToolChoice is empty")
 }
 
 func TestEinoLLM_ChatWithToolCalls(t *testing.T) {
@@ -144,23 +144,23 @@ func TestEinoLLM_ToolChoiceRequired_SingleTool(t *testing.T) {
 	})
 	testx.NoError(t, err)
 	_, err = llm.Chat(context.Background(), []react.Message{{Role: "user", Content: "hi"}}, []react.FunctionDef{
-		{Name: "search", Description: "搜索", Parameters: react.ParameterSpec{Type: "object"}},
+		{Name: "search", Description: "search", Parameters: react.ParameterSpec{Type: "object"}},
 	})
 	testx.NoError(t, err)
 
 	body := em.body()
-	// eino 对"强制 + 单工具"序列化为对象形式 tool_choice（等价于 required）。
+	// eino serializes "forced + single tool" as the object form of tool_choice (equivalent to required).
 	tc, ok := body["tool_choice"].(map[string]any)
-	testx.True(t, ok, "单工具强制调用时 tool_choice 应为对象形式，got %v", body["tool_choice"])
+	testx.True(t, ok, "tool_choice should be the object form when forcing a single tool, got %v", body["tool_choice"])
 	testx.Equal(t, "function", tc["type"])
 	fn, _ := tc["function"].(map[string]any)
 	testx.Equal(t, "search", fn["name"])
-	// 强制 Function Calling 时必须关闭 thinking 模式（否则 400）：
-	// DeepSeek 约定 thinking=disabled，Qwen 约定 enable_thinking=false，两者同时透传。
+	// Forced function calling must disable thinking mode (otherwise 400):
+	// DeepSeek uses thinking=disabled, Qwen uses enable_thinking=false; both are passed through together.
 	th, _ := body["thinking"].(map[string]any)
-	testx.NotNil(t, th, "请求体应含 thinking 扩展字段")
-	testx.Equal(t, "disabled", th["type"], "请求体应含 thinking=disabled")
-	testx.Equal(t, false, body["enable_thinking"], "请求体应含 enable_thinking=false")
+	testx.NotNil(t, th, "the request body should contain the thinking extension field")
+	testx.Equal(t, "disabled", th["type"], "the request body should contain thinking=disabled")
+	testx.Equal(t, false, body["enable_thinking"], "the request body should contain enable_thinking=false")
 }
 
 func TestEinoLLM_ToolChoiceRequired_MultiTools(t *testing.T) {
@@ -181,8 +181,8 @@ func TestEinoLLM_ToolChoiceRequired_MultiTools(t *testing.T) {
 	})
 	testx.NoError(t, err)
 
-	// 多工具时 eino 序列化为字符串 "required"。
-	testx.Equal(t, "required", em.body()["tool_choice"], "多工具强制调用时 tool_choice 应为 required")
+	// With multiple tools, eino serializes it as the string "required".
+	testx.Equal(t, "required", em.body()["tool_choice"], "tool_choice should be required when forcing multiple tools")
 }
 
 func TestEinoLLM_ToolChoiceOmittedWithoutTools(t *testing.T) {
@@ -190,7 +190,7 @@ func TestEinoLLM_ToolChoiceOmittedWithoutTools(t *testing.T) {
 		writeJSON(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	})
 
-	// 配置了 required，但没有声明任何 tools —— 请求体不应含 tool_choice。
+	// required is configured but no tools are declared — the request body should not contain tool_choice.
 	llm, err := appkitllm.NewEinoLLM(appkitllm.Config{
 		BaseURL:    srv.URL,
 		APIKey:     "k",
@@ -202,10 +202,10 @@ func TestEinoLLM_ToolChoiceOmittedWithoutTools(t *testing.T) {
 	testx.NoError(t, err)
 
 	_, hasToolChoice := em.body()["tool_choice"]
-	testx.False(t, hasToolChoice, "无 tools 时不应发送 tool_choice，否则提供方可能报错")
+	testx.False(t, hasToolChoice, "tool_choice should not be sent without tools, otherwise the provider may error")
 }
 
-// ---------- ChatStream（流式） ----------
+// ---------- ChatStream (streaming) ----------
 
 func TestEinoLLM_ChatStream_TextChunks(t *testing.T) {
 	srv, em := newEmulator(t, func(w http.ResponseWriter) {
@@ -233,11 +233,11 @@ func TestEinoLLM_ChatStream_TextChunks(t *testing.T) {
 		return nil
 	})
 	testx.NoError(t, err)
-	testx.Equal(t, "你好，世界", resp.Content, "返回完整响应应与 Chat 一致")
-	testx.Equal(t, []string{"你好", "，", "世界"}, deltas, "逐 chunk 回调增量内容")
-	testx.NotNil(t, endingPayload, "应触发 ending 回调")
-	testx.Empty(t, endingPayload.Choices, "ending 包为空载荷（完整内容由返回值携带）")
-	testx.Equal(t, true, em.body()["stream"], "流式请求应带 stream=true")
+	testx.Equal(t, "你好，世界", resp.Content, "the returned complete response should match Chat")
+	testx.Equal(t, []string{"你好", "，", "世界"}, deltas, "delta content should be called back chunk by chunk")
+	testx.NotNil(t, endingPayload, "the ending callback should fire")
+	testx.Empty(t, endingPayload.Choices, "the ending chunk is an empty payload (the complete response is carried by the return value)")
+	testx.Equal(t, true, em.body()["stream"], "streaming requests should carry stream=true")
 }
 
 func TestEinoLLM_ChatStream_Usage(t *testing.T) {
@@ -262,14 +262,14 @@ func TestEinoLLM_ChatStream_Usage(t *testing.T) {
 	testx.NoError(t, err)
 	testx.Equal(t, "hi", resp.Content)
 	testx.NotNil(t, endingPayload)
-	testx.Equal(t, int64(3), endingPayload.Usage.PromptTokens, "ending 包应携带 prompt tokens")
+	testx.Equal(t, int64(3), endingPayload.Usage.PromptTokens, "the ending chunk should carry prompt tokens")
 	testx.Equal(t, int64(5), endingPayload.Usage.CompletionTokens)
 	testx.Equal(t, int64(8), endingPayload.Usage.TotalTokens)
 }
 
-// TestEinoLLM_ChatStream_ToolCallFragmented 验证流式 tool_call 按 index 归并：
-// id/name 只在首 chunk，后续 arguments 增量必须拼接（否则 generate_response 的
-// task_arguments JSON 分片错乱 → Schema 校验失败）。
+// TestEinoLLM_ChatStream_ToolCallFragmented verifies that streamed tool_calls are merged by index:
+// id/name appear only in the first chunk; later arguments deltas must be concatenated (otherwise generate_response's
+// task_arguments JSON fragments get scrambled → schema validation fails).
 func TestEinoLLM_ChatStream_ToolCallFragmented(t *testing.T) {
 	srv, _ := newEmulator(t, func(w http.ResponseWriter) {
 		writeSSE(w,
@@ -290,11 +290,11 @@ func TestEinoLLM_ChatStream_ToolCallFragmented(t *testing.T) {
 	testx.Len(t, resp.ToolCalls, 1)
 	testx.Equal(t, "call_1", resp.ToolCalls[0].ID)
 	testx.Equal(t, "generate_response", resp.ToolCalls[0].Name)
-	// 三片 arguments 拼接后的完整 JSON。
+	// The complete JSON after concatenating the three arguments fragments.
 	testx.Equal(t, `{"thought":"分片1","friendly_reply":"ok","task_type":"only_reply"}`, resp.ToolCalls[0].Args)
 }
 
-// TestEinoLLM_ChatStream_Reasoning 验证 reasoning_content 被独立累积（不混入 content）。
+// TestEinoLLM_ChatStream_Reasoning verifies that reasoning_content is accumulated separately (not mixed into content).
 func TestEinoLLM_ChatStream_Reasoning(t *testing.T) {
 	srv, _ := newEmulator(t, func(w http.ResponseWriter) {
 		writeSSE(w,
@@ -315,12 +315,12 @@ func TestEinoLLM_ChatStream_Reasoning(t *testing.T) {
 		return nil
 	})
 	testx.NoError(t, err)
-	testx.Equal(t, "最终回答", resp.Content, "content 只含正文，不含 reasoning")
-	testx.Equal(t, "思考中", reasoning, "reasoning_content 应独立回调")
+	testx.Equal(t, "最终回答", resp.Content, "content holds only the answer text, not reasoning")
+	testx.Equal(t, "思考中", reasoning, "reasoning_content should be called back separately")
 }
 
-// TestEinoLLM_ChatStream_StreamPlusToolChoiceRequired 验证流式与管家约束链兼容：
-// stream=true 时仍带 tool_choice + thinking=disabled。
+// TestEinoLLM_ChatStream_StreamPlusToolChoiceRequired verifies streaming is compatible with the manager constraint chain:
+// with stream=true it still carries tool_choice + thinking=disabled.
 func TestEinoLLM_ChatStream_StreamPlusToolChoiceRequired(t *testing.T) {
 	srv, em := newEmulator(t, func(w http.ResponseWriter) {
 		writeSSE(w,
@@ -342,15 +342,15 @@ func TestEinoLLM_ChatStream_StreamPlusToolChoiceRequired(t *testing.T) {
 	testx.NoError(t, err)
 
 	body := em.body()
-	testx.Equal(t, true, body["stream"], "流式请求应带 stream=true")
-	testx.NotNil(t, body["tool_choice"], "流式仍应带 tool_choice")
+	testx.Equal(t, true, body["stream"], "streaming requests should carry stream=true")
+	testx.NotNil(t, body["tool_choice"], "streaming should still carry tool_choice")
 	th, _ := body["thinking"].(map[string]any)
-	testx.NotNil(t, th, "流式仍应带 thinking 扩展字段")
-	testx.Equal(t, "disabled", th["type"], "流式仍应带 thinking=disabled")
-	testx.Equal(t, false, body["enable_thinking"], "流式仍应带 enable_thinking=false")
+	testx.NotNil(t, th, "streaming should still carry the thinking extension field")
+	testx.Equal(t, "disabled", th["type"], "streaming should still carry thinking=disabled")
+	testx.Equal(t, false, body["enable_thinking"], "streaming should still carry enable_thinking=false")
 }
 
-// TestEinoLLM_ChatStream_NilCallback 验证 callback==nil 时降级为同步 Chat。
+// TestEinoLLM_ChatStream_NilCallback verifies the degradation to synchronous Chat when callback==nil.
 func TestEinoLLM_ChatStream_NilCallback(t *testing.T) {
 	srv, _ := newEmulator(t, func(w http.ResponseWriter) {
 		writeJSON(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"sync"},"finish_reason":"stop"}]}`)
@@ -363,7 +363,7 @@ func TestEinoLLM_ChatStream_NilCallback(t *testing.T) {
 	testx.Equal(t, "sync", resp.Content)
 }
 
-// TestEinoLLM_ChatStream_HTTPError 验证流式路径非 200 返回错误。
+// TestEinoLLM_ChatStream_HTTPError verifies that a non-200 response on the streaming path returns an error.
 func TestEinoLLM_ChatStream_HTTPError(t *testing.T) {
 	srv, _ := newEmulator(t, func(w http.ResponseWriter) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -375,5 +375,5 @@ func TestEinoLLM_ChatStream_HTTPError(t *testing.T) {
 		return nil
 	})
 	testx.Error(t, err)
-	testx.True(t, strings.Contains(err.Error(), "500"), "应报 500 错误，got %v", err)
+	testx.True(t, strings.Contains(err.Error(), "500"), "a 500 error should be reported, got %v", err)
 }

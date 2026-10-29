@@ -41,7 +41,7 @@ func TestCronTaskRepo(t *testing.T) {
 	testx.NotNil(t, got)
 	testx.Equal(t, model.CronTaskStatusRunning, got.Status)
 
-	// GetByCronTaskID 未命中时返回 ErrCronTaskNotFound
+	// GetByCronTaskID returns ErrCronTaskNotFound on a miss
 	_, err = repo.GetByCronTaskID(ctx, 9999)
 	testx.ErrorIs(t, err, repository.ErrCronTaskNotFound)
 
@@ -50,7 +50,7 @@ func TestCronTaskRepo(t *testing.T) {
 	testx.NoError(t, err)
 	testx.Len(t, running, 1)
 
-	// AdvanceStepIndex（CAS 推进）
+	// AdvanceStepIndex (CAS advance)
 	ok, err := repo.AdvanceStepIndex(ctx, 1001, 0, 1)
 	testx.NoError(t, err)
 	testx.True(t, ok)
@@ -58,7 +58,7 @@ func TestCronTaskRepo(t *testing.T) {
 	testx.NoError(t, err)
 	testx.Equal(t, int32(1), got2.CurrentStepIndex)
 
-	// CAS 失败（index 不匹配）
+	// CAS failure (index mismatch)
 	ok2, err := repo.AdvanceStepIndex(ctx, 1001, 0, 2)
 	testx.NoError(t, err)
 	testx.False(t, ok2)
@@ -69,12 +69,12 @@ func TestCronTaskRepo(t *testing.T) {
 	testx.NoError(t, err)
 	testx.Equal(t, model.CronTaskStatusDone, got3.Status)
 
-	// ListRunning 不再返回
+	// ListRunning no longer returns it
 	running2, err := repo.ListRunning(ctx)
 	testx.NoError(t, err)
 	testx.Len(t, running2, 0)
 
-	// MarkFailed 持久化 reason
+	// MarkFailed persists the reason
 	runningTask := &model.CGCronTask{
 		CronTaskID:       1002,
 		SessionID:        "s2",
@@ -83,9 +83,9 @@ func TestCronTaskRepo(t *testing.T) {
 		Status:           model.CronTaskStatusRunning,
 	}
 	testx.NoError(t, repo.Insert(ctx, runningTask))
-	testx.NoError(t, repo.MarkFailed(ctx, 1002, "plan_steps 解析失败"))
+	testx.NoError(t, repo.MarkFailed(ctx, 1002, "failed to parse plan_steps"))
 	gotFail, err := repo.GetByCronTaskID(ctx, 1002)
 	testx.NoError(t, err)
 	testx.Equal(t, model.CronTaskStatusFailed, gotFail.Status)
-	testx.Equal(t, "plan_steps 解析失败", gotFail.Reason)
+	testx.Equal(t, "failed to parse plan_steps", gotFail.Reason)
 }

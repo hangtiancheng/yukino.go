@@ -10,21 +10,21 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// 风险下线黑名单（RiskOfflineJob 评估命中后写入，pre_create 送审前检查）。
+// Risk-offline blacklist (written after RiskOfflineJob evaluation hits; checked before pre_create submission).
 const (
-	// RiskBlacklistKeyPrefix 黑名单 key 前缀，完整 key = risk:blacklist:{userID}:{subProduct}。
+	// RiskBlacklistKeyPrefix is the blacklist key prefix; the full key = risk:blacklist:{userID}:{subProduct}.
 	RiskBlacklistKeyPrefix = "risk:blacklist:"
-	// RiskBlacklistTTL 黑名单默认有效期（评估 job 周期 > TTL，过期自动恢复）。
+	// RiskBlacklistTTL is the blacklist default validity (evaluation job period > TTL; expiry recovers automatically).
 	RiskBlacklistTTL = time.Hour
 )
 
-// RiskBlacklistKey 构造黑名单 key。
+// RiskBlacklistKey builds the blacklist key.
 func RiskBlacklistKey(userID int64, subProduct string) string {
 	return fmt.Sprintf("%s%d:%s", RiskBlacklistKeyPrefix, userID, subProduct)
 }
 
-// SetRiskBlacklist 写入黑名单（幂等覆盖，重复评估不重复写）。
-// rdb 为 nil 时静默返回（无 Redis 不阻断评估）。
+// SetRiskBlacklist writes the blacklist (idempotent overwrite; repeated evaluations do not write twice).
+// When rdb is nil it returns silently (no Redis never blocks evaluation).
 func SetRiskBlacklist(ctx context.Context, rdb *redis.Client, userID int64, subProduct string) error {
 	if rdb == nil {
 		return nil
@@ -32,44 +32,44 @@ func SetRiskBlacklist(ctx context.Context, rdb *redis.Client, userID int64, subP
 	return rdb.Set(ctx, RiskBlacklistKey(userID, subProduct), "1", RiskBlacklistTTL).Err()
 }
 
-// IsRiskBlacklisted 查询是否命中黑名单。rdb 为 nil 或查询出错时返回 false（放行）。
+// IsRiskBlacklisted checks whether the blacklist is hit. Returns false (pass) when rdb is nil or the query errors.
 func IsRiskBlacklisted(ctx context.Context, rdb *redis.Client, userID int64, subProduct string) bool {
 	if rdb == nil {
 		return false
 	}
 	exists, err := rdb.Exists(ctx, RiskBlacklistKey(userID, subProduct)).Result()
 	if err != nil {
-		return false // Redis 异常放行，不因风控治理阻断业务
+		return false // pass on Redis errors; risk governance never blocks business
 	}
 	return exists > 0
 }
 
-// 风控缓存：已审文本的 SHA-1 摘要写 Redis，pre_create 时跳过重复审核（阶段 5）。
+// Risk cache: SHA-1 digests of audited texts are written to Redis so pre_create skips duplicate audits (stage 5).
 //
-// 设计意图（§5.5）：重试场景下同一段文本可能被重复审核。通过风控的文本哈希写缓存
-// （TTL 1h），预创建时 filterCachedTextGroups 跳过已审内容，避免重复送审。
-// 按 userID 隔离：同一段文本不同用户语境可能不同，避免误判。
+// Design intent (§5.5): in retry scenarios the same text may be audited repeatedly. Texts that passed risk control have their hash cached
+// (TTL 1h); at pre-create time filterCachedTextGroups skips audited content, avoiding duplicate submissions.
+// Isolated by userID: the same text may have different context per user, avoiding false judgments.
 
 const (
-	// RiskCacheKeyPrefix 缓存 key 前缀，完整 key = risk:passed:{userID}:{sha1(text)}。
+	// RiskCacheKeyPrefix is the cache key prefix; the full key = risk:passed:{userID}:{sha1(text)}.
 	RiskCacheKeyPrefix = "risk:passed:"
-	// RiskCacheTTL 已审文本缓存有效期。
+	// RiskCacheTTL is the validity of audited-text cache entries.
 	RiskCacheTTL = time.Hour
 )
 
-// RiskCacheKey 构造单个文本的缓存 key。
+// RiskCacheKey builds the cache key of one text.
 func RiskCacheKey(userID int64, text string) string {
 	return fmt.Sprintf("%s%d:%s", RiskCacheKeyPrefix, userID, sha1Hash(text))
 }
 
-// sha1Hash 对文本做 SHA-1 摘要（缓存 key 的一部分）。
+// sha1Hash computes the SHA-1 digest of a text (part of the cache key).
 func sha1Hash(text string) string {
 	h := sha1.Sum([]byte(text))
 	return hex.EncodeToString(h[:])
 }
 
-// MarkRiskAuditPassed 风控通过后写缓存：为每段文本写一条 TTL 缓存。
-// rdb 为 nil 时直接返回 nil（Redis 不可用不阻断业务，缓存是性能优化）。
+// MarkRiskAuditPassed writes the cache after risk control passes: one TTL entry per text segment.
+// When rdb is nil it returns nil directly (Redis unavailability never blocks business; the cache is a performance optimization).
 func MarkRiskAuditPassed(ctx context.Context, rdb *redis.Client, userID int64, texts []string) error {
 	if rdb == nil || len(texts) == 0 {
 		return nil
@@ -85,9 +85,9 @@ func MarkRiskAuditPassed(ctx context.Context, rdb *redis.Client, userID int64, t
 	return err
 }
 
-// FilterCachedTextGroups 过滤已缓存的文本组，返回需要送审的组。
-// 输入 textGroups 的每个元素是一段待审文本；已命中缓存的跳过。
-// rdb 为 nil 时全部返回（Redis 不可用则照常送审）。
+// FilterCachedTextGroups filters cached text groups and returns the groups needing audit.
+// Each element of the input textGroups is one text segment to audit; cached hits are skipped.
+// When rdb is nil everything is returned (Redis unavailability submits as usual).
 func FilterCachedTextGroups(ctx context.Context, rdb *redis.Client, userID int64, textGroups []string) []string {
 	if rdb == nil || len(textGroups) == 0 {
 		return textGroups

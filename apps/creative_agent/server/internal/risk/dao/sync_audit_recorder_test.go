@@ -12,9 +12,9 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// --- stub 实现 ---
+// --- Stub implementations ---
 
-// stubAuditBackend 固定返回通过，或按脚本返回预置结果的假 backend（并发安全）。
+// stubAuditBackend is a fake backend that always passes or returns scripted outcomes (concurrency-safe).
 type stubAuditBackend struct {
 	mu      sync.Mutex
 	idx     int
@@ -42,7 +42,7 @@ func (b *stubAuditBackend) Submit(ctx context.Context, req *domain.RiskSubmitReq
 	return r.passed, r.reason, r.err
 }
 
-// stubAuditRecords 内存版 AuditRecordRepository。
+// stubAuditRecords is the in-memory AuditRecordRepository.
 type stubAuditRecords struct {
 	records []*domain.AuditRecord
 }
@@ -75,9 +75,9 @@ func (s *stubAuditRecords) MarkTerminal(ctx context.Context, id uint64, status s
 	return true, nil
 }
 
-// --- 工具 ---
+// --- Helpers ---
 
-// runReq 构造一个带 bizID 的单条文本请求。
+// runReq builds a single-text request with a bizID.
 func runReq(bizID string) *domain.RiskSubmitRequest {
 	return &domain.RiskSubmitRequest{
 		UserID:  1,
@@ -87,14 +87,14 @@ func runReq(bizID string) *domain.RiskSubmitRequest {
 	}
 }
 
-// finishRecord 读取 Finish 落下的唯一一条记录。
+// finishRecord reads the single record written by Finish.
 func finishRecord(t *testing.T, records *stubAuditRecords) *domain.AuditRecord {
 	t.Helper()
 	testx.Len(t, records.records, 1)
 	return records.records[0]
 }
 
-// parseTaskInput 解析记录里的 task_input。
+// parseTaskInput parses the record's task_input.
 func parseTaskInput(t *testing.T, rec *domain.AuditRecord) dao.SyncAuditTaskInput {
 	t.Helper()
 	var in dao.SyncAuditTaskInput
@@ -102,7 +102,7 @@ func parseTaskInput(t *testing.T, rec *domain.AuditRecord) dao.SyncAuditTaskInpu
 	return in
 }
 
-// --- 测试用例 ---
+// --- Test cases ---
 
 func TestRecorderRunPassingWritesDoneRecord(t *testing.T) {
 	records := &stubAuditRecords{}
@@ -168,7 +168,7 @@ func TestRecorderRunBackendErrorWritesFailRecord(t *testing.T) {
 }
 
 func TestRecorderRunImageUsesVetoDispatch(t *testing.T) {
-	// 图片请求走 domain.SyncAuditImages：3 张图，第 2 张不通过 → 一票否决
+	// Image requests go through domain.SyncAuditImages: 3 images, the 2nd rejected → one-vote veto
 	records := &stubAuditRecords{}
 	backend := newStubAuditBackend(
 		auditOutcome{passed: true},
@@ -186,7 +186,7 @@ func TestRecorderRunImageUsesVetoDispatch(t *testing.T) {
 	}
 	passed, reason, err := recorder.Run(req, "sp_img_input")
 	testx.NoError(t, err)
-	testx.False(t, passed, "一票否决：任一图片不通过则整体失败")
+	testx.False(t, passed, "one-vote veto: any rejected image fails the whole round")
 	testx.Equal(t, "含违规图", reason)
 
 	recorder.Finish(passed, reason, err)
@@ -196,8 +196,8 @@ func TestRecorderRunImageUsesVetoDispatch(t *testing.T) {
 }
 
 func TestRecorderRunParallelMixedPriority(t *testing.T) {
-	// RunParallel 多条并发，聚合 err > !pass > pass：
-	// 一条不通过 + 两条通过 → 整体 fail
+	// RunParallel runs multiple texts concurrently, aggregating err > !pass > pass:
+	// one rejection + two passes → overall fail
 	records := &stubAuditRecords{}
 	backend := newStubAuditBackend(
 		auditOutcome{passed: true},
@@ -213,7 +213,7 @@ func TestRecorderRunParallelMixedPriority(t *testing.T) {
 		runReq("b1"), runReq("b2"), runReq("b3"),
 	}, "sp_text_input")
 	testx.NoError(t, err)
-	testx.False(t, passed, "任一不通过则整体失败")
+	testx.False(t, passed, "any rejection fails the whole round")
 	testx.Equal(t, "命中风险", reason)
 
 	recorder.Finish(passed, reason, err)
@@ -226,7 +226,7 @@ func TestRecorderRunParallelMixedPriority(t *testing.T) {
 }
 
 func TestRecorderRunParallelErrorPriorityOverFail(t *testing.T) {
-	// 聚合 err > !pass > pass：既有不通过又有报错 → 优先报错
+	// Aggregation err > !pass > pass: both a rejection and an error → the error wins
 	records := &stubAuditRecords{}
 	backend := newStubAuditBackend(
 		auditOutcome{passed: false, reason: "违规"},
@@ -240,7 +240,7 @@ func TestRecorderRunParallelErrorPriorityOverFail(t *testing.T) {
 	_, _, err := recorder.RunParallel([]*domain.RiskSubmitRequest{
 		runReq("b1"), runReq("b2"),
 	}, "sp_text_input")
-	testx.Error(t, err, "有错优先报错")
+	testx.Error(t, err, "errors take priority")
 
 	recorder.Finish(false, "", err)
 
@@ -249,7 +249,7 @@ func TestRecorderRunParallelErrorPriorityOverFail(t *testing.T) {
 }
 
 func TestRecorderRunByTickAccumulatesOneRecord(t *testing.T) {
-	// 多条文本 ticker 限速派发：多次 Run 的 bizID/subProduct 合并进同一条记录
+	// Multiple texts with ticker rate-limited dispatch: bizIDs/subProducts of several Runs merge into one record
 	records := &stubAuditRecords{}
 	recorder := dao.NewSyncAuditRecorder(
 		context.Background(), 7, "p1", 99, "risk:5:mix_video:precreate",
@@ -272,7 +272,7 @@ func TestRecorderRunByTickAccumulatesOneRecord(t *testing.T) {
 }
 
 func TestRecorderFinishAccumulatesAcrossRuns(t *testing.T) {
-	// 多次 Run 调用：subTypes/bizIDs 跨调用累加进同一条记录
+	// Multiple Run calls: subTypes/bizIDs accumulate across calls into one record
 	records := &stubAuditRecords{}
 	recorder := dao.NewSyncAuditRecorder(
 		context.Background(), 7, "p1", 99, "risk:5:mix_video:precreate",
@@ -295,7 +295,7 @@ func TestRecorderFinishAccumulatesAcrossRuns(t *testing.T) {
 	testx.ElementsMatch(t, []string{"sp_input", "sp_output", "sp_input"}, in.SubTypes)
 }
 
-// --- 小工具 ---
+// --- Small helpers ---
 
 func firstNonEmpty(ss ...string) string {
 	for _, s := range ss {

@@ -12,9 +12,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// setupGlobal 设置全局 provider 与 W3C propagator（默认都是 no-op），
-// 并在测试结束时恢复旧值，避免污染同进程其他测试的全局状态。
-// 与 pkg/tracex/carrier_test.go 的 setupGlobal 同款。
+// setupGlobal sets the global provider and W3C propagator (both no-op by default)
+// and restores the old values when the test ends, avoiding pollution of global state for other tests in the same process.
+// Same as setupGlobal in pkg/tracex/carrier_test.go.
 func setupGlobal(t *testing.T) {
 	t.Helper()
 	tp, _ := otelx.NewMemoryExporter()
@@ -32,11 +32,11 @@ func setupGlobal(t *testing.T) {
 	})
 }
 
-// globalTracer 返回全局 tracer（配合 setupGlobal 使用）。
+// globalTracer returns the global tracer (used with setupGlobal).
 func globalTracer() trace.Tracer { return otel.Tracer("fakegen-test") }
 
-// traceIDFromHeader 从 W3C traceparent 头解出 trace id（0 个连字符的分隔）。
-// 形如 "00-<traceid>-<spanid>-<flags>"。
+// traceIDFromHeader parses the trace id out of a W3C traceparent header (dash-separated).
+// Format: "00-<traceid>-<spanid>-<flags>".
 func traceIDFromHeader(tp string) string {
 	parts := strings.Split(tp, "-")
 	if len(parts) != 4 {

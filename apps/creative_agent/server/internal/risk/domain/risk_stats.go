@@ -2,21 +2,21 @@ package domain
 
 import "context"
 
-// RiskStatsRow 窗口聚合查询结果。
+// RiskStatsRow is a window-aggregation query result.
 type RiskStatsRow struct {
 	UserID     int64
 	SubProduct string
 	HitCount   int
 }
 
-// RiskStatsRepository 风控命中统计仓储接口。
+// RiskStatsRepository is the risk-hit statistics repository interface.
 type RiskStatsRepository interface {
-	// UpsertIncrement 对 (user, subProduct, riskType, windowStart) 累加 hit_count +1（UNIQUE 键幂等）。
+	// UpsertIncrement increments hit_count +1 for (user, subProduct, riskType, windowStart) (idempotent via the UNIQUE key).
 	UpsertIncrement(ctx context.Context, userID int64, subProduct, riskType string, windowStart int64) error
-	// SumByUserAndSubProduct 统计窗口内累计命中次数。
+	// SumByUserAndSubProduct sums the accumulated hits within the window.
 	SumByUserAndSubProduct(ctx context.Context, userID int64, subProduct string, windowStart int64) (int, error)
-	// SumAllInWindow 聚合窗口内所有 (user, subProduct) 命中数。
+	// SumAllInWindow aggregates the hits of all (user, subProduct) pairs within the window.
 	SumAllInWindow(ctx context.Context, windowStart int64) ([]RiskStatsRow, error)
-	// MinWindowStart 返回最老窗口起点（测试/对账）。
+	// MinWindowStart returns the oldest window start (tests/reconciliation).
 	MinWindowStart(ctx context.Context) (int64, error)
 }

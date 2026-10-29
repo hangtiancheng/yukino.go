@@ -1,7 +1,7 @@
 package domain
 
-// User 用户实体。PasswordHash 存 bcrypt 哈希，永不序列化到 JSON。
-// 纯领域对象，不含任何 gorm 标签（持久化结构在 infrastructure 层私有定义）。
+// User is the user entity. PasswordHash stores the bcrypt hash and is never serialized to JSON.
+// A pure domain object with no gorm tags (the persistence structure is privately defined in the infrastructure layer).
 type User struct {
 	ID           uint64
 	Username     string

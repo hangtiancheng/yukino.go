@@ -5,8 +5,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// New 根据指定 level 创建 *zap.Logger。
-// level 取值: "debug", "info", "warn", "error"，其他值默认 "info"。
+// New creates a *zap.Logger for the given level.
+// level is one of "debug", "info", "warn", "error"; other values default to "info".
 func New(level string) *zap.Logger {
 	var lvl zapcore.Level
 	switch level {

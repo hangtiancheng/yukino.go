@@ -10,16 +10,16 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/service"
 )
 
-// CallbackHandler 是 task_detail 回调的处理器签名（按 task_type 注册）。
-// handler 需自行用 records.MarkStatusIf 做数据层乐观锁幂等闸门——
-// 只有 running 才流转，done/fail 直接短路，防并发重复回调。
+// CallbackHandler is the handler signature of task_detail callbacks (registered by task_type).
+// Handlers must use records.MarkStatusIf themselves as the data-layer optimistic-lock idempotency gate —
+// only running transitions; done/fail short-circuit directly, preventing concurrent duplicate callbacks.
 type CallbackHandler func(ctx context.Context, d *CallbackDeps, req *contracts.CallbackReq) error
 
-// CallbackDeps 是回调 handler 所需的跨域依赖（repos + 端口）。
+// CallbackDeps holds the cross-domain dependencies needed by callback handlers (repos + ports).
 //
-// 回调分发器在 infrastructure 层，handler 内部协调 creation 仓储与 risk/points
-// 跨域端口（service.RiskPort / service.PointsPort），不直接触碰
-// risk/points 的基础设施实现——保持依赖单向（creation → risk/points）。
+// The callback dispatcher lives in the infrastructure layer; handlers internally coordinate creation repositories with the risk/points
+// cross-domain ports (service.RiskPort / service.PointsPort), without touching the risk/points
+// infrastructure implementations directly — keeping dependencies one-way (creation → risk/points).
 type CallbackDeps struct {
 	projects domain.ProjectRepository
 	records  domain.CallbackRecordRepository
@@ -28,7 +28,7 @@ type CallbackDeps struct {
 	points   service.PointsPort
 }
 
-// NewCallbackDeps 创建回调 handler 依赖集合（装配时由 dispatcher 构造注入）。
+// NewCallbackDeps creates the callback-handler dependency set (constructed and injected by the dispatcher at assembly time).
 func NewCallbackDeps(projects domain.ProjectRepository, records domain.CallbackRecordRepository,
 	comp domain.CompensationRepository, risk service.RiskPort, points service.PointsPort) *CallbackDeps {
 	return &CallbackDeps{
@@ -40,19 +40,19 @@ func NewCallbackDeps(projects domain.ProjectRepository, records domain.CallbackR
 	}
 }
 
-// CallbackDispatcher 任务回调分发器：解析 task_type → 异步执行 handler。
+// CallbackDispatcher is the task-callback dispatcher: parse task_type → execute the handler asynchronously.
 //
-// 幂等闸门（对齐 spec §5.1）：handler 处理前用 CallbackRecordRepository.MarkStatusIf
-// 做数据层乐观锁，只有 running 才流转（done/fail 直接短路），防并发重复回调。
+// Idempotency gate (aligned with spec §5.1): before a handler runs, CallbackRecordRepository.MarkStatusIf
+// provides the data-layer optimistic lock — only running transitions (done/fail short-circuit), preventing concurrent duplicate callbacks.
 //
-// ⚠️ 核心设计（§4.2）：HTTP 立即返回 200，handler 在 goroutine 中异步执行——
-// 防止算子因等待业务逻辑而超时重试。
+// ⚠️ Core design (§4.2): HTTP returns 200 immediately; handlers run asynchronously in goroutines —
+// preventing operators from timing out and retrying while waiting for business logic.
 type CallbackDispatcher struct {
 	handlers map[string]CallbackHandler
 	deps     *CallbackDeps
 }
 
-// NewCallbackDispatcher 创建回调分发器，注册所有 task_type → handler。
+// NewCallbackDispatcher creates the callback dispatcher, registering all task_type → handler mappings.
 func NewCallbackDispatcher(deps *CallbackDeps) *CallbackDispatcher {
 	d := &CallbackDispatcher{
 		handlers: make(map[string]CallbackHandler),
@@ -62,47 +62,47 @@ func NewCallbackDispatcher(deps *CallbackDeps) *CallbackDispatcher {
 	return d
 }
 
-// registerHandlers 注册回调 handler（按 task_type 路由）。
+// registerHandlers registers the callback handlers (routed by task_type).
 func (d *CallbackDispatcher) registerHandlers() {
 	d.handlers[domain.TaskTypeKey(domain.RoleTypeScreenplay, domain.ProjectTypeMixVideo)] = HandleMixVideoScriptCallback
 	d.handlers[domain.TaskTypeKey(domain.RoleTypeEditor, domain.ProjectTypeMixVideo)] = HandleMixVideoProjectCallback
 }
 
-// Dispatch 分发一次任务回调（/inner/callback/task_detail 入口）。
+// Dispatch dispatches one task callback (the /inner/callback/task_detail entry).
 //
-// 流程：
-//  1. 解析 extend_params，拿 task_type + callback_record_id
-//  2. 更新 callback_record（记录回调原始产出 task_output，**不改 status**——
-//     状态流转由各 handler 负责（done/fail），避免把终态覆盖成 success 破坏短路）
-//  3. 注册表找 handler；找不到返回 FailCallbackResp
-//  4. goroutine 异步执行 handler（context.WithoutCancel）；失败写补偿表
-//     （BizTypeCallbackAgent，阶段 5 的补偿 job 重试）
+// Flow:
+//  1. Parse extend_params to get task_type + callback_record_id
+//  2. Update callback_record (record the raw callback output task_output, **without changing status** —
+//     status transitions are each handler's responsibility (done/fail), avoiding overwriting a terminal state with success and breaking the short-circuit)
+//  3. Look up the handler in the registry; return FailCallbackResp when missing
+//  4. Execute the handler asynchronously in a goroutine (context.WithoutCancel); on failure write the compensation table
+//     (BizTypeCallbackAgent, retried by the stage-5 compensation job)
 func (d *CallbackDispatcher) Dispatch(ctx context.Context, req *contracts.CallbackReq) *contracts.CallbackResp {
-	// 0. 从 extend_params 解析 task_type
+	// 0. Parse task_type from extend_params
 	passThrough, err := contracts.ParseExtendParams(req.ExtendParams)
 	if err != nil {
-		return contracts.FailCallbackResp("解析 extend_params 失败: " + err.Error())
+		return contracts.FailCallbackResp("failed to parse extend_params: " + err.Error())
 	}
 	taskType := passThrough.TaskType
 
-	// 1. 记录回调原始产出（task_output + 回调时间），但**不改 status**
+	// 1. Record the raw callback output (task_output + callback time), but **do not change status**
 	if passThrough.CallbackRecordID > 0 {
 		_ = d.deps.records.Update(ctx, uint64(passThrough.CallbackRecordID), map[string]any{
 			"task_output": string(req.SpecialInfo),
 		})
 	}
 
-	// 2. 找 handler
+	// 2. Find the handler
 	handler, ok := d.handlers[taskType]
 	if !ok {
-		return contracts.FailCallbackResp("未知 task_type: " + taskType)
+		return contracts.FailCallbackResp("unknown task_type: " + taskType)
 	}
 
-	// 3. ⚠️ 关键：HTTP 立即返回 200，handler 在 goroutine 中异步执行
-	//    防止算子因等待而重试
+	// 3. ⚠️ Key: HTTP returns 200 immediately; the handler runs asynchronously in a goroutine
+	//    to prevent operators from retrying while waiting
 	go func() {
 		if err := handler(context.WithoutCancel(ctx), d.deps, req); err != nil {
-			// 失败 → 写补偿表（阶段 5 的补偿 job 重试）
+			// Failure → write the compensation table (retried by the stage-5 compensation job)
 			d.insertCallbackAgentCompensation(context.Background(), req, taskType)
 		}
 	}()
@@ -110,15 +110,15 @@ func (d *CallbackDispatcher) Dispatch(ctx context.Context, req *contracts.Callba
 	return contracts.SuccessCallbackResp()
 }
 
-// RetryCallbackAgent 供补偿 job 调用的回调 agent 重试入口。
+// RetryCallbackAgent is the callback-agent retry entry called by the compensation job.
 //
-// payload 是 insertCallbackAgentCompensation 写入的 JSON，包含：
+// payload is the JSON written by insertCallbackAgentCompensation, containing:
 //   - task_id / project_id / user_id / task_status / task_type
 //
-// 重试语义：重新走回调分发。handler 内部有数据层乐观锁幂等闸门（MarkStatusIf：
-// done/fail 直接短路），且 Dispatch 只写回调原始产出不改终态——重复重试天然幂等，
-// 不会二次退款。返回 error 表示分发失败（未知 task_type / extend_params 解析失败等），
-// 由补偿 job 累加重试次数。
+// Retry semantics: rerun the callback dispatch. Handlers have the data-layer optimistic-lock idempotency gate (MarkStatusIf:
+// done/fail short-circuit directly), and Dispatch only writes the raw callback output without changing terminal states — repeated retries are naturally idempotent,
+// never causing double refunds. A returned error means dispatch failed (unknown task_type / extend_params parse failure, etc.);
+// the compensation job accumulates the retry count.
 func (d *CallbackDispatcher) RetryCallbackAgent(ctx context.Context, payload map[string]any) error {
 	req := &contracts.CallbackReq{
 		TaskID:     asInt64(payload["task_id"]),
@@ -129,19 +129,19 @@ func (d *CallbackDispatcher) RetryCallbackAgent(ctx context.Context, payload map
 	if req.ProjectID == "" || req.TaskStatus == "" {
 		return fmt.Errorf("retry callback agent: missing project_id/task_status")
 	}
-	// 补偿时没有原始 extend_params，用 payload 里存的 task_type 构造
+	// Compensation has no original extend_params; reconstruct it from the task_type stored in the payload
 	taskType := asString(payload["task_type"])
 	if taskType == "" {
 		return fmt.Errorf("retry callback agent: missing task_type")
 	}
 	req.ExtendParams = contracts.BuildExtendParamsJSON(taskType, asInt64(payload["callback_record_id"]),
 		domain.CallbackStepMulti, 0, 0)
-	// 同步重放（不走 goroutine）：分发失败返回 err；handler 成功返回 nil
+	// Synchronous replay (no goroutine): dispatch failure returns err; handler success returns nil
 	return d.redispatchCallback(ctx, req)
 }
 
-// redispatchCallback 同步执行一次回调分发（补偿 job 重试用，不走 goroutine）。
-// 返回 err 表示分发失败（未知 task_type 等）；handler 内部错误同样以 err 返回。
+// redispatchCallback executes one callback dispatch synchronously (for compensation-job retries, no goroutine).
+// A returned err means dispatch failed (unknown task_type, etc.); handler-internal errors are also returned as err.
 func (d *CallbackDispatcher) redispatchCallback(ctx context.Context, req *contracts.CallbackReq) error {
 	passThrough, err := contracts.ParseExtendParams(req.ExtendParams)
 	if err != nil {
@@ -149,7 +149,7 @@ func (d *CallbackDispatcher) redispatchCallback(ctx context.Context, req *contra
 	}
 	handler, ok := d.handlers[passThrough.TaskType]
 	if !ok {
-		return fmt.Errorf("未知 task_type: %s", passThrough.TaskType)
+		return fmt.Errorf("unknown task_type: %s", passThrough.TaskType)
 	}
 	if passThrough.CallbackRecordID > 0 {
 		_ = d.deps.records.Update(ctx, uint64(passThrough.CallbackRecordID), map[string]any{
@@ -159,8 +159,8 @@ func (d *CallbackDispatcher) redispatchCallback(ctx context.Context, req *contra
 	return handler(context.WithoutCancel(ctx), d.deps, req)
 }
 
-// insertCallbackAgentCompensation 回调 handler 失败写补偿表（BizTypeCallbackAgent）。
-// payload 存足重试所需信息（含 callback_record_id，供补偿 job 重构 extend_params 重放）。
+// insertCallbackAgentCompensation writes the compensation table when a callback handler fails (BizTypeCallbackAgent).
+// The payload stores everything needed for retry (including callback_record_id, so the compensation job can rebuild extend_params and replay).
 func (d *CallbackDispatcher) insertCallbackAgentCompensation(ctx context.Context, req *contracts.CallbackReq, taskType string) {
 	recordID := int64(0)
 	if pt, err := contracts.ParseExtendParams(req.ExtendParams); err == nil {
@@ -183,7 +183,7 @@ func (d *CallbackDispatcher) insertCallbackAgentCompensation(ctx context.Context
 	})
 }
 
-// asString 从 map 里安全取 string。
+// asString safely fetches a string from a map.
 func asString(v any) string {
 	if v == nil {
 		return ""
@@ -194,7 +194,7 @@ func asString(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// asInt64 从 map 里安全取 int64。
+// asInt64 safely fetches an int64 from a map.
 func asInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:

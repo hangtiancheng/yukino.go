@@ -11,13 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// RiskOfflineJobInterval 风控治理评估周期：每 5 分钟跑一次。
+// RiskOfflineJobInterval is the risk-governance evaluation interval: run every 5 minutes.
 const RiskOfflineJobInterval = 5 * time.Minute
 
-// RunRiskOfflineJobSafely 包一层 recover 的评估 job 执行。
+// RunRiskOfflineJobSafely runs the evaluation job wrapped in a recover layer.
 //
-// 对齐旧 creation.RunRiskOfflineJob：统计窗口内命中数，达阈值的 (user, subProduct)
-// 写 Redis 黑名单；rdb 为 nil 时退化为不写黑名单（评估本身照常）。
+// Aligned with the old creation.RunRiskOfflineJob: count hits within the window; (user, subProduct) pairs reaching the threshold
+// are written to the Redis blacklist; when rdb is nil it degrades to not writing the blacklist (evaluation itself proceeds as usual).
 func RunRiskOfflineJobSafely(ctx context.Context, stats riskdomain.RiskStatsRepository, rdb *redis.Client, logger *zap.Logger) {
 	defer func() {
 		if r := recover(); r != nil {

@@ -29,7 +29,7 @@ func TestParseTokenRejectsBadSignature(t *testing.T) {
 	testx.Error(t, err)
 }
 
-// TestGenerateToken_IncludesUserID 验证 token 携带 user_id。
+// TestGenerateToken_IncludesUserID verifies that the token carries user_id.
 func TestGenerateToken_IncludesUserID(t *testing.T) {
 	svc := service.NewAuthService("test-secret")
 	token, err := svc.GenerateToken("alice", 7)

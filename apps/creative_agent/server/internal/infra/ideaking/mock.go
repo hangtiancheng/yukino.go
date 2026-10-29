@@ -7,14 +7,14 @@ import (
 	"fmt"
 )
 
-// MockProvider 是未配置真实热点服务时的回退实现：返回带 eid 的结构化选题。
-// eid 用 md5(query+"|"+i) 生成，保证同一 query 下稳定、可被 submit_clarification 回传。
+// MockProvider is the fallback when no real hotspot service is configured: it returns structured topics with eids.
+// The eid is md5(query+"|"+i), stable for the same query and echoable via submit_clarification.
 type MockProvider struct{}
 
-// NewMockProvider 创建 MockProvider。
+// NewMockProvider creates a MockProvider.
 func NewMockProvider() *MockProvider { return &MockProvider{} }
 
-// SearchHotTopics 返回 3 条带 eid 的选题 + 热点 markdown 摘要。
+// SearchHotTopics returns 3 topics with eids + a hotspot markdown summary.
 func (m *MockProvider) SearchHotTopics(_ context.Context, query string, count int) (*HotTopicResult, error) {
 	if query == "" {
 		query = "热点创作"

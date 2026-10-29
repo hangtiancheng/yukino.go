@@ -33,7 +33,7 @@ func (s *RouterSuite) SetupSuite() {
 
 func (s *RouterSuite) setupRouter() *yukino.Application {
 	return router.Setup(router.Dependencies{
-		UserSvc:   nil, // ping / 无 token 401 用例不触达 user 路由
+		UserSvc:   nil, // ping / no-token 401 cases never reach user routes
 		JWTSecret: "test-secret",
 		Redis:     nil,
 		Logger:    s.log,
@@ -80,9 +80,9 @@ func (s *RouterSuite) TestProtectedRouteRejectedWithoutAuth() {
 	testx.Equal(s.T(), "missing token", body.Message)
 }
 
-// TestCallbackRouteExemptFromJWT 验证回调路由豁免 JWT（服务端调用，无用户 token 也应可达）。
+// TestCallbackRouteExemptFromJWT verifies that callback routes are JWT-exempt (server-to-server; reachable without a user token).
 func (s *RouterSuite) TestCallbackRouteExemptFromJWT() {
-	// 回调依赖：最小桩实现（GetWaitingBySession 恒返回 not found → 幂等跳过）。
+	// Callback dependencies: minimal stubs (GetWaitingBySession always returns not found → idempotent skip).
 	runRepo := &stubTaskRunRepo{}
 	stepRepo := &stubTaskStepRepo{}
 	r := router.Setup(router.Dependencies{
@@ -94,7 +94,7 @@ func (s *RouterSuite) TestCallbackRouteExemptFromJWT() {
 		TaskStepRepo: stepRepo,
 	})
 
-	// 无 Authorization 头调用回调，不应 401（按"无 Waiting 任务"幂等跳过返回 200）。
+	// Calling the callback without an Authorization header should not 401 (idempotent skip returns 200 as "no Waiting task").
 	req := httptest.NewRequest(http.MethodPost, "/aigc/callback/task_detail",
 		strings.NewReader(`{"task_id":1,"project_id":"p1","user_id":1}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -104,7 +104,7 @@ func (s *RouterSuite) TestCallbackRouteExemptFromJWT() {
 	testx.Equal(s.T(), http.StatusOK, w.Code)
 }
 
-// stubTaskRunRepo 是最小 TaskRunRepository 桩：所有查询返回 not found（回调幂等跳过路径）。
+// stubTaskRunRepo is a minimal TaskRunRepository stub: all queries return not found (the callback idempotent-skip path).
 type stubTaskRunRepo struct{}
 
 func (*stubTaskRunRepo) Insert(ctx context.Context, r *model.CGTaskRun) error { return nil }
@@ -127,7 +127,7 @@ func (*stubTaskRunRepo) MarkTerminal(ctx context.Context, _ int64, _ int32, _ st
 	return nil
 }
 
-// stubTaskStepRepo 是最小 TaskStepRepository 桩。
+// stubTaskStepRepo is a minimal TaskStepRepository stub.
 type stubTaskStepRepo struct{}
 
 func (*stubTaskStepRepo) Insert(ctx context.Context, s *model.CGTaskStep) error { return nil }
@@ -144,7 +144,7 @@ func (*stubTaskStepRepo) GetNewestFinishedOutput(ctx context.Context, _ int64) (
 	return "", nil
 }
 
-// TestConversationRouteRequiresJWT 验证对话路由强制鉴权：无 token 一律 401。
+// TestConversationRouteRequiresJWT verifies that conversation routes require auth: no token always yields 401.
 func (s *RouterSuite) TestConversationRouteRequiresJWT() {
 	r := s.setupRouter()
 
@@ -156,11 +156,11 @@ func (s *RouterSuite) TestConversationRouteRequiresJWT() {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		testx.Equal(s.T(), http.StatusUnauthorized, w.Code,
-			"%s /aigc/conversation 无 token 应 401", method)
+			"%s /aigc/conversation without a token should 401", method)
 	}
 }
 
-// TestConversationRouteAcceptsJWT 验证对话路由带有效 token 可达（user_id 注入 ctx）。
+// TestConversationRouteAcceptsJWT verifies that conversation routes are reachable with a valid token (user_id injected into ctx).
 func (s *RouterSuite) TestConversationRouteAcceptsJWT() {
 	r := s.setupRouter()
 
@@ -168,19 +168,19 @@ func (s *RouterSuite) TestConversationRouteAcceptsJWT() {
 	token, err := auth.GenerateToken("alice", 7)
 	s.Require().NoError(err)
 
-	// 无依赖（conversationHandler 的 flow 无法执行），只验证 401 不出现（即通过鉴权）。
-	// 这里直接打一个不存在的 business 依赖会 500/流错误，但绝不应是 401。
+	// No dependencies (the conversationHandler flow cannot execute); only verify that 401 does not appear (i.e. auth passed).
+	// Hitting a missing business dependency here may 500/stream-error, but must never be 401.
 	req := httptest.NewRequest(http.MethodGet, "/aigc/conversation?query=hi&sessionId=s1&agentId=a1&userId=1", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	testx.NotEqual(s.T(), http.StatusUnauthorized, w.Code,
-		"带有效 token 不应 401")
+		"a valid token should not 401")
 }
 
-// TestConversationRouteAcceptsQueryToken 验证 JWT 中间件支持 query 参数 ?token= 鉴权
-// （EventSource 无法带 Authorization 头，前端用一次性 query token）。
+// TestConversationRouteAcceptsQueryToken verifies that the JWT middleware supports ?token= query-parameter auth
+// (EventSource cannot send an Authorization header, so the frontend uses a one-off query token).
 func (s *RouterSuite) TestConversationRouteAcceptsQueryToken() {
 	r := s.setupRouter()
 
@@ -188,17 +188,17 @@ func (s *RouterSuite) TestConversationRouteAcceptsQueryToken() {
 	token, err := auth.GenerateToken("alice", 7)
 	s.Require().NoError(err)
 
-	// GET 通过 ?token= 携带 JWT，不应 401（通过鉴权进入 flow）。
+	// GET carries the JWT via ?token=; it should not 401 (auth passes and the flow is entered).
 	req := httptest.NewRequest(http.MethodGet,
 		"/aigc/conversation?query=hi&sessionId=s1&agentId=a1&token="+token, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	testx.NotEqual(s.T(), http.StatusUnauthorized, w.Code,
-		"带 query token 不应 401")
+		"a query token should not 401")
 }
 
-// TestConversationRouteRejectsBadQueryToken 验证非法 query token 被拒绝。
+// TestConversationRouteRejectsBadQueryToken verifies that an invalid query token is rejected.
 func (s *RouterSuite) TestConversationRouteRejectsBadQueryToken() {
 	r := s.setupRouter()
 
@@ -208,7 +208,7 @@ func (s *RouterSuite) TestConversationRouteRejectsBadQueryToken() {
 	r.ServeHTTP(w, req)
 
 	testx.Equal(s.T(), http.StatusUnauthorized, w.Code,
-		"非法 query token 应 401")
+		"an invalid query token should 401")
 }
 
 func TestRouterSuite(t *testing.T) {

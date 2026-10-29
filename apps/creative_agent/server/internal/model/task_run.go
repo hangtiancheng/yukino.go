@@ -2,99 +2,99 @@ package model
 
 import "encoding/json"
 
-// CGTaskRun 是 cg_task_run 表的 GORM 模型。
+// CGTaskRun is the GORM model of the cg_task_run table.
 //
-// 状态机：Pending → Running → Finished/Failed，中间可经 Waiting（等异步产线回调）。
-// 一个 task_run 对应 plan_steps 中 Agents[0]（只取第一个智能体），
-// 多步串联由外部驱动（对话路径：卡片确认 + 快任务重新投递；Cron 路径：Poller 自动推进）。
+// State machine: Pending → Running → Finished/Failed, possibly passing through Waiting (awaiting an async pipeline callback).
+// One task_run corresponds to Agents[0] in plan_steps (only the first agent is taken);
+// multi-step chaining is driven externally (conversation path: card confirmation + fast-task redispatch; cron path: the Poller auto-advances).
 type CGTaskRun struct {
 	ID int64 `gorm:"column:id;primaryKey;autoIncrement"`
-	// 任务执行业务主键（雪花 ID 整数），全局唯一
+	// Task-run business primary key (snowflake ID integer), globally unique
 	TaskRunID int64 `gorm:"column:task_run_id;uniqueIndex;not null"`
-	// 用户 ID
+	// User ID
 	UserID int64 `gorm:"column:user_id;index;not null"`
-	// 智能体 ID
+	// Agent ID
 	AgentID string `gorm:"column:agent_id;size:64;not null"`
-	// 会话 ID
+	// Session ID
 	SessionID string `gorm:"column:session_id;index;size:64;not null"`
-	// 关联管家思考记录 ID（复刻环境固定 0）
+	// Associated manager thought-record ID (fixed to 0 in the replica environment)
 	ThoughtID int64 `gorm:"column:thought_id;not null;default:0"`
-	// 任务类型
+	// Task type
 	Type int32 `gorm:"column:type;not null;default:0"`
-	// 任务名称
+	// Task name
 	TaskName string `gorm:"column:task_name;size:256;not null;default:''"`
-	// 原始用户 query
+	// Original user query
 	OriginalQuery string `gorm:"column:original_query;type:text;not null"`
-	// 计划步骤 JSON（PlanSteps 结构体，含完整 Agents 列表）
+	// Plan-steps JSON (PlanSteps struct, containing the full Agents list)
 	PlanSteps string `gorm:"column:plan_steps;type:mediumtext;not null"`
-	// 管家 message_id
+	// Manager message_id
 	MsgID string `gorm:"column:msg_id;index;size:64;not null;default:''"`
-	// 扩展字段 JSON
+	// Extension fields JSON
 	Ext string `gorm:"column:ext;type:mediumtext;not null"`
-	// 产品线
+	// Product line
 	Pd string `gorm:"column:pd;size:32;not null;default:''"`
-	// 智能体类型
+	// Agent type
 	AgentType string `gorm:"column:agent_type;size:32;not null;default:''"`
-	// 状态：0=Pending, 1=Running, 2=Waiting, 3=Finished, 4=Failed
+	// Status: 0=Pending, 1=Running, 2=Waiting, 3=Finished, 4=Failed
 	Status int32 `gorm:"column:status;not null;default:0"`
-	// 软删除：0=否 1=是
+	// Soft delete: 0=no 1=yes
 	IsDelete int8 `gorm:"column:is_delete;not null;default:0"`
-	// 生产者 IP
+	// Producer IP
 	ProducerIP string `gorm:"column:producer_ip;size:64;not null;default:''"`
-	// 消费者 IP
+	// Consumer IP
 	ConsumerIP string `gorm:"column:consumer_ip;size:64;not null;default:''"`
-	// 失败原因
+	// Failure reason
 	Reason string `gorm:"column:reason;type:text;not null"`
-	// 开始时间（毫秒时间戳）
+	// Start time (millisecond timestamp)
 	StartTime int64 `gorm:"column:start_time;not null;default:0"`
-	// 结束时间（毫秒时间戳）
+	// End time (millisecond timestamp)
 	EndTime int64 `gorm:"column:end_time;not null;default:0"`
-	// 分片键（复刻环境固定为 0）
+	// Shard key (fixed to 0 in the replica environment)
 	ShardingKey int32 `gorm:"column:sharding_key;not null;default:0"`
-	// 创建时间（毫秒时间戳）
+	// Creation time (millisecond timestamp)
 	CreateTime int64 `gorm:"column:create_time;not null"`
-	// 更新时间（毫秒时间戳）
+	// Update time (millisecond timestamp)
 	UpdateTime int64 `gorm:"column:update_time;not null"`
 }
 
 func (CGTaskRun) TableName() string { return "cg_task_run" }
 
-// cg_task_run 状态常量（真实系统有 6 个状态，其中 Unknown 为兜底）。
+// cg_task_run status constants (the reference system has 6 statuses; Unknown is the fallback).
 const (
-	TaskRunStatusPending  int32 = 0   // 等待执行
-	TaskRunStatusRunning  int32 = 1   // 执行中
-	TaskRunStatusWaiting  int32 = 2   // 等待中（如等异步产线回调）
-	TaskRunStatusFinished int32 = 3   // 执行成功完成
-	TaskRunStatusFailed   int32 = 4   // 执行失败
-	TaskRunStatusUnknown  int32 = 100 // 未知状态
+	TaskRunStatusPending  int32 = 0   // waiting to execute
+	TaskRunStatusRunning  int32 = 1   // running
+	TaskRunStatusWaiting  int32 = 2   // waiting (e.g. for an async pipeline callback)
+	TaskRunStatusFinished int32 = 3   // finished successfully
+	TaskRunStatusFailed   int32 = 4   // execution failed
+	TaskRunStatusUnknown  int32 = 100 // unknown status
 )
 
-// PlanSteps 是 cg_task_run.plan_steps 列中存储的计划 JSON 结构。
-// 管家产出 new_agents_plan 时带上完整 Agents 列表，但执行器一次只消费 Agents[0]。
+// PlanSteps is the plan JSON structure stored in the cg_task_run.plan_steps column.
+// The manager produces new_agents_plan with the full Agents list, but the executor consumes only Agents[0] at a time.
 type PlanSteps struct {
-	// AgentsPipeline 管家选的产线（对齐真实系统 PlanConfig.AgentsPipeline）。
-	// 记录用 + 点卡确认路径复用；agent 链由 LLM 决定，产线限定合法 agent 集合。
+	// AgentsPipeline is the pipeline chosen by the manager (aligned with the reference system's PlanConfig.AgentsPipeline).
+	// Used for recording + reused by the card-confirmation path; the agent chain is decided by the LLM, and the pipeline bounds the valid agent set.
 	AgentsPipeline string `json:"agents_pipeline,omitempty"`
-	// Agents 计划中的智能体列表（执行器只取第一个）
+	// Agents is the planned agent list (the executor takes only the first)
 	Agents []PlanAgent `json:"agents"`
 }
 
-// PlanAgent 计划中的一个智能体。
+// PlanAgent is one agent in the plan.
 type PlanAgent struct {
-	// AgentID 智能体 ID（如 gold_scriptwriter / edit_master）
+	// AgentID is the agent ID (e.g. gold_scriptwriter / edit_master)
 	AgentID string `json:"agent_id"`
-	// Input 传给该智能体的输入
+	// Input is the input passed to the agent
 	Input string `json:"input"`
-	// TaskType 任务类型（execute_agent 等）
+	// TaskType is the task type (execute_agent, etc.)
 	TaskType string `json:"task_type,omitempty"`
 }
 
-// ParsePlanSteps 将 plan_steps JSON 反序列化。
+// ParsePlanSteps deserializes the plan_steps JSON.
 func (r *CGTaskRun) ParsePlanSteps() (*PlanSteps, error) {
 	return ParsePlanStepsString(r.PlanSteps)
 }
 
-// SetPlanSteps 将 PlanSteps 序列化写回记录。
+// SetPlanSteps serializes PlanSteps back into the record.
 func (r *CGTaskRun) SetPlanSteps(p *PlanSteps) error {
 	b, err := MarshalPlanSteps(p)
 	if err != nil {
@@ -104,7 +104,7 @@ func (r *CGTaskRun) SetPlanSteps(p *PlanSteps) error {
 	return nil
 }
 
-// MustParsePlanSteps 解析 plan_steps，失败时返回空计划（调用方通常期望 Agents[0]）。
+// MustParsePlanSteps parses plan_steps, returning an empty plan on failure (callers usually expect Agents[0]).
 func MustParsePlanSteps(r *CGTaskRun) *PlanSteps {
 	p, _ := r.ParsePlanSteps()
 	if p == nil {
@@ -113,12 +113,12 @@ func MustParsePlanSteps(r *CGTaskRun) *PlanSteps {
 	return p
 }
 
-// MarshalPlanSteps 将 PlanSteps 序列化为 JSON。
+// MarshalPlanSteps serializes PlanSteps to JSON.
 func MarshalPlanSteps(p *PlanSteps) ([]byte, error) {
 	return json.Marshal(p)
 }
 
-// ParsePlanStepsString 将 plan_steps JSON 反序列化。
+// ParsePlanStepsString deserializes the plan_steps JSON.
 func ParsePlanStepsString(s string) (*PlanSteps, error) {
 	var p PlanSteps
 	if err := json.Unmarshal([]byte(s), &p); err != nil {

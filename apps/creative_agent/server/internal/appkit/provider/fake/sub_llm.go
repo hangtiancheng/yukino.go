@@ -7,7 +7,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 )
 
-// DefaultSubLLM 返回子智能体 LLM：配置了真实 LLM 用真实，否则 FakeSubLLM。
+// DefaultSubLLM returns the sub-agent LLM: the real LLM when configured, otherwise FakeSubLLM.
 func DefaultSubLLM() react.LLM {
 	if appkitllm.DefaultRealLLM != nil {
 		return appkitllm.DefaultRealLLM
@@ -15,19 +15,19 @@ func DefaultSubLLM() react.LLM {
 	return &FakeSubLLM{}
 }
 
-// FakeSubLLM 是子智能体（SubAgent）用的查表 LLM（复刻的假实现）。
+// FakeSubLLM is the table-lookup LLM for sub-agents (the replica's fake implementation).
 //
-// 行为：
-//   - 第一轮（无 tool observation）→ 返回 generate_image 工具调用
-//   - 第二轮（有 tool observation）→ 返回 Terminal 文本
+// Behavior:
+//   - First round (no tool observation) → returns a generate_image tool call
+//   - Second round (with tool observation) → returns Terminal text
 //
-// 与 FakeLLM 的区别：子智能体走产线工具（generate_image），产出的是
-// 执行类产物，而不是管家的 only_reply。
+// Difference from FakeLLM: sub-agents use execution tools (generate_image) and produce
+// execution-class products, not the manager's only_reply.
 type FakeSubLLM struct {
 	turn int
 }
 
-// Chat 实现 react.LLM 接口。
+// Chat implements the react.LLM interface.
 func (l *FakeSubLLM) Chat(ctx context.Context, messages []react.Message, tools []react.FunctionDef) (*react.LLMResponse, error) {
 	_ = ctx
 	l.turn++
@@ -49,25 +49,25 @@ func (l *FakeSubLLM) Chat(ctx context.Context, messages []react.Message, tools [
 	}, nil
 }
 
-// ChatStream 实现 react.LLM 接口（流式降级）。
+// ChatStream implements the react.LLM interface (streaming degradation).
 func (l *FakeSubLLM) ChatStream(ctx context.Context, messages []react.Message, tools []react.FunctionDef, cb react.StreamCallbackFunc) (*react.LLMResponse, error) {
 	resp, err := l.Chat(ctx, messages, tools)
 	return streamResponseDegraded(ctx, resp, err, cb)
 }
 
-// FakeSubLLMPipeline 是触发异步产线的查表 LLM。
-// 第一轮 → create_video_task（isPipeline=true）→ SubAgent 提前终止 + NeedWait=Yes。
+// FakeSubLLMPipeline is the table-lookup LLM that triggers the async pipeline.
+// First round → create_video_task (isPipeline=true) → SubAgent terminates early + NeedWait=Yes.
 type FakeSubLLMPipeline struct {
 	turn int
 }
 
-// Chat 实现 react.LLM 接口。
+// Chat implements the react.LLM interface.
 func (l *FakeSubLLMPipeline) Chat(ctx context.Context, messages []react.Message, tools []react.FunctionDef) (*react.LLMResponse, error) {
 	_ = ctx
 	l.turn++
 	for _, m := range messages {
 		if m.Role == "tool" {
-			// 有工具结果 → 回到 Terminal
+			// Tool result present → back to Terminal
 			return &react.LLMResponse{Content: "视频合成任务已提交到产线，等待完成通知。"}, nil
 		}
 	}
@@ -77,7 +77,7 @@ func (l *FakeSubLLMPipeline) Chat(ctx context.Context, messages []react.Message,
 	}, nil
 }
 
-// ChatStream 实现 react.LLM 接口（流式降级）。
+// ChatStream implements the react.LLM interface (streaming degradation).
 func (l *FakeSubLLMPipeline) ChatStream(ctx context.Context, messages []react.Message, tools []react.FunctionDef, cb react.StreamCallbackFunc) (*react.LLMResponse, error) {
 	resp, err := l.Chat(ctx, messages, tools)
 	return streamResponseDegraded(ctx, resp, err, cb)

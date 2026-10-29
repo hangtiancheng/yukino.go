@@ -13,9 +13,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// TaskPayload 是子任务 stream 的消息体。
-// 只携带定位信息（task_run_id 业务键 + msg_id 去重键），执行上下文从 DB 读。
-// 由 subtaskexecutor.Submitter 投递、taskflow.Consumer 消费，故跨包导出。
+// TaskPayload is the message body of the subtask stream.
+// It carries only locating information (task_run_id business key + msg_id dedup key); the execution context is read from the DB.
+// Dispatched by subtaskexecutor.Submitter and consumed by taskflow.Consumer, hence exported across packages.
 type TaskPayload struct {
 	TaskRunID int64  `json:"task_run_id"`
 	MsgID     string `json:"msg_id"`
@@ -23,29 +23,29 @@ type TaskPayload struct {
 	SessionID string `json:"session_id"`
 	AgentID   string `json:"agent_id"`
 	Query     string `json:"query"`
-	// TraceParent 是 W3C traceparent，跨进程透传 trace。
+	// TraceParent is the W3C traceparent, propagating the trace across processes.
 	TraceParent string `json:"traceparent,omitempty"`
 }
 
-// Submitter 是子任务发射器（对应真实系统的 AsyncSubmitter）。
+// Submitter is the subtask launcher (corresponding to the reference system's AsyncSubmitter).
 //
-// 两个可靠性要点（见 mini-async-task-impl.md §四-a）：
-//  1. 先建 task_run(Pending) 再投递——投递可失败，但"待执行"已持久化
-//  2. 投递失败不阻断主流程——标记 Failed 后照常返回 id，管家不因一个子任务投递失败而整体挂掉
+// Two reliability essentials (see mini-async-task-impl.md §4-a):
+//  1. Create task_run(Pending) before dispatching — dispatch may fail, but "pending execution" is already persisted
+//  2. Dispatch failure does not block the main flow — mark Failed and still return the id; the manager does not fall over because one subtask dispatch failed
 type Submitter struct {
 	taskRunRepo repository.TaskRunRepository
 	streamQ     infra.StreamQueue
 	logger      *zap.Logger
 }
 
-// SubmitterConfig 持有 Submitter 的依赖。
+// SubmitterConfig holds the Submitter's dependencies.
 type SubmitterConfig struct {
 	TaskRunRepo repository.TaskRunRepository
 	StreamQ     infra.StreamQueue
 	Logger      *zap.Logger
 }
 
-// NewSubmitter 创建 Submitter。
+// NewSubmitter creates a Submitter.
 func NewSubmitter(cfg SubmitterConfig) *Submitter {
 	return &Submitter{
 		taskRunRepo: cfg.TaskRunRepo,
@@ -54,23 +54,23 @@ func NewSubmitter(cfg SubmitterConfig) *Submitter {
 	}
 }
 
-// Submit 先建 task_run(Pending) 再投递。
-// 返回 taskRunID：只要 task_run 建成即返回 id + nil（投递失败不阻断，标记 Failed）。
-// 仅当建 task_run 本身失败才返回 error。
+// Submit creates task_run(Pending) first, then dispatches.
+// Returns taskRunID: as long as task_run is created it returns id + nil (dispatch failure does not block; it marks Failed).
+// Only when creating task_run itself fails does it return an error.
 func (s *Submitter) Submit(ctx context.Context, run *model.CGTaskRun) (int64, error) {
-	// 1. 先落库（可靠性第一道）
+	// 1. Persist first (the first reliability guard)
 	if run.TaskRunID == 0 {
 		run.TaskRunID = model.NextID()
 	}
 	if err := s.taskRunRepo.Insert(ctx, run); err != nil {
-		return 0, fmt.Errorf("submitter: 建 task_run 失败: %w", err)
+		return 0, fmt.Errorf("submitter: create task_run: %w", err)
 	}
 
-	// 2. 再投递（真实版带 3 次重试；此处简化为一次，失败即标记 Failed）
+	// 2. Then dispatch (the real version retries 3 times; simplified here to one attempt, marking Failed on failure)
 	guid := fmt.Sprintf("task-%d", run.TaskRunID)
 	body, _ := json.Marshal(TaskPayload{
 		TaskRunID:   run.TaskRunID,
-		MsgID:       run.MsgID, // 真实 messageID（此前是 "task-{id}" guid）
+		MsgID:       run.MsgID, // the real messageID (previously a "task-{id}" guid)
 		UserID:      run.UserID,
 		SessionID:   run.SessionID,
 		AgentID:     run.AgentID,
@@ -78,11 +78,11 @@ func (s *Submitter) Submit(ctx context.Context, run *model.CGTaskRun) (int64, er
 		TraceParent: tracex.InjectCarrier(ctx)["traceparent"],
 	})
 	if err := s.streamQ.Push(ctx, guid, body); err != nil {
-		// 投递失败不阻断主流程，但要把 task_run 标记为 Failed（否则永远卡在 Pending）
-		s.logger.Error("submitter: 投递失败，标记 task_run Failed",
+		// Dispatch failure does not block the main flow, but the task_run must be marked Failed (otherwise it stays Pending forever)
+		s.logger.Error("submitter: dispatch failed, marking task_run Failed",
 			zap.Int64("taskRunID", run.TaskRunID),
 			zap.Error(err))
-		_ = s.taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFailed, "submitter: 投递失败: "+err.Error())
+		_ = s.taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFailed, "submitter: dispatch failed: "+err.Error())
 		return run.TaskRunID, nil
 	}
 

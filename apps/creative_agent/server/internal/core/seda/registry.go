@@ -1,19 +1,19 @@
 package seda
 
-// Operator 是每个业务算子必须实现的接口。
-// DoImpl 返回 (code, message)：code=0 正常，code<0 触发短路跳到最后一个算子。
+// Operator is the interface every business operator must implement.
+// DoImpl returns (code, message): code=0 is normal; code<0 triggers a short-circuit jump to the last operator.
 type Operator interface {
 	Name() string
 	DoImpl(ctx *Context) (int, string)
 }
 
-// OperatorBuilder 是创建算子实例的工厂函数。
-// 每次 flow 执行都会调工厂来获取全新的算子实例。
+// OperatorBuilder is the factory function creating operator instances.
+// Every flow execution calls the factory to obtain a brand-new operator instance.
 type OperatorBuilder func() Operator
 
 var registry = map[string]OperatorBuilder{}
 
-// Register 注册算子的工厂函数，供 BuildFlow 按名字查找。
+// Register registers an operator's factory function so BuildFlow can look it up by name.
 func Register(name string, builder OperatorBuilder) {
 	registry[name] = builder
 }

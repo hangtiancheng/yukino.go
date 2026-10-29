@@ -10,9 +10,10 @@ interface HotCardProps {
   onSelect: (item: PromptItem, msgId?: string) => void;
 }
 
-/** 热点卡/创作功能卡：渲染 uiData.promptItems 为可点击选项列表。 */
+/** Hot-topic card / creation-feature card: renders uiData.promptItems as a clickable option list. */
 export function HotCard({ uiData, msgId, disabled, onSelect }: HotCardProps) {
-  const label = uiData.label || "为您找到了几个热点选题，请挑选一个试试呢～";
+  const label =
+    uiData.label || "Here are some hot topics for you — pick one to try!";
   const isImageText = uiData.layout === "image-text";
   const items = uiData.promptItems ?? [];
 

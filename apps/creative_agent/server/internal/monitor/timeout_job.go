@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-// RunTimeoutJob 超时兜底 job：扫描超过 hours 小时仍处于 running 的项目，退积分 + 置 fail。
+// RunTimeoutJob is the timeout-fallback job: it scans projects still running after hours hours, refunds points + sets fail.
 //
-// 对齐 §5.4：卡在中间态的作品（算子失联、进程崩溃）可能永久停在 running。
-// 定时扫描强制收尾，防止永久占用积分。这是最终兜底——所有补偿/重试都失效时，
-// 靠它保证用户的钱能回来。
+// Aligned with §5.4: works stuck in intermediate states (operator lost contact, process crash) may stay running forever.
+// The scheduled scan forces closure, preventing points from being held forever. This is the last-resort fallback — when all
+// compensation/retries fail, it guarantees the user's money comes back.
 func RunTimeoutJob(ctx context.Context, deps Deps, hours int) error {
 	if deps.Projects == nil || deps.PostCreate == nil {
-		return nil // 未注入依赖（装配缺省场景），跳过
+		return nil // dependencies not injected (default assembly scenario); skip
 	}
 	if hours <= 0 {
 		hours = 24
@@ -28,7 +28,7 @@ func RunTimeoutJob(ctx context.Context, deps Deps, hours int) error {
 			return ctx.Err()
 		default:
 		}
-		// RefundAndFailTimeout 内部幂等：仅 running 处理、仅 used 退积分
+		// RefundAndFailTimeout is internally idempotent: only running is processed, only used points are refunded
 		_ = deps.PostCreate.RefundAndFailTimeout(ctx, p)
 	}
 	return nil

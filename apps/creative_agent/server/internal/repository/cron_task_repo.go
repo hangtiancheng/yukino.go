@@ -10,16 +10,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrCronTaskNotFound 表示未找到对应 cron 任务记录。
+// ErrCronTaskNotFound indicates no matching cron-task record was found.
 var ErrCronTaskNotFound = errors.New("cron task not found")
 
-// CronTaskRepository 封装 cg_cron_task 表的数据访问。
+// CronTaskRepository encapsulates data access to the cg_cron_task table.
 type CronTaskRepository interface {
 	Insert(ctx context.Context, t *model.CGCronTask) error
 	GetByCronTaskID(ctx context.Context, cronTaskID int64) (*model.CGCronTask, error)
-	// ListRunning 返回所有 Running 状态的 cron 任务（Poller 扫描源）。
+	// ListRunning returns all cron tasks in Running status (the Poller's scan source).
 	ListRunning(ctx context.Context) ([]*model.CGCronTask, error)
-	// AdvanceStepIndex CAS 推进 CurrentStepIndex：仅当当前值等于 expected 时翻到 next。
+	// AdvanceStepIndex advances CurrentStepIndex with CAS: flips to next only when the current value equals expected.
 	AdvanceStepIndex(ctx context.Context, cronTaskID int64, expected, next int32) (bool, error)
 	MarkDone(ctx context.Context, cronTaskID int64) error
 	MarkFailed(ctx context.Context, cronTaskID int64, reason string) error
@@ -29,7 +29,7 @@ type cronTaskRepository struct {
 	db *gorm.DB
 }
 
-// NewCronTaskRepository 基于 gorm.DB 创建 CronTaskRepository。
+// NewCronTaskRepository creates a CronTaskRepository on top of gorm.DB.
 func NewCronTaskRepository(db *gorm.DB) CronTaskRepository {
 	return &cronTaskRepository{db: db}
 }

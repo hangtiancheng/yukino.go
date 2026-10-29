@@ -2,9 +2,9 @@ package baseapi
 
 import "encoding/json"
 
-// ============ 复刻 base-server internal/creation/contracts 的 DTO ============
+// ============ DTOs replicating base-server internal/creation/contracts ============
 
-// PreCreateReq 对应 base-server /inner/creation/pre_create 请求体。
+// PreCreateReq corresponds to the base-server /inner/creation/pre_create request body.
 type PreCreateReq struct {
 	UserID       int64  `json:"user_id"`
 	SessionID    string `json:"session_id"`
@@ -12,7 +12,7 @@ type PreCreateReq struct {
 	TaskStepID   int64  `json:"task_step_id"`
 	ProjectType  string `json:"project_type"`
 	RoleType     int    `json:"role_type"`
-	ProjectInput string `json:"project_input"` // JSON 字符串，外层 {"input":"<参数 JSON>"}
+	ProjectInput string `json:"project_input"` // JSON string, wrapped as {"input":"<params JSON>"}
 	RetryType    int    `json:"retry_type"`
 	CUID         string `json:"cuid"`
 	IP           string `json:"ip"`
@@ -21,14 +21,14 @@ type PreCreateReq struct {
 	LogID        string `json:"log_id"`
 }
 
-// PreCreateResp 对应 base-server pre_create 响应体。
+// PreCreateResp corresponds to the base-server pre_create response body.
 type PreCreateResp struct {
 	Errno  int            `json:"errno"`
 	Errmsg string         `json:"errmsg"`
 	Data   *PreCreateData `json:"data"`
 }
 
-// PreCreateData 是 pre_create 响应 data 部分。
+// PreCreateData is the data part of the pre_create response.
 type PreCreateData struct {
 	Status        int            `json:"status"`
 	TaskType      string         `json:"task_type"`
@@ -37,7 +37,7 @@ type PreCreateData struct {
 	NewSession    bool           `json:"new_session,omitempty"`
 }
 
-// CreateReq 对应 base-server /inner/creation/create 请求体。
+// CreateReq corresponds to the base-server /inner/creation/create request body.
 type CreateReq struct {
 	UserID       int64          `json:"user_id"`
 	SessionID    string         `json:"session_id"`
@@ -48,14 +48,14 @@ type CreateReq struct {
 	ProjectFrom  string         `json:"project_from"`
 }
 
-// CreateResp 对应 base-server create 响应体。
+// CreateResp corresponds to the base-server create response body.
 type CreateResp struct {
 	Errno  int         `json:"errno"`
 	Errmsg string      `json:"errmsg"`
 	Data   *CreateData `json:"data"`
 }
 
-// CreateData 是 create 响应 data 部分。
+// CreateData is the data part of the create response.
 type CreateData struct {
 	Status        string         `json:"status"`
 	TaskType      string         `json:"task_type"`
@@ -64,7 +64,7 @@ type CreateData struct {
 	RemainScore   int64          `json:"remain_score,omitempty"`
 }
 
-// AsyncPostCreateReq 对应 base-server /inner/creation/async_post_create 请求体。
+// AsyncPostCreateReq corresponds to the base-server /inner/creation/async_post_create request body.
 type AsyncPostCreateReq struct {
 	TaskStepID  int64  `json:"task_step_id"`
 	SessionID   string `json:"session_id"`
@@ -77,21 +77,21 @@ type AsyncPostCreateReq struct {
 	ProjectType string `json:"project_type,omitempty"`
 }
 
-// AsyncPostCreateResp 对应 base-server async_post_create 响应体。
+// AsyncPostCreateResp corresponds to the base-server async_post_create response body.
 type AsyncPostCreateResp struct {
 	Errno  int             `json:"errno"`
 	Errmsg string          `json:"errmsg"`
 	Data   *PostCreateData `json:"data"`
 }
 
-// PostCreateData 是 post_create 统一响应 data 部分。
+// PostCreateData is the unified data part of post_create responses.
 type PostCreateData struct {
 	Status        string         `json:"status"`
 	TaskType      string         `json:"task_type"`
 	TaskArguments map[string]any `json:"task_arguments"`
 }
 
-// CallbackReq 对应 base-server /inner/callback/task_detail 回调请求体（fakegen 与 base-server 通用）。
+// CallbackReq corresponds to the base-server /inner/callback/task_detail callback request body (shared by fakegen and base-server).
 type CallbackReq struct {
 	TaskID             int64           `json:"task_id"`
 	ProjectID          string          `json:"project_id"`

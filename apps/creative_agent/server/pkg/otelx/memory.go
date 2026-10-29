@@ -7,19 +7,19 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// MemoryExporter 是测试用的 span 内存收集器。
-// 实现 sdktrace.SpanExporter，把收到的 span 存在切片里供断言。
+// MemoryExporter is an in-memory span collector for tests.
+// It implements sdktrace.SpanExporter, storing received spans in a slice for assertions.
 type MemoryExporter struct {
 	mu    sync.Mutex
 	spans []sdktrace.ReadOnlySpan
 }
 
-// newMemoryExporter 创建 MemoryExporter。
+// newMemoryExporter creates a MemoryExporter.
 func newMemoryExporter() *MemoryExporter {
 	return &MemoryExporter{}
 }
 
-// ExportSpans 实现 sdktrace.SpanExporter。
+// ExportSpans implements sdktrace.SpanExporter.
 func (e *MemoryExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -27,10 +27,10 @@ func (e *MemoryExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadO
 	return nil
 }
 
-// Shutdown 实现 sdktrace.SpanExporter。
+// Shutdown implements sdktrace.SpanExporter.
 func (e *MemoryExporter) Shutdown(ctx context.Context) error { return nil }
 
-// GetSpans 返回当前收集到的所有 span。
+// GetSpans returns all spans collected so far.
 func (e *MemoryExporter) GetSpans() []sdktrace.ReadOnlySpan {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -39,12 +39,12 @@ func (e *MemoryExporter) GetSpans() []sdktrace.ReadOnlySpan {
 	return out
 }
 
-// Reset 清空已收集的 span。
+// Reset clears the collected spans.
 func (e *MemoryExporter) Reset() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.spans = nil
 }
 
-// 编译期断言：MemoryExporter 实现 sdktrace.SpanExporter。
+// Compile-time assertion: MemoryExporter implements sdktrace.SpanExporter.
 var _ sdktrace.SpanExporter = (*MemoryExporter)(nil)

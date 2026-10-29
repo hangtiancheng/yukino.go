@@ -5,15 +5,15 @@ import (
 	"errors"
 )
 
-// ErrUserNotFound 表示未找到对应用户记录。与 legacy repository 的哨兵错误等价。
+// ErrUserNotFound indicates no matching user record was found. Equivalent to the legacy repository's sentinel error.
 var ErrUserNotFound = errors.New("user not found")
 
-// UserRepository 用户仓储接口（domain 定义，infrastructure 实现）。
+// UserRepository is the user repository interface (defined in domain, implemented in infrastructure).
 type UserRepository interface {
-	// Create 新建用户。唯一索引（username/email）冲突时返回 gorm.ErrDuplicatedKey。
+	// Create creates a user. Unique-index (username/email) conflicts return gorm.ErrDuplicatedKey.
 	Create(ctx context.Context, u *User) error
-	// FindByUsername 按用户名查询，未找到返回 ErrUserNotFound。
+	// FindByUsername queries by username; returns ErrUserNotFound when absent.
 	FindByUsername(ctx context.Context, username string) (*User, error)
-	// FindByEmail 按邮箱查询，未找到返回 ErrUserNotFound。
+	// FindByEmail queries by email; returns ErrUserNotFound when absent.
 	FindByEmail(ctx context.Context, email string) (*User, error)
 }

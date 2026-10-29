@@ -2,21 +2,21 @@ package seda
 
 import "sync"
 
-// node 是引擎对算子的包装，持有图结构（下游/上游）和汇合状态守卫。
+// node is the engine's wrapper around an operator, holding the graph structure (downstream/upstream) and the join-state guard.
 type node struct {
 	op    Operator
 	nexts []*node
-	prior int // 必需上游数量
+	prior int // number of required upstreams
 
 	mu       sync.Mutex
-	arrived  int  // 已到达的上游数
-	executed bool // 是否已执行
+	arrived  int  // number of arrived upstreams
+	executed bool // whether it has executed
 }
 
-// tryClaim 原子抢占本节点的执行权。
-// 返回 true 表示调用方应继续执行；false 表示已被其他路径抢占（或已执行过）。
-// 这是"单一守卫"模式：无论从正常 join 还是 execLast 短路到达汇合节点，
-// 都共享同一个 executed 标志，保证至多执行一次。
+// tryClaim atomically claims the execution right of this node.
+// Returning true means the caller should proceed; false means another path already claimed it (or it already ran).
+// This is the "single guard" pattern: whether the join node is reached via the normal join or the execLast short-circuit,
+// the same executed flag is shared, guaranteeing at most one execution.
 func (n *node) tryClaim() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()

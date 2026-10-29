@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// validateRegisterRequest 校验注册请求（替代 gin binding tag：required/min/max/email）。
+// validateRegisterRequest validates the register request (replacing gin binding tags: required/min/max/email).
 func validateRegisterRequest(req *registerRequest) error {
 	username := strings.TrimSpace(req.Username)
 	if len(username) < 3 || len(username) > 64 {
@@ -21,7 +21,7 @@ func validateRegisterRequest(req *registerRequest) error {
 	return nil
 }
 
-// validateLoginRequest 校验登录请求（替代 gin binding tag：required）。
+// validateLoginRequest validates the login request (replacing the gin binding tag: required).
 func validateLoginRequest(req *loginRequest) error {
 	if strings.TrimSpace(req.Username) == "" {
 		return fmt.Errorf("username is required")

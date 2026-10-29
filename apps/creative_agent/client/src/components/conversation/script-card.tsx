@@ -7,18 +7,18 @@ interface ScriptCardProps {
   onConfirm: () => void;
 }
 
-/** 脚本确认卡：脚本已生成，用户确认后投递视频合成。 */
+/** Script confirmation card: the script is generated; after the user confirms, video synthesis is dispatched. */
 export function ScriptCard({ disabled, onConfirm }: ScriptCardProps) {
   return (
     <div className="border-primary/30 bg-card flex flex-col gap-2 rounded-xl border p-4 shadow-sm">
-      <p className="text-sm font-medium">脚本已生成，请确认</p>
+      <p className="text-sm font-medium">Script generated, please confirm</p>
       <p className="text-muted-foreground text-sm">
-        脚本内容见上方，确认后开始视频合成。
+        The script content is above; confirm to start video synthesis.
       </p>
       <div>
         <Button size="sm" disabled={disabled} onClick={onConfirm}>
           <CheckCircle2 data-icon="inline-start" />
-          确认脚本
+          Confirm script
         </Button>
       </div>
     </div>

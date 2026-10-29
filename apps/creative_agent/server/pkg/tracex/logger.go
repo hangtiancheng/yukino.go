@@ -7,10 +7,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// Logger 返回带 trace_id/span_id 字段的 logger 副本。
-// ctx 无有效 span 时返回原 logger（不 panic、不报错）。
-// 调用点：各模块入口（handleConversation / handleTask / HTTP handler）派生一次，
-// 之后整条函数内复用——既有日志语句自动带 trace 字段。
+// Logger returns a copy of the logger with trace_id/span_id fields.
+// It returns the original logger when ctx has no valid span (no panic, no error).
+// Call sites: derive once at each module entry (handleConversation / handleTask / HTTP handler),
+// then reuse it throughout the function — existing log statements automatically carry the trace fields.
 func Logger(l *zap.Logger, ctx context.Context) *zap.Logger {
 	if l == nil || ctx == nil {
 		return l

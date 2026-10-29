@@ -16,16 +16,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// --- stub 实现 ---
+// --- Stub implementations ---
 
-// stubRiskStats 内存版 domain.RiskStatsRepository。
-// upserts 记录每次 UpsertIncrement 调用，用于断言"双游标去重/脏数据跳过"的累加次数。
+// stubRiskStats is the in-memory domain.RiskStatsRepository.
+// upserts records every UpsertIncrement call, used to assert accumulation counts under "dual-cursor dedup / dirty-data skip".
 type stubRiskStats struct {
 	mu        sync.Mutex
 	upserts   []statsUpsert
-	rows      []domain.RiskStatsRow // SumAllInWindow 返回值
-	queryErr  error                 // SumAllInWindow 返回的错误
-	upsertErr error                 // UpsertIncrement 返回的错误
+	rows      []domain.RiskStatsRow // SumAllInWindow return value
+	queryErr  error                 // error returned by SumAllInWindow
+	upsertErr error                 // error returned by UpsertIncrement
 }
 
 type statsUpsert struct {
@@ -70,7 +70,7 @@ func (s *stubRiskStats) upsertCount() int {
 	return len(s.upserts)
 }
 
-// upsertKeys 返回被累加过的 (userID, subProduct) 去重集合。
+// upsertKeys returns the deduplicated set of (userID, subProduct) pairs that were accumulated.
 func (s *stubRiskStats) upsertKeys() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -81,14 +81,14 @@ func (s *stubRiskStats) upsertKeys() map[string]bool {
 	return keys
 }
 
-// stubPoller 可注入的测试 poller。
+// stubPoller is the injectable test poller.
 type stubPoller struct {
 	mu        sync.Mutex
 	newRecs   []*dao.RiskHitRecord
 	updRecs   []*dao.RiskHitRecord
 	pollNewN  int
 	pollUpdN  int
-	failCount int // 前 N 次 PollNew 返回错误
+	failCount int // the first N PollNew calls return errors
 	updErr    error
 }
 
@@ -110,7 +110,7 @@ func (f *stubPoller) PollUpdated(ctx context.Context, lastUpdateTime int64, last
 	if f.updErr != nil {
 		return nil, f.updErr
 	}
-	// 复刻真实 poller 的双游标去重契约：id > lastInsertID 排除新增游标已覆盖的行
+	// Replicate the real poller's dual-cursor dedup contract: id > lastInsertID excludes rows covered by the insert cursor
 	out := make([]*dao.RiskHitRecord, 0, len(f.updRecs))
 	for _, r := range f.updRecs {
 		if r.ID > lastInsertID {
@@ -120,7 +120,7 @@ func (f *stubPoller) PollUpdated(ctx context.Context, lastUpdateTime int64, last
 	return out, nil
 }
 
-// memoryCursorWithError 记录 Save 调用次数/可注入 Save 错误的游标。
+// memoryCursorWithError is a cursor recording Save call counts / injectable Save errors.
 type memoryCursorWithError struct {
 	saves int
 	err   error
@@ -134,7 +134,7 @@ func (m *memoryCursorWithError) Save(ctx context.Context, state *dao.RiskConsume
 	return m.err
 }
 
-// stubBlacklistWriter 记录 SetBlacklisted 调用的假黑名单写入器。
+// stubBlacklistWriter is a fake blacklist writer recording SetBlacklisted calls.
 type stubBlacklistWriter struct {
 	mu      sync.Mutex
 	entries []blacklistEntry
@@ -163,9 +163,9 @@ func (w *stubBlacklistWriter) blacklisted(userID int64, subProduct string) bool 
 	return false
 }
 
-// --- 工具 ---
+// --- Helpers ---
 
-// newMockDB 建 sqlmock 的 gorm.DB。
+// newMockDB builds a sqlmock gorm.DB.
 func newMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	t.Helper()
 	db, mock, err := sqlmock.New()
@@ -179,10 +179,10 @@ func key(userID int64, subProduct string) string {
 	return strconv.FormatInt(userID, 10) + ":" + subProduct
 }
 
-// --- consumeBatch：游标推进与双游标去重 ---
+// --- consumeBatch: cursor advancement and dual-cursor dedup ---
 
 func TestConsumeBatchAdvancesBothCursors(t *testing.T) {
-	// 新增 2 条（id 推进到 10）+ 更新 1 条（update_time 推进到 200）→ 全部累加
+	// 2 inserts (id advances to 10) + 1 update (update_time advances to 200) → all accumulated
 	stats := &stubRiskStats{}
 	poller := &stubPoller{
 		newRecs: []*dao.RiskHitRecord{
@@ -197,9 +197,9 @@ func TestConsumeBatchAdvancesBothCursors(t *testing.T) {
 	state := &dao.RiskConsumerState{}
 	testx.NoError(t, consumer.ConsumeBatchForTest(context.Background(), state))
 
-	testx.Equal(t, uint64(10), state.LastInsertID, "新增游标推进到本批最大 id")
-	testx.Equal(t, int64(200), state.LastUpdateTime, "更新游标推进到本批最大 update_time")
-	testx.Equal(t, 3, stats.upsertCount(), "三条命中各累加一次")
+	testx.Equal(t, uint64(10), state.LastInsertID, "the insert cursor advances to this batch's max id")
+	testx.Equal(t, int64(200), state.LastUpdateTime, "the update cursor advances to this batch's max update_time")
+	testx.Equal(t, 3, stats.upsertCount(), "the three hits each accumulate once")
 
 	keys := stats.upsertKeys()
 	testx.Contains(t, keys, key(100, "5:mix_video"))
@@ -208,8 +208,8 @@ func TestConsumeBatchAdvancesBothCursors(t *testing.T) {
 }
 
 func TestConsumeBatchPollUpdatedUsesNewCursorAsLowerBound(t *testing.T) {
-	// 双游标去重：游标 B 的 PollUpdated 下界必须是"本批新增最大 id"而非推进前 LastInsertID。
-	// poller 层已用 id > lastInsertID 排除 → 同一条被 A/B 各看到也只累加 1 次。
+	// Dual-cursor dedup: cursor B's PollUpdated lower bound must be "this batch's max insert id", not the pre-advance LastInsertID.
+	// The poller layer already excludes with id > lastInsertID → the same record seen by both A/B accumulates only once.
 	stats := &stubRiskStats{}
 	poller := &stubPoller{
 		newRecs: []*dao.RiskHitRecord{
@@ -223,12 +223,12 @@ func TestConsumeBatchPollUpdatedUsesNewCursorAsLowerBound(t *testing.T) {
 	state := &dao.RiskConsumerState{}
 	testx.NoError(t, consumer.ConsumeBatchForTest(context.Background(), state))
 
-	testx.Equal(t, 1, stats.upsertCount(), "同一批内 A/B 重复出现的记录只累加一次")
+	testx.Equal(t, 1, stats.upsertCount(), "a record seen by both A/B within one batch accumulates once")
 	testx.Contains(t, stats.upsertKeys(), key(100, "5:mix_video"))
 }
 
 func TestConsumeBatchNoAdvanceOnAccumulateFailure(t *testing.T) {
-	// 累加失败不推进游标（at-least-once：失败下轮重试）
+	// Accumulation failure does not advance cursors (at-least-once: retry next round)
 	stats := &stubRiskStats{upsertErr: errors.New("duplicate insert failed")}
 	poller := &stubPoller{
 		newRecs: []*dao.RiskHitRecord{
@@ -238,13 +238,13 @@ func TestConsumeBatchNoAdvanceOnAccumulateFailure(t *testing.T) {
 	consumer := dao.NewAuditStatsConsumer(poller, stats, dao.NewMemoryCursor(), nil)
 	state := &dao.RiskConsumerState{}
 	err := consumer.ConsumeBatchForTest(context.Background(), state)
-	testx.Error(t, err, "累加失败应返回错误")
-	testx.Equal(t, uint64(0), state.LastInsertID, "失败不推进新增游标")
-	testx.Equal(t, int64(0), state.LastUpdateTime, "失败不推进更新游标")
+	testx.Error(t, err, "an accumulation failure should return an error")
+	testx.Equal(t, uint64(0), state.LastInsertID, "failure does not advance the insert cursor")
+	testx.Equal(t, int64(0), state.LastUpdateTime, "failure does not advance the update cursor")
 }
 
 func TestConsumeBatchNoAdvanceOnPollUpdatedFailure(t *testing.T) {
-	// 更新轮询失败：新增已累加但游标整体不推进（整批 Ack 语义）
+	// Update-poll failure: inserts were accumulated but no cursor advances (whole-batch Ack semantics)
 	stats := &stubRiskStats{}
 	poller := &stubPoller{
 		newRecs: []*dao.RiskHitRecord{
@@ -255,32 +255,32 @@ func TestConsumeBatchNoAdvanceOnPollUpdatedFailure(t *testing.T) {
 	consumer := dao.NewAuditStatsConsumer(poller, stats, dao.NewMemoryCursor(), nil)
 	state := &dao.RiskConsumerState{}
 	err := consumer.ConsumeBatchForTest(context.Background(), state)
-	testx.Error(t, err, "更新轮询失败应返回错误")
-	testx.Equal(t, uint64(0), state.LastInsertID, "整批失败不推进游标（下轮重试重复累加靠 UNIQUE 幂等兜底）")
-	testx.Equal(t, 1, stats.upsertCount(), "新增记录已被累加（但游标未推进）")
+	testx.Error(t, err, "an update-poll failure should return an error")
+	testx.Equal(t, uint64(0), state.LastInsertID, "a whole-batch failure does not advance cursors (next-round duplicate accumulation is covered by the UNIQUE fallback)")
+	testx.Equal(t, 1, stats.upsertCount(), "the insert record was accumulated (but cursors did not advance)")
 }
 
 func TestConsumeBatchSkipsDirtyDataButAdvancesCursor(t *testing.T) {
-	// 脏数据（缺 userID / subProduct）跳过累加，但游标照常推进（脏消息直接 Ack）
+	// Dirty data (missing userID / subProduct) skips accumulation, but cursors advance as usual (dirty messages Ack directly)
 	stats := &stubRiskStats{}
 	poller := &stubPoller{
 		newRecs: []*dao.RiskHitRecord{
-			{ID: 5, UserID: 0, SubProduct: "5:mix_video", RiskType: "risk", UpdateTime: 100},   // 缺 userID
-			{ID: 6, UserID: 102, SubProduct: "", RiskType: "risk", UpdateTime: 100},            // 缺 subProduct
-			{ID: 7, UserID: 103, SubProduct: "5:mix_video", RiskType: "risk", UpdateTime: 101}, // 正常
+			{ID: 5, UserID: 0, SubProduct: "5:mix_video", RiskType: "risk", UpdateTime: 100},   // missing userID
+			{ID: 6, UserID: 102, SubProduct: "", RiskType: "risk", UpdateTime: 100},            // missing subProduct
+			{ID: 7, UserID: 103, SubProduct: "5:mix_video", RiskType: "risk", UpdateTime: 101}, // normal
 		},
 	}
 	consumer := dao.NewAuditStatsConsumer(poller, stats, dao.NewMemoryCursor(), nil)
 	state := &dao.RiskConsumerState{}
 	testx.NoError(t, consumer.ConsumeBatchForTest(context.Background(), state))
 
-	testx.Equal(t, uint64(7), state.LastInsertID, "脏数据不阻断游标推进")
-	testx.Equal(t, 1, stats.upsertCount(), "只有正常记录被累加")
+	testx.Equal(t, uint64(7), state.LastInsertID, "dirty data does not block cursor advancement")
+	testx.Equal(t, 1, stats.upsertCount(), "only the normal record is accumulated")
 	testx.Contains(t, stats.upsertKeys(), key(103, "5:mix_video"))
 }
 
 func TestConsumeBatchCursorSaveOnSuccess(t *testing.T) {
-	// Ack-on-success：处理成功推进并保存游标
+	// Ack-on-success: successful processing advances and saves cursors
 	cursor := &memoryCursorWithError{}
 	stats := &stubRiskStats{}
 	poller := &stubPoller{
@@ -291,12 +291,12 @@ func TestConsumeBatchCursorSaveOnSuccess(t *testing.T) {
 	consumer := dao.NewAuditStatsConsumer(poller, stats, cursor, nil)
 	state := &dao.RiskConsumerState{}
 	testx.NoError(t, consumer.ConsumeBatchForTest(context.Background(), state))
-	testx.Equal(t, 1, cursor.saves, "处理成功应推进并保存游标")
-	testx.Equal(t, uint64(7), state.LastInsertID, "内存态同步推进")
+	testx.Equal(t, 1, cursor.saves, "successful processing should advance and save cursors")
+	testx.Equal(t, uint64(7), state.LastInsertID, "the in-memory state advances in sync")
 }
 
 func TestConsumeBatchCursorSaveFailureStopsBatch(t *testing.T) {
-	// 游标保存失败：返回错误且内存态不推进（下轮重试）
+	// Cursor save failure: returns an error and the in-memory state does not advance (retry next round)
 	cursor := &memoryCursorWithError{err: errors.New("redis down")}
 	stats := &stubRiskStats{}
 	poller := &stubPoller{
@@ -307,12 +307,12 @@ func TestConsumeBatchCursorSaveFailureStopsBatch(t *testing.T) {
 	consumer := dao.NewAuditStatsConsumer(poller, stats, cursor, nil)
 	state := &dao.RiskConsumerState{}
 	err := consumer.ConsumeBatchForTest(context.Background(), state)
-	testx.Error(t, err, "游标保存失败应返回错误")
-	testx.Equal(t, uint64(0), state.LastInsertID, "保存失败不推进内存态")
+	testx.Error(t, err, "a cursor save failure should return an error")
+	testx.Equal(t, uint64(0), state.LastInsertID, "a save failure does not advance the in-memory state")
 }
 
 func TestConsumeBatchNoOpWhenEmpty(t *testing.T) {
-	// 无新增无更新：不累加、不保存游标
+	// No inserts, no updates: no accumulation, no cursor save
 	cursor := &memoryCursorWithError{}
 	stats := &stubRiskStats{}
 	poller := &stubPoller{}
@@ -320,16 +320,16 @@ func TestConsumeBatchNoOpWhenEmpty(t *testing.T) {
 	state := &dao.RiskConsumerState{LastInsertID: 3, LastUpdateTime: 500}
 	testx.NoError(t, consumer.ConsumeBatchForTest(context.Background(), state))
 
-	testx.Equal(t, uint64(3), state.LastInsertID, "无新数据游标不动")
+	testx.Equal(t, uint64(3), state.LastInsertID, "cursors stay put without new data")
 	testx.Equal(t, int64(500), state.LastUpdateTime)
 	testx.Equal(t, 0, stats.upsertCount())
-	testx.Equal(t, 0, cursor.saves, "无新数据不触发游标保存")
+	testx.Equal(t, 0, cursor.saves, "no new data triggers no cursor save")
 }
 
-// --- 游标：Redis 退化路径 ---
+// --- Cursors: Redis degradation path ---
 
 func TestNewRedisCursorNilFallsBackToMemory(t *testing.T) {
-	// rdb 为 nil → 退化为内存游标：Load 返回空态、Save 无操作
+	// rdb nil → degrades to the in-memory cursor: Load returns the empty state, Save is a no-op
 	cursor := dao.NewRedisCursor(nil)
 	state, err := cursor.Load(context.Background())
 	testx.NoError(t, err)
@@ -337,7 +337,7 @@ func TestNewRedisCursorNilFallsBackToMemory(t *testing.T) {
 	testx.NoError(t, cursor.Save(context.Background(), &dao.RiskConsumerState{LastInsertID: 9, LastUpdateTime: 100}))
 }
 
-// --- AuditRecordPoller：subProduct 提取 + 双游标下界 ---
+// --- AuditRecordPoller: subProduct extraction + dual-cursor lower bounds ---
 
 func TestAuditRecordPollerPollNewExtractsSubProduct(t *testing.T) {
 	gdb, mock := newMockDB(t)
@@ -348,22 +348,22 @@ func TestAuditRecordPollerPollNewExtractsSubProduct(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "task_type", "update_time"}).
 			AddRow(1, 100, "risk:5:mix_video:precreate", 100).
 			AddRow(2, 200, "risk:async:dujiaapp_mixvideo60s_t2v_output", 200).
-			AddRow(3, 300, "5:mix_video", 300)) // 非 risk 前缀（任务回调）→ 跳过
+			AddRow(3, 300, "5:mix_video", 300)) // non-risk prefix (task callback) → skipped
 
 	hits, err := poller.PollNew(context.Background(), 0, 100)
 	testx.NoError(t, err)
 	testx.NoError(t, mock.ExpectationsWereMet())
-	testx.Len(t, hits, 2, "非 risk 前缀记录被过滤")
-	testx.Equal(t, "5:mix_video", hits[0].SubProduct, "同步命中取 {role}:{type}")
+	testx.Len(t, hits, 2, "non-risk-prefix records are filtered")
+	testx.Equal(t, "5:mix_video", hits[0].SubProduct, "sync hits take {role}:{type}")
 	testx.Equal(t, uint64(1), hits[0].ID)
 	testx.Equal(t, int64(100), hits[0].UserID)
-	testx.Equal(t, "dujiaapp_mixvideo60s_t2v_output", hits[1].SubProduct, "异步命中取末段真实 subProduct")
+	testx.Equal(t, "dujiaapp_mixvideo60s_t2v_output", hits[1].SubProduct, "async hits take the trailing real subProduct")
 	testx.Equal(t, int64(200), hits[1].UpdateTime)
 }
 
 func TestAuditRecordPollerPollUpdatedUsesInsertLowerBound(t *testing.T) {
-	// 双游标去重：PollUpdated 必须带 id > lastInsertID 条件（排除新增游标已消费的行）
-	// 且带 update_time > create_time（排除从未被 Update 过的同步 fail 行，跨批次幂等）。
+	// Dual-cursor dedup: PollUpdated must carry the id > lastInsertID condition (excluding rows consumed by the insert cursor)
+	// and update_time > create_time (excluding sync fail rows never Updated, cross-batch idempotency).
 	gdb, mock := newMockDB(t)
 	poller := dao.NewAuditRecordPoller(gdb)
 
@@ -380,10 +380,10 @@ func TestAuditRecordPollerPollUpdatedUsesInsertLowerBound(t *testing.T) {
 }
 
 func TestAuditRecordPollerPollUpdatedExcludesNeverUpdatedRows(t *testing.T) {
-	// 跨批次去重：同步 fail 行插入即 fail，update_time == create_time（从未被 Update 过），
-	// 已由新增游标 A 捕获。更新游标 B 的 PollUpdated 必须排除这类行（update_time > create_time），
-	// 否则后续批次 update_time > lastUpdateTime 会重新选中它，hit_count + 1 非幂等重复累加。
-	// 异步命中行（回调 Update 变 fail，update_time > create_time）必须仍被选中。
+	// Cross-batch dedup: sync fail rows are inserted as fail with update_time == create_time (never Updated),
+	// already captured by insert cursor A. Cursor B's PollUpdated must exclude such rows (update_time > create_time),
+	// otherwise later batches would re-select them via update_time > lastUpdateTime, and hit_count + 1 would duplicate non-idempotently.
+	// Async hit rows (the callback Updates to fail, update_time > create_time) must still be selected.
 	gdb, mock := newMockDB(t)
 	poller := dao.NewAuditRecordPoller(gdb)
 
@@ -395,29 +395,29 @@ func TestAuditRecordPollerPollUpdatedExcludesNeverUpdatedRows(t *testing.T) {
 	hits, err := poller.PollUpdated(context.Background(), 100, 7, 100)
 	testx.NoError(t, err)
 	testx.NoError(t, mock.ExpectationsWereMet())
-	testx.Len(t, hits, 1, "异步命中行（update_time > create_time）应被更新游标选中")
+	testx.Len(t, hits, 1, "async hit rows (update_time > create_time) should be selected by the update cursor")
 	testx.Equal(t, "dujiaapp_miaotu_t2i_output", hits[0].SubProduct)
 }
 
-// --- RiskOfflineJob：阈值评估 + 黑名单 ---
+// --- RiskOfflineJob: threshold evaluation + blacklist ---
 
 func TestRiskOfflineJobWritesBlacklistOverThreshold(t *testing.T) {
 	stats := newStubRiskStats(
-		domain.RiskStatsRow{UserID: 1, SubProduct: "5:mix_video", HitCount: 6}, // >5 → 下线
-		domain.RiskStatsRow{UserID: 2, SubProduct: "precreate", HitCount: 5},   // =5 → 下线
-		domain.RiskStatsRow{UserID: 3, SubProduct: "5:mix_video", HitCount: 4}, // <5 → 不下线
+		domain.RiskStatsRow{UserID: 1, SubProduct: "5:mix_video", HitCount: 6}, // >5 → offline
+		domain.RiskStatsRow{UserID: 2, SubProduct: "precreate", HitCount: 5},   // =5 → offline
+		domain.RiskStatsRow{UserID: 3, SubProduct: "5:mix_video", HitCount: 4}, // <5 → stays online
 	)
 	writer := &stubBlacklistWriter{}
 	job := dao.NewRiskOfflineJob(stats, writer)
 
 	testx.NoError(t, job.Run(context.Background()))
-	testx.True(t, writer.blacklisted(1, "5:mix_video"), "超过阈值应写黑名单")
-	testx.True(t, writer.blacklisted(2, "precreate"), "等于阈值应写黑名单")
-	testx.False(t, writer.blacklisted(3, "5:mix_video"), "低于阈值不应写黑名单")
+	testx.True(t, writer.blacklisted(1, "5:mix_video"), "over the threshold should write the blacklist")
+	testx.True(t, writer.blacklisted(2, "precreate"), "at the threshold should write the blacklist")
+	testx.False(t, writer.blacklisted(3, "5:mix_video"), "under the threshold should not write the blacklist")
 }
 
 func TestRiskOfflineJobNilWriterSkipsWrite(t *testing.T) {
-	// blacklist 未注入（nil）→ 评估照常跑，不 panic、不写
+	// blacklist not injected (nil) → evaluation runs as usual, no panic, no writes
 	stats := newStubRiskStats(
 		domain.RiskStatsRow{UserID: 1, SubProduct: "5:mix_video", HitCount: 10},
 	)
@@ -437,7 +437,7 @@ func TestRiskOfflineJobNilStatsSkips(t *testing.T) {
 }
 
 func TestRiskOfflineJobRunRiskOfflineJobNilRedis(t *testing.T) {
-	// 兼容入口：rdb 为 nil → 评估照常、不写黑名单、不 panic
+	// Compatibility entry: rdb nil → evaluation runs as usual, no blacklist writes, no panic
 	stats := newStubRiskStats(
 		domain.RiskStatsRow{UserID: 1, SubProduct: "5:mix_video", HitCount: 10},
 	)

@@ -7,13 +7,13 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/domain"
 )
 
-// HandleErrorApp 是 handle_error 用例的应用服务：失败兜底回退。
+// HandleErrorApp is the application service of the handle_error use case: failure fallback rollback.
 type HandleErrorApp struct {
 	projects domain.ProjectRepository
 	points   PointsPort
 }
 
-// NewHandleErrorApp 创建 handle_error 应用服务。
+// NewHandleErrorApp creates the handle_error application service.
 func NewHandleErrorApp(projects domain.ProjectRepository, points PointsPort) *HandleErrorApp {
 	return &HandleErrorApp{
 		projects: projects,
@@ -21,23 +21,23 @@ func NewHandleErrorApp(projects domain.ProjectRepository, points PointsPort) *Ha
 	}
 }
 
-// HandleError 是 /inner/creation/handle_error 的入口：失败兜底回退。
+// HandleError is the entry of /inner/creation/handle_error: failure fallback rollback.
 //
-// 对齐 §4.7（主文档 §3.7）：
-//   - 角色跳过：数据分析师(6)/点子王(2)/金牌编剧(3) 不处理
-//   - project 不存在 / 状态不是 running/audit → 返回兜底重试卡
-//   - 否则：points_status==used 才退积分 → status=fail → 出失败重试卡（retry_num>=3 出重试限制卡）
+// Aligned with §4.7 (main doc §3.7):
+//   - Role skip: data analyst(6) / idea king(2) / gold scriptwriter(3) are not processed
+//   - project missing / status not running/audit → return the fallback retry card
+//   - Otherwise: refund points only when points_status==used → status=fail → produce the failure retry card (retry_num>=3 produces the retry-limit card)
 func (a *HandleErrorApp) HandleError(ctx context.Context, req *contracts.HandleErrorReq) (*contracts.HandleErrorResp, error) {
-	// 兜底响应：始终返回（即使后续分支跳过）
+	// Fallback response: always returned (even when later branches skip)
 	fallbackResp := contracts.HandleErrorFallbackResp(req)
 
-	// 1. 角色跳过：数据分析师(6)/点子王(2)/金牌编剧(3) 不处理
+	// 1. Role skip: data analyst(6) / idea king(2) / gold scriptwriter(3) are not processed
 	if req.RoleType == domain.RoleTypeDataAnalyst || req.RoleType == domain.RoleTypePointOfView ||
 		req.RoleType == domain.RoleTypeScreenplay {
 		return fallbackResp, nil
 	}
 
-	// 2. 查作品，无记录 → 兜底
+	// 2. Look up the work; no record → fallback
 	projects, err := a.projects.GetBySessionID(ctx, req.SessionID, req.UID)
 	if err != nil {
 		return nil, err
@@ -47,12 +47,12 @@ func (a *HandleErrorApp) HandleError(ctx context.Context, req *contracts.HandleE
 	}
 	project := projects[0]
 
-	// 3. 仅处理 running/audit，其它状态 → 兜底
+	// 3. Process only running/audit; other states → fallback
 	if project.Status != domain.ProjectStatusRunning && project.Status != domain.ProjectStatusAudit {
 		return fallbackResp, nil
 	}
 
-	// 4. 防重退款 + 积分退还（used 才退），MarkFail 内部处理"仅 used 才退"不变量
+	// 4. Duplicate-refund guard + points refund (only used refunds); MarkFail internally handles the "refund only when used" invariant
 	changed, _ := project.MarkFail(contracts.BuildFailReason("任务失败", "智能体失败回退"), func() error {
 		return a.points.Refund(ctx, project.PointsOrderID, project.UserID, project.ProjectType)
 	})
@@ -60,7 +60,7 @@ func (a *HandleErrorApp) HandleError(ctx context.Context, req *contracts.HandleE
 		_ = a.projects.Update(ctx, project)
 	}
 
-	// 5. 出失败重试卡（retry_num>=3 出重试限制卡）
+	// 5. Produce the failure retry card (retry_num>=3 produces the retry-limit card)
 	cardType := domain.CardTypeProjectFailed
 	if project.RetryNum >= 3 {
 		cardType = domain.CardTypeRetryLimit

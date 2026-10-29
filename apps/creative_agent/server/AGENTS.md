@@ -1,3 +1,3 @@
 # AGENTS.md
 
-本仓库的协作说明与开发指引见 [CLAUDE.md](CLAUDE.md)。
+See [CLAUDE.md](CLAUDE.md) for collaboration notes and development guidelines for this repository.

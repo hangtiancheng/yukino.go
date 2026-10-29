@@ -21,9 +21,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// TestPhase4_FastTaskChain 验证点卡后快任务链路（Phase 4 4.3 milestone）：
-// script_confirmed → FastPath 命中（BuildExecuteAgent 算下一个 agent=edit_master）→
-// Submitter 投递 → task Consumer 消费执行 → Poller 回流 → task_run Finished。
+// TestPhase4_FastTaskChain verifies the post-card-click fast-task chain (Phase 4 4.3 milestone):
+// script_confirmed → FastPath hit (BuildExecuteAgent computes the next agent=edit_master) →
+// Submitter dispatches → task Consumer executes → Poller backflow → task_run Finished.
 func TestPhase4_FastTaskChain(t *testing.T) {
 	ctx := context.Background()
 	db := newPhase3TestDB(t)
@@ -82,7 +82,7 @@ func TestPhase4_FastTaskChain(t *testing.T) {
 		TaskSubmitter: submitter,
 		TaskPoller:    poller,
 		TaskRunRepo:   taskRunRepo,
-		// 业务决策经 hooks 注入（对齐 app 装配；等价原 consumer 硬编码接线）。
+		// Business decisions are injected via hooks (aligned with the app wiring; equivalent to the original consumer's hard-coded wiring).
 		Hooks: &worker.TaskRunnerHooks{
 			FastPath: fp,
 			Memory:   mem,
@@ -95,12 +95,12 @@ func TestPhase4_FastTaskChain(t *testing.T) {
 	defer taskCancel()
 	go taskConsumer.Start(taskCtx)
 
-	// 预置 script_confirmed 状态（模拟用户已点脚本卡）
+	// Pre-set the script_confirmed state (simulating the user having clicked the script card)
 	mem.SetPipeline("s4", "mix_video")
 	mem.SetAgent("s4", "gold_scriptwriter")
 	mem.SetStage("s4", memory.FlowStageScriptConfirmed)
 
-	// 发请求
+	// Send the request
 	msgID := "msg-phase4"
 	testx.NoError(t, asyncRepo.InsertPending(ctx, &model.CGAsyncRequest{
 		AsyncRequestID: "ar-phase4",
@@ -127,7 +127,7 @@ func TestPhase4_FastTaskChain(t *testing.T) {
 	})
 	testx.NoError(t, convStream.Push(ctx, msgID, convBody))
 
-	// 快任务投递 edit_master → 子任务执行完成
+	// The fast task dispatches edit_master → the subtask finishes
 	testx.Eventually(t, func() bool {
 		var runs []model.CGTaskRun
 		db.Where("session_id = ?", "s4").Find(&runs)
@@ -139,26 +139,26 @@ func TestPhase4_FastTaskChain(t *testing.T) {
 			}
 		}
 		return false
-	}, 15*time.Second, 100*time.Millisecond, "edit_master 子任务应执行完成")
+	}, 15*time.Second, 100*time.Millisecond, "the edit_master subtask should finish")
 
-	// 快任务链路不应走管家 ReAct（无 new_agents_plan 的 task_run）
+	// The fast-task chain must not run the manager ReAct (no new_agents_plan task_run)
 	var runs []model.CGTaskRun
 	db.Where("session_id = ?", "s4").Find(&runs)
-	testx.Len(t, runs, 1, "快任务只投递一个 task_run")
+	testx.Len(t, runs, 1, "the fast task dispatches exactly one task_run")
 
-	// task_step 已落库（agent step + tool step），task_run Finished
+	// task_step persisted (agent step + tool step), task_run Finished
 	var steps []model.CGTaskStep
 	db.Where("task_run_id = ?", runs[0].TaskRunID).Find(&steps)
-	testx.NotEmpty(t, steps, "应有子任务步骤")
+	testx.NotEmpty(t, steps, "subtask steps should exist")
 	testx.Contains(t, steps[0].StepOutput, "final_product")
 
-	// 异步请求终态 Completed（worker 的 fastTaskPollAndFinish 轮询完子任务后才 MarkTerminal）
+	// Async request terminal state Completed (the worker's fastTaskPollAndFinish MarkTerminals only after polling the subtask to completion)
 	testx.Eventually(t, func() bool {
 		req, err := asyncRepo.GetByMessageID(ctx, msgID)
 		return err == nil && req != nil && req.Status == model.AsyncStatusCompleted
-	}, 15*time.Second, 100*time.Millisecond, "异步请求应 Completed")
+	}, 15*time.Second, 100*time.Millisecond, "the async request should be Completed")
 
-	// chunk 应有 EndTurn（回流闭环）
+	// Chunks should have EndTurn (closing the backflow loop)
 	testx.Eventually(t, func() bool {
 		chunks, _, _, err := chunkStore.After(ctx, msgID, 0)
 		testx.NoError(t, err)
@@ -168,9 +168,9 @@ func TestPhase4_FastTaskChain(t *testing.T) {
 			}
 		}
 		return false
-	}, 15*time.Second, 100*time.Millisecond, "应有 EndTurn chunk")
+	}, 15*time.Second, 100*time.Millisecond, "an EndTurn chunk should exist")
 
-	// 快任务回流也应含 task-step / task-done 进度帧（与 Phase 3 管家 plan 路径一致的进度 UX）
+	// Fast-task backflow should also contain task-step / task-done progress frames (the same progress UX as the Phase 3 manager-plan path)
 	chunks, _, _, err := chunkStore.After(ctx, msgID, 0)
 	testx.NoError(t, err)
 	var types []string
@@ -186,22 +186,22 @@ func TestPhase4_FastTaskChain(t *testing.T) {
 			types = append(types, f.Type)
 		}
 	}
-	testx.Contains(t, types, "task-step", "快任务应回流 task-step 进度帧")
-	testx.Contains(t, types, "task-done", "快任务应回流 task-done 终态帧")
+	testx.Contains(t, types, "task-step", "the fast task should flow back task-step progress frames")
+	testx.Contains(t, types, "task-done", "the fast task should flow back the task-done terminal frame")
 	testx.Contains(t, types, "message-complete")
 }
 
-// TestPhase4_HILInterruptAndResume 验证 HIL 完整闭环：
-// ① query 含"确认" → Worker 注入 FakeHILStrategy（taskSubmitter!=nil 块内）→
+// TestPhase4_HILInterruptAndResume verifies the full HIL loop:
+// ① query contains "确认" → the Worker injects FakeHILStrategy (inside the taskSubmitter!=nil block) →
 //
-//	管家 ReAct 产 Interrupt → SetOnInterrupt 保存 checkpoint
+//	the manager ReAct produces Interrupt → SetOnInterrupt saves the checkpoint
 //
-// ② resume 请求 → FastPath resume 分支命中 → runReActWithCheckpoint 恢复 →
+// ② resume request → the FastPath resume branch hits → runReActWithCheckpoint restores →
 //
-//	checkpoint 清除 + 异步请求 Completed。
+//	the checkpoint is cleared + the async request Completed.
 //
-// 关键：FakeHILStrategy 注入在 `if c.taskSubmitter != nil` 块内（consumer.go:251），
-// 因此 HIL 测试也必须配 Submitter——否则走 runner.Run（FakeLLM 不产 Interrupt）。
+// Key point: FakeHILStrategy injection lives inside the `if c.taskSubmitter != nil` block (consumer.go:251),
+// so HIL tests must also wire a Submitter — otherwise runner.Run is used (FakeLLM never produces Interrupt).
 func TestPhase4_HILInterruptAndResume(t *testing.T) {
 	ctx := context.Background()
 	db := newPhase3TestDB(t)
@@ -216,8 +216,8 @@ func TestPhase4_HILInterruptAndResume(t *testing.T) {
 
 	mem := memory.NewIntentMemory()
 
-	// HIL 场景不投递子任务，但 FakeHILStrategy 注入在 taskSubmitter!=nil 块内，
-	// 必须配一个真实 Submitter（走 RunWithOutput）。中断时不产 plan，投递无副作用。
+	// The HIL scenario dispatches no subtasks, but FakeHILStrategy injection lives inside the taskSubmitter!=nil block,
+	// so a real Submitter must be wired (RunWithOutput path). No plan is produced on interrupt, so dispatching has no side effects.
 	submitter := subtaskexecutor.NewSubmitter(subtaskexecutor.SubmitterConfig{
 		TaskRunRepo: taskRunRepo,
 		StreamQ:     infra.NewMemoryStreamQueue("cg:stream:task", "cg:executors", "e1"),
@@ -241,11 +241,11 @@ func TestPhase4_HILInterruptAndResume(t *testing.T) {
 		Logger:        zlog,
 		TaskSubmitter: submitter,
 		TaskRunRepo:   taskRunRepo,
-		// 业务决策经 hooks 注入（对齐 app 装配；等价原 consumer 硬编码接线）。
+		// Business decisions are injected via hooks (aligned with the app wiring; equivalent to the original consumer's hard-coded wiring).
 		Hooks: &worker.TaskRunnerHooks{
 			FastPath: fp,
 			Memory:   mem,
-			// HIL 触发词与 app 装配一致（query 含"确认" → 启用 FakeHILStrategy）。
+			// The HIL trigger word matches the app wiring (query contains "确认" → enable FakeHILStrategy).
 			ShouldEnableHIL: func(query string) bool {
 				return strings.Contains(query, "确认")
 			},
@@ -255,7 +255,7 @@ func TestPhase4_HILInterruptAndResume(t *testing.T) {
 	defer convCancel()
 	go convConsumer.Start(convCtx)
 
-	// ① 发含"确认"的请求（触发 HIL 中断）
+	// ① Send a request containing "确认" (triggering the HIL interrupt)
 	msgID := "msg-hil"
 	testx.NoError(t, asyncRepo.InsertPending(ctx, &model.CGAsyncRequest{
 		AsyncRequestID: "ar-hil",
@@ -282,12 +282,12 @@ func TestPhase4_HILInterruptAndResume(t *testing.T) {
 	})
 	testx.NoError(t, convStream.Push(ctx, msgID, convBody))
 
-	// 等待 checkpoint 保存（中断发生）
+	// Wait for the checkpoint to be saved (the interrupt happened)
 	testx.Eventually(t, func() bool {
 		return mem.LoadCheckpoint("s-hil") != nil
-	}, 15*time.Second, 100*time.Millisecond, "HIL 中断应保存 checkpoint")
+	}, 15*time.Second, 100*time.Millisecond, "the HIL interrupt should save a checkpoint")
 
-	// 中断帧已回流（interrupt 帧 + EndTurn）
+	// The interrupt frame flowed back (interrupt frame + EndTurn)
 	testx.Eventually(t, func() bool {
 		chunks, _, _, err := chunkStore.After(ctx, msgID, 0)
 		testx.NoError(t, err)
@@ -305,9 +305,9 @@ func TestPhase4_HILInterruptAndResume(t *testing.T) {
 			}
 		}
 		return hasInterrupt && hasEnd
-	}, 15*time.Second, 100*time.Millisecond, "应回流 interrupt 帧 + EndTurn")
+	}, 15*time.Second, 100*time.Millisecond, "the interrupt frame + EndTurn should flow back")
 
-	// ② 发 resume 请求
+	// ② Send the resume request
 	msgID2 := "msg-hil-resume"
 	testx.NoError(t, asyncRepo.InsertPending(ctx, &model.CGAsyncRequest{
 		AsyncRequestID: "ar-hil-resume",
@@ -335,12 +335,12 @@ func TestPhase4_HILInterruptAndResume(t *testing.T) {
 	})
 	testx.NoError(t, convStream.Push(ctx, msgID2, resumeBody))
 
-	// 等待 resume 完成 → 异步请求 Completed
+	// Wait for the resume to complete → async request Completed
 	testx.Eventually(t, func() bool {
 		req, _ := asyncRepo.GetByMessageID(ctx, msgID2)
 		return req != nil && req.Status == model.AsyncStatusCompleted
-	}, 15*time.Second, 100*time.Millisecond, "resume 应完成")
+	}, 15*time.Second, 100*time.Millisecond, "the resume should complete")
 	testx.Eventually(t, func() bool {
 		return mem.LoadCheckpoint("s-hil") == nil
-	}, 15*time.Second, 100*time.Millisecond, "resume 后 checkpoint 应清除")
+	}, 15*time.Second, 100*time.Millisecond, "the checkpoint should be cleared after resume")
 }

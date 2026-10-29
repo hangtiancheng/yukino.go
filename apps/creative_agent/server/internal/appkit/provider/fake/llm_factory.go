@@ -1,5 +1,5 @@
-// Package appkitfake 提供测试桩（Fake*）与 LLM 工厂回退逻辑。
-// 依赖 appkit/provider/llm（eino 真实 LLM）与 appkit/provider/tools（FakeTools），无环。
+// Package appkitfake provides test stubs (Fake*) and the LLM factory fallback logic.
+// It depends on appkit/provider/llm (the real eino LLM) and appkit/provider/tools (FakeTools), with no cycles.
 package appkitfake
 
 import (
@@ -7,9 +7,9 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 )
 
-// DefaultLLM 根据配置返回真实 LLM（配置了 base_url）或回退 FakeLLM。
-// 引擎注入点统一走这里：未配置时行为与 Phase 3 一致（FakeLLM），不破坏现有测试。
-// eino ChatModel 构建失败（配置非法）时同样回退 FakeLLM，保证 demo 恒可跑。
+// DefaultLLM returns the real LLM (when base_url is configured) or falls back to FakeLLM.
+// All engine injection points go through here: when unconfigured, behavior matches Phase 3 (FakeLLM) without breaking existing tests.
+// When the eino ChatModel build fails (invalid config) it also falls back to FakeLLM, guaranteeing the demo always runs.
 func DefaultLLM(cfg appkitllm.Config) react.LLM {
 	if cfg.BaseURL != "" {
 		if real, err := appkitllm.NewEinoLLM(cfg); err == nil {

@@ -15,19 +15,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// TaskExecutor 是子任务的执行体（对应真实系统 BaseTaskExecutor.Run）。
+// TaskExecutor is the executor of subtasks (corresponding to the reference system's BaseTaskExecutor.Run).
 //
-// 生命周期：
-//  1. 加载 task_run + plan_steps（主从延迟重试已由 Consumer 完成）
-//  2. CAS 抢占（Pending→Running）已由 Consumer 完成，此处直接执行
-//  3. 只取 Agents[0]（一个 task_run 只跑一个子智能体）
-//  4. 跑 SubAgent.ReAct（手写循环，复用 react.Supervisor 的组件）
-//  5. 按 NeedWait 分流回写：
+// Lifecycle:
+//  1. Load task_run + plan_steps (the replica-lag retry is already done by the Consumer)
+//  2. The CAS claim (Pending→Running) is already done by the Consumer; execute directly here
+//  3. Take only Agents[0] (one task_run runs one sub-agent)
+//  4. Run SubAgent.ReAct (hand-written loop, reusing react.Supervisor's components)
+//  5. Write back by NeedWait branch:
 //     - No  → Finished + final_product
-//     - Yes → Waiting（等异步产线回调）
+//     - Yes → Waiting (awaiting the async pipeline callback)
 //
-// 多步串联不在本执行器内循环（见 05-subagent.md §5.5）——"下一个 agent"
-// 由外部驱动（对话：卡片确认 + 快任务重新投递；Cron：Poller 自动推进）。
+// Multi-step chaining does not loop inside this executor (see 05-subagent.md §5.5) — the "next agent"
+// is driven externally (conversation: card confirmation + fast-task redispatch; cron: the Poller auto-advances).
 type TaskExecutor struct {
 	taskRunRepo repository.TaskRunRepository
 	stepRepo    repository.TaskStepRepository
@@ -36,18 +36,18 @@ type TaskExecutor struct {
 	logger      *zap.Logger
 }
 
-// TaskExecutorConfig 持有 TaskExecutor 的依赖。
+// TaskExecutorConfig holds the TaskExecutor's dependencies.
 type TaskExecutorConfig struct {
 	TaskRunRepo repository.TaskRunRepository
 	StepRepo    repository.TaskStepRepository
-	// Tools 是子 Agent 可用的工具提供者（内建产线工具，见 appkittools.NewSubAgentToolRegistry）。
+	// Tools is the tool provider available to sub-agents (built-in pipeline tools, see appkittools.NewSubAgentToolRegistry).
 	Tools appkittools.ToolsProvider
-	// LLM 可选；为 nil 时使用 appkitfake.FakeSubLLM（复刻的查表 LLM）。
+	// LLM is optional; when nil, appkitfake.FakeSubLLM is used (the replica's table-lookup LLM).
 	LLM    react.LLM
 	Logger *zap.Logger
 }
 
-// NewTaskExecutor 创建 TaskExecutor。
+// NewTaskExecutor creates a TaskExecutor.
 func NewTaskExecutor(cfg TaskExecutorConfig) *TaskExecutor {
 	return &TaskExecutor{
 		taskRunRepo: cfg.TaskRunRepo,
@@ -58,27 +58,27 @@ func NewTaskExecutor(cfg TaskExecutorConfig) *TaskExecutor {
 	}
 }
 
-// Execute 执行一个 task_run。返回 shouldAck（true=执行完毕应 ACK；false=需重投）。
+// Execute runs one task_run. Returns shouldAck (true = execution finished, should ACK; false = needs redispatch).
 //
-// 结果处理（05-subagent.md §5.2 ④）：
-//   - NeedWait=No  → 子智能体自己产出终态 → Finished + final_product
-//   - NeedWait=Yes → 触发了异步产线 → Waiting（等产线回调）
+// Result handling (05-subagent.md §5.2 ④):
+//   - NeedWait=No  → the sub-agent produced the terminal state itself → Finished + final_product
+//   - NeedWait=Yes → an async pipeline was triggered → Waiting (awaiting the pipeline callback)
 func (e *TaskExecutor) Execute(ctx context.Context, run *model.CGTaskRun) bool {
 	plan := model.MustParsePlanSteps(run)
 	if len(plan.Agents) == 0 {
-		e.logger.Error("task executor: plan_steps 无 agents",
+		e.logger.Error("task executor: plan_steps has no agents",
 			zap.Int64("taskRunID", run.TaskRunID))
-		_ = e.taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFailed, "plan_steps 无 agents")
+		_ = e.taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFailed, "plan_steps has no agents")
 		return true
 	}
 
-	// ③ 只取第一个 agent（一个 task_run = 一个子智能体步骤）
+	// ③ Take only the first agent (one task_run = one sub-agent step)
 	agent := plan.Agents[0]
 	e.logger.Info("task executor: running agent",
 		zap.Int64("taskRunID", run.TaskRunID),
 		zap.String("agentID", agent.AgentID))
 
-	// 建顶层步骤（子智能体级）
+	// Create the top-level step (sub-agent level)
 	agentStep := &model.CGTaskStep{
 		TaskStepID: model.NextID(),
 		TaskRunID:  run.TaskRunID,
@@ -91,13 +91,13 @@ func (e *TaskExecutor) Execute(ctx context.Context, run *model.CGTaskRun) bool {
 		StartTime:  time.Now().UnixMilli(),
 	}
 	if err := e.stepRepo.Insert(ctx, agentStep); err != nil {
-		e.logger.Error("task executor: 建 agent step 失败",
+		e.logger.Error("task executor: failed to create agent step",
 			zap.Int64("taskRunID", run.TaskRunID), zap.Error(err))
 		_ = e.taskRunRepo.MarkTerminal(ctx, run.TaskRunID, model.TaskRunStatusFailed, err.Error())
 		return true
 	}
 
-	// 组装 SubAgent（复用 react.Supervisor 组件，循环手写）
+	// Assemble the SubAgent (reusing react.Supervisor components; the loop is hand-written)
 	input := agent.Input
 	if input == "" {
 		input = run.OriginalQuery
@@ -123,10 +123,10 @@ func (e *TaskExecutor) Execute(ctx context.Context, run *model.CGTaskRun) bool {
 		return true
 	}
 
-	// ④ 按 NeedWait 分流回写
+	// ④ Write back by NeedWait branch
 	if result.NeedWait == model.NeedWaitYes {
-		// 触发了异步产线：task_run 置 Waiting（等产线回调），intermediate_result 已写
-		e.logger.Info("task executor: NeedWait=Yes, run 置 Waiting 等产线回调",
+		// An async pipeline was triggered: task_run set to Waiting (awaiting the pipeline callback); intermediate_result already written
+		e.logger.Info("task executor: NeedWait=Yes, run set to Waiting for the pipeline callback",
 			zap.Int64("taskRunID", run.TaskRunID))
 		_ = e.taskRunRepo.UpdateByTaskRunID(ctx, run.TaskRunID, map[string]any{
 			"status": model.TaskRunStatusWaiting,
@@ -134,8 +134,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, run *model.CGTaskRun) bool {
 		return true
 	}
 
-	// NeedWait=No：子智能体自己产出终态 → Finished
-	// final_product 落 agent step 的 step_output，供 poll 回流交付产物
+	// NeedWait=No: the sub-agent produced the terminal state itself → Finished
+	// final_product is written into the agent step's step_output for the poll backflow to deliver
 	output, _ := json.Marshal(map[string]any{
 		"final_product": result.Content,
 	})
@@ -148,19 +148,19 @@ func (e *TaskExecutor) Execute(ctx context.Context, run *model.CGTaskRun) bool {
 	return true
 }
 
-// SubResult 是 SubAgent.Run 的返回结果。
+// SubResult is the return value of SubAgent.Run.
 type SubResult struct {
-	// Content 是子智能体的最终产出文本。
+	// Content is the sub-agent's final output text.
 	Content string
-	// NeedWait 表示是否触发了异步产线（1=Yes 置 Waiting，0=No 直接终态）。
+	// NeedWait indicates whether an async pipeline was triggered (1=Yes sets Waiting, 0=No goes terminal directly).
 	NeedWait int8
 }
 
-// SubAgent 是子智能体执行器（对应真实系统 subagent/executor.go）。
+// SubAgent is the sub-agent executor (corresponding to the reference system's subagent/executor.go).
 //
-// 复用了 react.Supervisor 的组件（Strategy/Hooks/LLM/Tools），但循环是手写的
-// 标准 ReAct——子 Strategy 是"有工具就 Continue、无就 Terminal"，
-// 不做管家那种 task_type 路由（见 05-subagent.md §5.3）。
+// It reuses react.Supervisor's components (Strategy/Hooks/LLM/Tools), but the loop is a hand-written
+// standard ReAct — the sub Strategy is "Continue while there are tools, Terminal when none",
+// without the manager's task_type routing (see 05-subagent.md §5.3).
 type SubAgent struct {
 	taskRunID int64
 	agentStep *model.CGTaskStep
@@ -170,18 +170,18 @@ type SubAgent struct {
 	logger    *zap.Logger
 }
 
-// SubAgentConfig 持有 SubAgent 的依赖。
+// SubAgentConfig holds the SubAgent's dependencies.
 type SubAgentConfig struct {
 	TaskRunID int64
 	AgentStep *model.CGTaskStep
-	// LLM 可选；为 nil 时使用 appkitfake.FakeSubLLM（复刻的查表 LLM）。
+	// LLM is optional; when nil, appkitfake.FakeSubLLM is used (the replica's table-lookup LLM).
 	LLM      react.LLM
 	Tools    appkittools.ToolsProvider
 	StepRepo repository.TaskStepRepository
 	Logger   *zap.Logger
 }
 
-// NewSubAgent 创建 SubAgent。
+// NewSubAgent creates a SubAgent.
 func NewSubAgent(cfg SubAgentConfig) *SubAgent {
 	llm := cfg.LLM
 	if llm == nil {
@@ -197,12 +197,12 @@ func NewSubAgent(cfg SubAgentConfig) *SubAgent {
 	}
 }
 
-// Run 执行子智能体的手写 ReAct 循环。maxStep=10。
+// Run executes the sub-agent's hand-written ReAct loop. maxStep=10.
 //
-// 每步：
-//   - 建工具调用子步骤（tool step，parent=agentStep）
-//   - 执行工具 → 结果当 observation 塞回
-//   - 产线工具（isPipeline）→ 写 intermediate_result + need_wait=Yes + 提前终止
+// Each step:
+//   - Create the tool-call sub-step (tool step, parent=agentStep)
+//   - Execute the tool → feed the result back as an observation
+//   - Pipeline tool (isPipeline) → write intermediate_result + need_wait=Yes + terminate early
 func (s *SubAgent) Run(ctx context.Context, input string) (*SubResult, error) {
 	hooks := &subAgentToolHooks{
 		taskRunID: s.taskRunID,
@@ -219,10 +219,10 @@ func (s *SubAgent) Run(ctx context.Context, input string) (*SubResult, error) {
 	maxStep := 10
 	var lastContent string
 	for step := 0; step < maxStep; step++ {
-		// 每轮重取工具列表（支持动态变化，与管家引擎一致）。
-		// 按当前 agentID 隔离工具集：ToolRegistry 从 ctx 读 agentID 返回该 agent 专属工具
-		// （对齐真实系统 GetFunctions 按 agentID 过滤）。这样 gold_scriptwriter 看不到产线工具，
-		// edit_master 才可调 create_video_task——"写完脚本必须走脚本卡"由工具集保证。
+		// Re-fetch the tool list every round (supports dynamic changes, consistent with the manager engine).
+		// Isolate the tool set by the current agentID: ToolRegistry reads agentID from ctx and returns that agent's exclusive tools
+		// (aligned with the reference system's GetFunctions filtering by agentID). This way gold_scriptwriter cannot see pipeline tools,
+		// and only edit_master can call create_video_task — "after writing the script the script card must be shown" is guaranteed by the tool set.
 		toolCtx := appkittools.WithAgentID(ctx, s.agentStep.AgentID)
 		defs, err := s.tools.GetFunctionDefs(toolCtx)
 		if err != nil {
@@ -234,17 +234,17 @@ func (s *SubAgent) Run(ctx context.Context, input string) (*SubResult, error) {
 			return nil, fmt.Errorf("sub agent: llm chat at step %d: %w", step+1, err)
 		}
 
-		// 无 tool_calls → Terminal
+		// No tool_calls → Terminal
 		if len(resp.ToolCalls) == 0 {
 			lastContent = resp.Content
 			break
 		}
 
-		// Continue：执行工具，结果当 observation 塞回
+		// Continue: execute the tool and feed the result back as an observation
 		messages = append(messages, react.Message{Role: "assistant", ToolCalls: resp.ToolCalls})
 		for _, tc := range resp.ToolCalls {
-			// 身份透传：把 agentStep 的 UserID/SessionID（来自 run）注入 ctx，
-			// 工具 Runner 从 ctx 读身份（LLM 工具参数不会传这些，ctx 是可信来源）。
+			// Identity propagation: inject agentStep's UserID/SessionID (from run) into ctx;
+			// tool Runners read identity from ctx (LLM tool arguments never carry these; ctx is the trusted source).
 			res := appkittools.ExecuteToolCall(
 				appkittools.WithIdentity(ctx, s.agentStep.UserID, s.agentStep.SessionID),
 				s.tools, tc.ID, tc.Name, tc.Args, hooks)
@@ -254,7 +254,7 @@ func (s *SubAgent) Run(ctx context.Context, input string) (*SubResult, error) {
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
 			})
-			// 产线工具 → 提前终止：intermediate_result + need_wait 已在 OnAfter hook 写入
+			// Pipeline tool → terminate early: intermediate_result + need_wait were already written in the OnAfter hook
 			if res.IsPipeline {
 				return &SubResult{
 					Content:  res.Result,
@@ -270,17 +270,17 @@ func (s *SubAgent) Run(ctx context.Context, input string) (*SubResult, error) {
 	return &SubResult{Content: lastContent, NeedWait: model.NeedWaitNo}, nil
 }
 
-// subAgentToolHooks 是子 Agent 的工具调用钩子（07-tool-system.md §7.12）。
+// subAgentToolHooks are the sub-agent's tool-call hooks (07-tool-system.md §7.12).
 //
-//   - OnBefore: 建工具调用子步骤（cg_task_step, parent=agentStep, Status=Running）
-//   - OnAfter: 写 intermediate_result 到 agent step；产线工具 → need_wait=Yes
+//   - OnBefore: create the tool-call sub-step (cg_task_step, parent=agentStep, Status=Running)
+//   - OnAfter: write intermediate_result into the agent step; pipeline tool → need_wait=Yes
 type subAgentToolHooks struct {
 	taskRunID int64
 	agentStep *model.CGTaskStep
 	stepRepo  repository.TaskStepRepository
 	logger    *zap.Logger
 
-	// currentStepID 记录最近一次 OnBefore 建的工具子步骤（串行循环，无并发）。
+	// currentStepID records the tool sub-step created by the latest OnBefore (serial loop, no concurrency).
 	currentStepID int64
 }
 
@@ -298,7 +298,7 @@ func (h *subAgentToolHooks) OnBefore(ctx context.Context, tcID, name, args strin
 		StartTime:    time.Now().UnixMilli(),
 	}
 	if err := h.stepRepo.Insert(ctx, step); err != nil {
-		h.logger.Error("sub agent hooks: 建 tool step 失败",
+		h.logger.Error("sub agent hooks: failed to create tool step",
 			zap.String("tool", name), zap.Error(err))
 		return
 	}
@@ -306,11 +306,11 @@ func (h *subAgentToolHooks) OnBefore(ctx context.Context, tcID, name, args strin
 }
 
 func (h *subAgentToolHooks) OnAfter(ctx context.Context, result *appkittools.ToolCallResult) {
-	// 写 intermediate_result（无论成败都写，失败时是错误 observation）
+	// Write intermediate_result (written regardless of success; on failure it is the error observation)
 	assigns := map[string]any{
 		"intermediate_result": result.Result,
 	}
-	// 工具子步骤：终态（成功=Finished / 失败=Failed）
+	// Tool sub-step: terminal state (success=Finished / failure=Failed)
 	if result.IsError {
 		assigns["status"] = model.TaskStepStatusFailed
 	} else {
@@ -319,7 +319,7 @@ func (h *subAgentToolHooks) OnAfter(ctx context.Context, result *appkittools.Too
 	if h.currentStepID != 0 {
 		_ = h.stepRepo.UpdateByTaskStepID(ctx, h.currentStepID, assigns)
 	}
-	// agent 顶层步骤：产线工具 → need_wait=Yes + 保持 Running（等产线回调）
+	// Agent top-level step: pipeline tool → need_wait=Yes + stay Running (awaiting the pipeline callback)
 	agentAssigns := map[string]any{
 		"intermediate_result": result.Result,
 	}
@@ -327,7 +327,7 @@ func (h *subAgentToolHooks) OnAfter(ctx context.Context, result *appkittools.Too
 		agentAssigns["need_wait"] = model.NeedWaitYes
 	}
 	if err := h.stepRepo.UpdateByTaskStepID(ctx, h.agentStep.TaskStepID, agentAssigns); err != nil {
-		h.logger.Error("sub agent hooks: 更新 agent step 失败",
+		h.logger.Error("sub agent hooks: failed to update agent step",
 			zap.Error(err))
 	}
 }

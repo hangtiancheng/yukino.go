@@ -9,14 +9,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// userRow 用户表持久化结构（gorm 映射 users 表）。
-// 私有：gorm 标签只存在于基础设施层，域实体保持纯领域。
+// userRow is the users-table persistence structure (gorm mapping the users table).
+// Private: gorm tags live only in the infrastructure layer; the domain entity stays pure.
 //
-// 字段类型已对齐真实 users 表（2026-08 实测 SHOW COLUMNS FROM users）：
+// Field types are aligned with the real users table (verified 2026-08 via SHOW COLUMNS FROM users):
 //   - id            bigint unsigned PK AUTO_INCREMENT
-//   - created_at    bigint   ← 旧 gorm.Model 的 datetime 已被迁移成 bigint
-//   - updated_at    bigint   （Task 5.2 AutoMigrate 对齐后保持 int64 = Unix 秒）
-//   - deleted_at    datetime(3) ← 与 gorm.DeletedAt 默认映射一致
+//   - created_at    bigint   ← the old gorm.Model datetime was migrated to bigint
+//   - updated_at    bigint   (kept int64 = Unix seconds after the Task 5.2 AutoMigrate alignment)
+//   - deleted_at    datetime(3) ← consistent with gorm.DeletedAt's default mapping
 type userRow struct {
 	ID        uint64         `gorm:"column:id;primaryKey;autoIncrement"`
 	Username  string         `gorm:"column:username;uniqueIndex;size:64;not null"`
@@ -27,15 +27,15 @@ type userRow struct {
 	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index"`
 }
 
-// TableName 指定表名。
+// TableName specifies the table name.
 func (userRow) TableName() string { return "users" }
 
-// Migrate 对本 context 的表执行 AutoMigrate（database.Init 启动时调用）。
+// Migrate runs AutoMigrate for this context's tables (called at database.Init startup).
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(&userRow{})
 }
 
-// toRow 将域实体转为持久化结构。
+// toRow converts the domain entity into the persistence structure.
 func toRow(u *domain.User) *userRow {
 	return &userRow{
 		ID:        u.ID,
@@ -47,7 +47,7 @@ func toRow(u *domain.User) *userRow {
 	}
 }
 
-// toDomain 将持久化结构转为域实体。
+// toDomain converts the persistence structure into the domain entity.
 func toDomain(r *userRow) *domain.User {
 	return &domain.User{
 		ID:           r.ID,
@@ -59,33 +59,33 @@ func toDomain(r *userRow) *domain.User {
 	}
 }
 
-// UserRepositoryImpl 基于 gorm 的 domain.UserRepository 实现（bare gorm，无 gen 依赖）。
+// UserRepositoryImpl is the gorm-based domain.UserRepository implementation (bare gorm, no gen dependency).
 type UserRepositoryImpl struct {
 	db *gorm.DB
 }
 
-// NewUserRepositoryImpl 创建实现。
+// NewUserRepositoryImpl creates the implementation.
 func NewUserRepositoryImpl(db *gorm.DB) *UserRepositoryImpl {
 	return &UserRepositoryImpl{db: db}
 }
 
-// 编译期断言：确保实现满足 domain.UserRepository 接口。
+// Compile-time assertion: the implementation satisfies the domain.UserRepository interface.
 var _ domain.UserRepository = (*UserRepositoryImpl)(nil)
 
-// Create 新建用户。唯一索引（username/email）冲突时返回 gorm.ErrDuplicatedKey。
+// Create creates a user. Unique-index (username/email) conflicts return gorm.ErrDuplicatedKey.
 func (r *UserRepositoryImpl) Create(ctx context.Context, u *domain.User) error {
 	row := toRow(u)
 	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
 		return err
 	}
-	// 回填自增 ID 与数据库写入的时间戳。
+	// Backfill the auto-increment ID and the DB-written timestamps.
 	u.ID = row.ID
 	u.CreatedAt = row.CreatedAt
 	u.UpdatedAt = row.UpdatedAt
 	return nil
 }
 
-// FindByUsername 按用户名查询，未找到返回 domain.ErrUserNotFound。
+// FindByUsername queries by username; returns domain.ErrUserNotFound when absent.
 func (r *UserRepositoryImpl) FindByUsername(ctx context.Context, username string) (*domain.User, error) {
 	var row userRow
 	err := r.db.WithContext(ctx).Where("username = ?", username).First(&row).Error
@@ -98,7 +98,7 @@ func (r *UserRepositoryImpl) FindByUsername(ctx context.Context, username string
 	return toDomain(&row), nil
 }
 
-// FindByEmail 按邮箱查询，未找到返回 domain.ErrUserNotFound。
+// FindByEmail queries by email; returns domain.ErrUserNotFound when absent.
 func (r *UserRepositoryImpl) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var row userRow
 	err := r.db.WithContext(ctx).Where("email = ?", email).First(&row).Error

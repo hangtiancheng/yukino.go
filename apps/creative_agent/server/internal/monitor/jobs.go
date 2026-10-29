@@ -16,59 +16,59 @@ import (
 	"gorm.io/gorm"
 )
 
-// 定时任务周期（对齐原项目 monitor 的常驻 job 节奏）。
+// Scheduled-job intervals (aligned with the original project's resident monitor job cadence).
 const (
-	// CompensationJobInterval 补偿重试周期：每 1 分钟扫一次。
+	// CompensationJobInterval is the compensation-retry interval: scan every 1 minute.
 	CompensationJobInterval = 1 * time.Minute
-	// TimeoutJobInterval 超时兜底周期：每 5 分钟扫一次。
+	// TimeoutJobInterval is the timeout-fallback interval: scan every 5 minutes.
 	TimeoutJobInterval = 5 * time.Minute
-	// TimeoutHours 作品生成超时阈值：超过 24h 仍在 running 则兜底。
+	// TimeoutHours is the work-generation timeout threshold: still running beyond 24h triggers the fallback.
 	TimeoutHours = 24
 )
 
-// Deps 是 monitor 常驻 job 的全部依赖（由 app 装配线注入）。
+// Deps holds all dependencies of the resident monitor jobs (injected by the app assembly line).
 //
-// 对齐旧 creation.Service 暴露的 accessor（CompensationDao/ProjectDao/RiskStatsDao/
-// RiskAuditRecordDao），新架构下补偿/超时/风控治理分别由各上下文的应用服务与基础设施承担：
-//   - 补偿重试：RiskAuditApp.RetryAsyncAudit + CallbackDispatcher.RetryCallbackAgent
-//   - 超时兜底：Projects.GetStuckProjects + PostCreate.RefundAndFailTimeout
-//   - 风控治理：AuditStatsConsumer（双游标消费）+ RiskOfflineJob（阈值评估写黑名单）
+// Aligned with the accessors exposed by the old creation.Service (CompensationDao/ProjectDao/RiskStatsDao/
+// RiskAuditRecordDao); in the new architecture compensation/timeout/risk-governance are carried by each context's application services and infrastructure:
+//   - Compensation retry: RiskAuditApp.RetryAsyncAudit + CallbackDispatcher.RetryCallbackAgent
+//   - Timeout fallback: Projects.GetStuckProjects + PostCreate.RefundAndFailTimeout
+//   - Risk governance: AuditStatsConsumer (dual-cursor consumption) + RiskOfflineJob (threshold evaluation writing the blacklist)
 type Deps struct {
-	// DB 是风控治理轮询器的数据源（双游标直查 cg_risk_audit_record）。
+	// DB is the data source of the risk-governance poller (dual cursors query cg_risk_audit_record directly).
 	DB *gorm.DB
-	// PostCreate 是超时兜底执行器（creation.application.PostCreateApp 实现 TimeoutBailout）。
+	// PostCreate is the timeout-fallback executor (creation.application.PostCreateApp implements TimeoutBailout).
 	PostCreate TimeoutBailout
-	// RiskAudit 承担异步风控补偿重试（RiskAuditApp.RetryAsyncAudit）。
+	// RiskAudit carries async risk-compensation retries (RiskAuditApp.RetryAsyncAudit).
 	RiskAudit *riskapp.RiskAuditApp
-	// Dispatcher 承担回调 agent 补偿重试（CallbackDispatcher.RetryCallbackAgent）。
+	// Dispatcher carries callback-agent compensation retries (CallbackDispatcher.RetryCallbackAgent).
 	Dispatcher *dao.CallbackDispatcher
-	// Projects 是作品仓储（超时 job 扫描 stuck 项目）。
+	// Projects is the work repository (the timeout job scans stuck projects).
 	Projects creationdomain.ProjectRepository
-	// Compensations 是补偿仓储（补偿 job 扫描 status=0 的记录）。
+	// Compensations is the compensation repository (the compensation job scans status=0 records).
 	Compensations creationdomain.CompensationRepository
-	// RiskStats 是风控命中统计仓储（评估 job 读、消费写）。
+	// RiskStats is the risk-hit statistics repository (read by the evaluation job, written by the consumer).
 	RiskStats riskdomain.RiskStatsRepository
-	// Redis 供风控治理游标持久化 + 黑名单写入（rdb 为 nil 时退化为内存/跳过）。
+	// Redis serves risk-governance cursor persistence + blacklist writes (degrading to memory/skip when rdb is nil).
 	Redis  *redis.Client
 	Logger *zap.Logger
 }
 
-// TimeoutBailout 超时兜底执行器契约（creation.application.PostCreateApp 实现）。
+// TimeoutBailout is the timeout-fallback executor contract (implemented by creation.application.PostCreateApp).
 //
-// monitor 只依赖本最小接口承接超时兜底执行（不触碰 creation 其它细节），
-// PostCreateApp.RefundAndFailTimeout 签名匹配，装配时直接赋值。
+// monitor depends only on this minimal interface for timeout-fallback execution (touching no other creation details);
+// PostCreateApp.RefundAndFailTimeout matches the signature and is assigned directly at assembly time.
 type TimeoutBailout interface {
 	RefundAndFailTimeout(ctx context.Context, project *creationdomain.Project) error
 }
 
-// 编译期断言：creation.application.PostCreateApp 实现 TimeoutBailout。
-// 放在 _test 同包也可以，但这里更早暴露装配错误（app 装配线直接赋值）。
+// Compile-time assertion: creation.application.PostCreateApp implements TimeoutBailout.
+// It could live in a _test package, but here it surfaces assembly errors earlier (the app assembly line assigns it directly).
 var _ TimeoutBailout = (*creationapp.PostCreateApp)(nil)
 
-// LoopRun 常驻运行兜底 job（补偿重试 + 超时兜底 + 风控治理），由 ticker 驱动。
+// LoopRun runs the fallback jobs (compensation retry + timeout fallback + risk governance) resident, driven by tickers.
 //
-// ctx 来自 app 优雅关机（cancel 后 goroutine 退出）；单个 job panic 会被 recover，
-// 不影响下次执行。rdb 供风控治理消费/评估使用。
+// ctx comes from the app's graceful shutdown (goroutines exit after cancel); a single job panic is recovered
+// without affecting the next run. rdb serves risk-governance consumption/evaluation.
 func LoopRun(ctx context.Context, deps Deps) {
 	logger := deps.Logger
 	if logger == nil {
@@ -79,11 +79,11 @@ func LoopRun(ctx context.Context, deps Deps) {
 	defer compTicker.Stop()
 	defer timeoutTicker.Stop()
 
-	// 启动时先各跑一次（不等到第一个 tick）
+	// Run each job once at startup (do not wait for the first tick)
 	go runLoop(ctx, "compensation", func() { runCompensationSafely(ctx, deps, logger) }, compTicker.C)
 	go runLoop(ctx, "timeout", func() { runTimeoutSafely(ctx, deps, logger) }, timeoutTicker.C)
 
-	// 风控治理（阶段 6/7）：常驻消费 risk_audit_record 命中 + 阈值评估下线
+	// Risk governance (stages 6/7): resident consumption of risk_audit_record hits + threshold evaluation for offlining
 	if deps.DB != nil && deps.RiskStats != nil {
 		poller := riskinfra.NewAuditRecordPoller(deps.DB)
 		consumer := riskinfra.NewAuditStatsConsumer(
@@ -107,11 +107,11 @@ func LoopRun(ctx context.Context, deps Deps) {
 	<-ctx.Done()
 }
 
-// runLoop 通用的定时循环：每次 tick 执行 fn，panic 被 recover（单次失败不影响后续）。
+// runLoop is the generic timed loop: fn runs on each tick; panics are recovered (a single failure does not affect later runs).
 func runLoop(ctx context.Context, name string, fn func(), tick <-chan time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
-			// 顶层兜底：goroutine 不因 panic 退出（虽然 fn 内部已 recover，这里双保险）
+			// Top-level fallback: the goroutine never exits on panic (fn already recovers internally; this is double insurance)
 			_ = r
 		}
 	}()
@@ -125,7 +125,7 @@ func runLoop(ctx context.Context, name string, fn func(), tick <-chan time.Time)
 	}
 }
 
-// runCompensationSafely 包一层 recover 的补偿 job 执行。
+// runCompensationSafely runs the compensation job wrapped in a recover layer.
 func runCompensationSafely(ctx context.Context, deps Deps, logger *zap.Logger) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -137,7 +137,7 @@ func runCompensationSafely(ctx context.Context, deps Deps, logger *zap.Logger) {
 	}
 }
 
-// runTimeoutSafely 包一层 recover 的超时 job 执行。
+// runTimeoutSafely runs the timeout job wrapped in a recover layer.
 func runTimeoutSafely(ctx context.Context, deps Deps, logger *zap.Logger) {
 	defer func() {
 		if r := recover(); r != nil {

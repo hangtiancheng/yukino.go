@@ -10,23 +10,23 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/domain"
 )
 
-// RiskAuditApp 风控送审应用服务。
+// RiskAuditApp is the risk-audit submission application service.
 //
-// 编排送审三态：
-//   - SyncAudit 同步送审（文本/图片），阻塞等待结果，立即返回
-//   - AsyncAudit 异步送审（视频），提交即返回，结果由回调闭环
-//   - RetryAsyncAudit 异步补偿重试入口（补偿 job 调用）
+// It orchestrates the three submission modes:
+//   - SyncAudit: synchronous submission (text/image), blocking for the result and returning immediately
+//   - AsyncAudit: asynchronous submission (video), returning right after submit; the result closes via callback
+//   - RetryAsyncAudit: the async compensation retry entry (called by the compensation job)
 //
-// 依赖全部为接口注入（domain.AuditBackend / domain.AuditRecordRepository /
-// CompensationSink / domain.BlacklistChecker），不持有 gorm / redis.Client。
+// All dependencies are interface-injected (domain.AuditBackend / domain.AuditRecordRepository /
+// CompensationSink / domain.BlacklistChecker); it holds no gorm / redis.Client.
 type RiskAuditApp struct {
 	backend   domain.AuditBackend
 	records   domain.AuditRecordRepository
 	sink      CompensationSink
-	blacklist domain.BlacklistChecker // nil 时跳过黑名单检查、风控照常
+	blacklist domain.BlacklistChecker // when nil, blacklist checks are skipped and risk control proceeds as usual
 }
 
-// NewRiskAuditApp 创建送审应用服务。
+// NewRiskAuditApp creates the audit-submission application service.
 func NewRiskAuditApp(backend domain.AuditBackend, records domain.AuditRecordRepository, sink CompensationSink, blacklist domain.BlacklistChecker) *RiskAuditApp {
 	return &RiskAuditApp{
 		backend:   backend,
@@ -36,36 +36,36 @@ func NewRiskAuditApp(backend domain.AuditBackend, records domain.AuditRecordRepo
 	}
 }
 
-// SyncAudit 文本/图片同步风控：阻塞等待结果，立即返回。
+// SyncAudit is synchronous text/image risk control: blocks for the result and returns immediately.
 //
-// 返回：
-//   - passed=false + err=non-nil → 风控请求失败（系统错误）
-//   - passed=false + reason=non-empty → 内容不通过（命中风控）
-//   - passed=true → 通过
+// Returns:
+//   - passed=false + err=non-nil → the risk request failed (system error)
+//   - passed=false + reason=non-empty → content rejected (risk hit)
+//   - passed=true → passed
 func (a *RiskAuditApp) SyncAudit(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
-	// 图片风控：拆分为每次 1 张，限速派发 + 一票否决（派发/聚合策略收敛在 domain.SyncAuditImages）
+	// Image risk control: split into one image per call, rate-limited dispatch + one-vote veto (dispatch/aggregation policy converges in domain.SyncAuditImages)
 	if len(req.Content.Image) > 0 {
 		return domain.SyncAuditImages(ctx, a.backend, req, subProduct)
 	}
-	// 文本风控：单次请求
+	// Text risk control: a single request
 	return a.doSyncRequest(ctx, req, subProduct)
 }
 
-// doSyncRequest 实际调用风控后端，返回 (passed, reason, err)。
+// doSyncRequest actually calls the risk backend, returning (passed, reason, err).
 func (a *RiskAuditApp) doSyncRequest(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
 	return a.backend.Submit(ctx, req, subProduct)
 }
 
-// AsyncAudit 视频异步风控：提交后立即返回，结果由 /inner/callback/risk 闭环。
+// AsyncAudit is asynchronous video risk control: returns immediately after submission; the result closes via /inner/callback/risk.
 //
-// 两个闭环纽带：
-//  1. CallbackURL：把"审完通知我哪里"随请求带过去
-//  2. extra.callback_record_id：回调时透传回来，服务端用它找到是哪条记录对账
+// Two loop-closing bonds:
+//  1. CallbackURL: carries "where to notify me when the audit finishes" with the request
+//  2. extra.callback_record_id: echoed on callback so the server finds which record to reconcile
 //
-// 流程：先插一条 status=auditing 的审计记录 → 提交风控请求（带回调参数）→
-// 提交失败写补偿表（sink，Phase 3 的补偿 job 处理）→ 返回 recordID。
+// Flow: insert one status=auditing audit record first → submit the risk request (with callback params) →
+// on submission failure write the compensation table (sink, handled by the Phase 3 compensation job) → return the recordID.
 func (a *RiskAuditApp) AsyncAudit(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string, callbackURL string) (int64, error) {
-	// 1. 先插一条 status=auditing 的审计记录（task_type 形如 "risk:async:{subProduct}"）
+	// 1. Insert one status=auditing audit record first (task_type looks like "risk:async:{subProduct}")
 	insertedID, err := a.records.Insert(ctx, &domain.AuditRecord{
 		UserID:    req.UserID,
 		ProjectID: req.ThirdID,
@@ -77,7 +77,7 @@ func (a *RiskAuditApp) AsyncAudit(ctx context.Context, req *domain.RiskSubmitReq
 	}
 	recordID := int64(insertedID)
 
-	// 2. 提交风控请求，带上回调闭环参数
+	// 2. Submit the risk request with the callback loop-closing params
 	req.CallbackURL = callbackURL
 	if req.Extra == nil {
 		req.Extra = map[string]string{}
@@ -85,7 +85,7 @@ func (a *RiskAuditApp) AsyncAudit(ctx context.Context, req *domain.RiskSubmitReq
 	req.Extra["callback_record_id"] = strconv.FormatInt(recordID, 10)
 
 	if err := a.submitAuditRequest(ctx, req, subProduct); err != nil {
-		// 提交失败 → 写补偿表，等重试 job 处理（sink 未注入时静默跳过）
+		// Submission failed → write the compensation table for the retry job (silently skipped when no sink is injected)
 		if a.sink != nil {
 			_ = a.sink.InsertAuditCompensation(ctx, req, subProduct, recordID)
 		}
@@ -95,11 +95,11 @@ func (a *RiskAuditApp) AsyncAudit(ctx context.Context, req *domain.RiskSubmitReq
 	return recordID, nil
 }
 
-// submitAuditRequest 提交异步风控请求到后端（返回 err 表示提交失败）。
+// submitAuditRequest submits the async risk request to the backend (a returned err means submission failed).
 //
-// 本地复现的 backend 判定是同步的，异步提交语义用「在审计记录上标记已提交」模拟：
-// 把提交状态写回 auditing 记录的 task_input（审计对账可见），而非真的阻塞等待。
-// 真实接入时替换为 POST /async/audit（带 CallbackURL）。
+// The locally reproduced backend decides synchronously; async submission semantics are simulated by "marking the audit record as submitted":
+// the submission state is written back into the auditing record's task_input (visible for audit reconciliation) instead of really blocking.
+// For real integration, replace with POST /async/audit (carrying CallbackURL).
 func (a *RiskAuditApp) submitAuditRequest(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string) error {
 	select {
 	case <-ctx.Done():
@@ -107,12 +107,12 @@ func (a *RiskAuditApp) submitAuditRequest(ctx context.Context, req *domain.RiskS
 	default:
 	}
 
-	// 校验：异步必须有内容（视频/文本），空请求视为提交失败
+	// Validation: async requires content (video/text); an empty request counts as submission failure
 	if len(req.Content.Text) == 0 && len(req.Content.Image) == 0 {
 		return fmt.Errorf("async audit content is empty")
 	}
 
-	// 把本次提交的入参（subProduct + callback 纽带）记进记录，供对账
+	// Record this submission's inputs (subProduct + callback bonds) into the record for reconciliation
 	submitted, _ := json.Marshal(map[string]any{
 		"sub_product":        subProduct,
 		"callback_url":       req.CallbackURL,
@@ -123,14 +123,14 @@ func (a *RiskAuditApp) submitAuditRequest(ctx context.Context, req *domain.RiskS
 	})
 }
 
-// RetryAsyncAudit 供补偿 job 调用的异步风控重试入口。
+// RetryAsyncAudit is the async risk retry entry called by the compensation job.
 //
-// payload 是补偿写入的 JSON，包含：
+// payload is the JSON written by compensation, containing:
 //   - biz_id / sub_product / third_id / callback_url / user_id / record_id / content_text
 //
-// 重试语义：**复用原始 auditing 记录**走 submitAuditRequest（而非重新走完整 AsyncAudit——
-// 否则内容仍为空会再次写补偿记录造成死循环）。content_text 为空视为重试失败，
-// 由补偿 job 累加 retry_count，超上限放弃时走超时兜底退积分。
+// Retry semantics: **reuse the original auditing record** through submitAuditRequest (rather than rerunning the full AsyncAudit —
+// otherwise the still-empty content would write another compensation record, causing an infinite loop). An empty content_text counts as retry failure;
+// the compensation job accumulates retry_count, and abandoning beyond the cap goes through the timeout-fallback points refund.
 func (a *RiskAuditApp) RetryAsyncAudit(ctx context.Context, payload map[string]any) error {
 	subProduct := asString(payload["sub_product"])
 	if subProduct == "" {
@@ -154,23 +154,23 @@ func (a *RiskAuditApp) RetryAsyncAudit(ctx context.Context, payload map[string]a
 	return a.submitAuditRequest(ctx, req, subProduct)
 }
 
-// IsBlacklisted 送审前黑名单检查（blacklist 未注入或 subProduct 为空时放行）。
+// IsBlacklisted is the pre-submission blacklist check (passes when blacklist is not injected or subProduct is empty).
 func (a *RiskAuditApp) IsBlacklisted(ctx context.Context, userID int64, subProduct string) bool {
 	return a.checkRiskBlacklist(ctx, userID, subProduct)
 }
 
-// NewSyncAuditRecorder 创建一次同步风控的合并记录器（risk 侧实现）。
+// NewSyncAuditRecorder creates the merged recorder of one sync risk-control round (risk-side implementation).
 //
-// creation.application 通过 RiskPort 调用本方法拿到 recorder 实现（跨 context 依赖反转：
-// 接口定义在 risk.domain，实现在 risk.infrastructure，creation 只依赖接口不依赖实现）。
-// taskType 形如 "risk:{role}:{type}:{stage}"（如 "risk:5:mix_video:precreate"），
-// 供审计对账按 (role,type) 检索。
+// creation.application calls this method through RiskPort to obtain the recorder implementation (cross-context dependency inversion:
+// the interface is defined in risk.domain, the implementation in risk.infrastructure; creation depends only on the interface).
+// taskType looks like "risk:{role}:{type}:{stage}" (e.g. "risk:5:mix_video:precreate"),
+// letting audit reconciliation search by (role,type).
 func (a *RiskAuditApp) NewSyncAuditRecorder(ctx context.Context, userID int64, projectID string, taskStepID int64, taskType string) domain.SyncAuditRecorder {
 	return dao.NewSyncAuditRecorder(ctx, userID, projectID, taskStepID, taskType, a.backend, a.records)
 }
 
-// checkRiskBlacklist 送审前黑名单检查：命中返回 true（拦截）；
-// blacklist 未注入（nil）或 subProduct 为空时放行。
+// checkRiskBlacklist is the pre-submission blacklist check: a hit returns true (intercept);
+// it passes when blacklist is not injected (nil) or subProduct is empty.
 func (a *RiskAuditApp) checkRiskBlacklist(ctx context.Context, userID int64, subProduct string) bool {
 	if a.blacklist == nil || subProduct == "" {
 		return false
@@ -178,15 +178,15 @@ func (a *RiskAuditApp) checkRiskBlacklist(ctx context.Context, userID int64, sub
 	return a.blacklist.IsBlacklisted(ctx, userID, subProduct)
 }
 
-// --- 工具函数 ---
+// --- Helpers ---
 
-// mustParseRecordID 解析 extra 里的 callback_record_id；异常时返回 0（占位，正常流程不会走到）。
+// mustParseRecordID parses callback_record_id from extra; returns 0 on anomalies (a placeholder the normal flow never reaches).
 func mustParseRecordID(s string) uint64 {
 	id, _ := strconv.ParseUint(s, 10, 64)
 	return id
 }
 
-// asString 从 map 里安全取 string。
+// asString safely fetches a string from a map.
 func asString(v any) string {
 	if v == nil {
 		return ""
@@ -197,7 +197,7 @@ func asString(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// asInt64 从 map 里安全取 int64。
+// asInt64 safely fetches an int64 from a map.
 func asInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:

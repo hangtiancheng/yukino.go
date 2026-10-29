@@ -8,37 +8,37 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/sse"
 )
 
-// ConWriterNode 是 conversation flow 的出口算子。
+// ConWriterNode is the exit operator of the conversation flow.
 //
-// 监听 flowcontext 中两条 Slice 的 SSE 帧，实时写入 HTTP 响应。
-// 一个算子、两个监听 goroutine，汇到同一个 writeFrame 出口：
+// It watches the SSE frames on two Slices in the flow context and writes them into the HTTP response in realtime.
+// One operator, two listening goroutines, converging on the same writeFrame exit:
 //
-//	Goroutine 1 (ConEndSSE):    监听 ConOnePackSSEKey   — 同步路径，帧是"半成品"
-//	Goroutine 2 (ConReconnectSSE): 监听 ConReconnectSSEKey — 异步路径，帧是"成品"
+//	Goroutine 1 (ConEndSSE):    watches ConOnePackSSEKey   — sync path, frames are "semi-finished"
+//	Goroutine 2 (ConReconnectSSE): watches ConReconnectSSEKey — async path, frames are "finished"
 //
-// 异步帧是 Worker 已组装+落库过的成品，只需原样 marshal 下发，不重复写 DB。
+// Async frames are finished products already assembled and persisted by the Worker; they are marshaled and sent as-is, with no duplicate DB writes.
 type ConWriterNode struct {
-	writer *sse.Writer // SSE 写入器，直接将帧写入 HTTP ResponseWriter
+	writer *sse.Writer // SSE writer, writing frames directly into the HTTP ResponseWriter
 }
 
-// NewConWriterNode 创建 ConWriterNode。
+// NewConWriterNode creates a ConWriterNode.
 func NewConWriterNode(w *sse.Writer) *ConWriterNode {
 	return &ConWriterNode{writer: w}
 }
 
-// Name 返回算子名。
+// Name returns the operator name.
 func (n *ConWriterNode) Name() string { return "con_writer" }
 
-// DoImpl 启动两个 goroutine 分别监听同步 key 和异步 key，
-// 汇到同一个 writeFrame 出口写入 HTTP 响应。
-// 任一 goroutine 收到 __FLOW_END__ 后发信号给另一个退出。
+// DoImpl starts two goroutines watching the sync key and the async key respectively,
+// converging on the same writeFrame exit to write the HTTP response.
+// Whichever goroutine receives __FLOW_END__ signals the other to exit.
 func (n *ConWriterNode) DoImpl(ctx *seda.Context) (int, string) {
 	var wg sync.WaitGroup
 	stopCh := make(chan struct{})
 	var once sync.Once
 	stop := func() { once.Do(func() { close(stopCh) }) }
 
-	// Goroutine 1: 同步帧 (ConOnePackSSEKey) — Phase 1 已有
+	// Goroutine 1: sync frames (ConOnePackSSEKey) — from Phase 1
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -67,8 +67,8 @@ func (n *ConWriterNode) DoImpl(ctx *seda.Context) (int, string) {
 		}
 	}()
 
-	// Goroutine 2: 异步/重连帧 (ConReconnectSSEKey) — Phase 2 新增
-	// 异步帧是 "成品"，Worker 那边已组装+落库过，这里只需原样下发
+	// Goroutine 2: async/reconnect frames (ConReconnectSSEKey) — added in Phase 2
+	// Async frames are "finished"; the Worker already assembled and persisted them, so just send them as-is
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -101,8 +101,8 @@ func (n *ConWriterNode) DoImpl(ctx *seda.Context) (int, string) {
 	return 0, ""
 }
 
-// writeFrame 将 SSEFrame JSON 字符串写入 HTTP 响应。
-// 从 frame 中提取 type 字段作为 SSE event 名。
+// writeFrame writes an SSEFrame JSON string into the HTTP response.
+// It extracts the type field from the frame as the SSE event name.
 func (n *ConWriterNode) writeFrame(frame string) {
 	if n.writer == nil {
 		return
@@ -115,7 +115,7 @@ func (n *ConWriterNode) writeFrame(frame string) {
 	}
 }
 
-// extractEventType 从 SSEFrame JSON 中提取 type 字段作为 SSE event 名。
+// extractEventType extracts the type field from the SSEFrame JSON as the SSE event name.
 func extractEventType(raw string) string {
 	var tmp struct {
 		Type string `json:"type"`

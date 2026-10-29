@@ -1,68 +1,68 @@
 package model
 
-// CGTaskStep 是 cg_task_step 表的 GORM 模型。
+// CGTaskStep is the GORM model of the cg_task_step table.
 //
-// 职责：子智能体执行的每个步骤记录。支持树形结构（parent_step_id 自引用），
-// 一道子智能体调用可以有多个子步骤（工具调用）。
-// step_output 是 ③ 对话 Worker 回流前端的唯一数据源——poll 轮询此列推 SSE。
+// Responsibility: one record per sub-agent execution step. Supports a tree structure (parent_step_id self-reference);
+// a single sub-agent invocation can have multiple sub-steps (tool calls).
+// step_output is the sole data source for the conversation Worker's backflow to the frontend — the poll loop reads this column and pushes SSE.
 type CGTaskStep struct {
 	ID int64 `gorm:"column:id;primaryKey;autoIncrement"`
-	// 步骤业务主键（雪花 ID 整数），全局唯一
+	// Step business primary key (snowflake ID integer), globally unique
 	TaskStepID int64 `gorm:"column:task_step_id;uniqueIndex;not null"`
-	// 关联 cg_task_run.task_run_id
+	// Associated with cg_task_run.task_run_id
 	TaskRunID int64 `gorm:"column:task_run_id;index;not null"`
-	// 父步骤 ID（0=顶层步骤，即子智能体级）
+	// Parent step ID (0 = top-level step, i.e. sub-agent level)
 	ParentStepID int64 `gorm:"column:parent_step_id;index;not null;default:0"`
-	// 用户 ID
+	// User ID
 	UserID int64 `gorm:"column:user_id;not null"`
-	// 智能体 ID
+	// Agent ID
 	AgentID string `gorm:"column:agent_id;size:64;not null"`
-	// 会话 ID
+	// Session ID
 	SessionID string `gorm:"column:session_id;index;size:64;not null"`
-	// 定时任务 ID（非定时为 0）
+	// Cron task ID (0 when not cron-driven)
 	CronTaskID int64 `gorm:"column:cron_task_id;not null;default:0"`
-	// 步骤名称（子智能体级=agent 名，工具调用级=tool 名）
+	// Step name (sub-agent level = agent name, tool-call level = tool name)
 	StepName string `gorm:"column:step_name;size:256;not null;default:''"`
-	// 步骤输入 JSON
+	// Step input JSON
 	StepInput string `gorm:"column:step_input;type:mediumtext;not null"`
-	// 步骤输出 JSON（供 poll 回流读取）
+	// Step output JSON (read by the poll backflow)
 	StepOutput string `gorm:"column:step_output;type:mediumtext;not null"`
-	// 中间结果 JSON（need_wait=Yes 时的中间产物）
+	// Intermediate result JSON (interim product when need_wait=Yes)
 	IntermediateResult string `gorm:"column:intermediate_result;type:mediumtext;not null"`
-	// 状态：0=Pending, 1=Running, 2=Interrupted, 3=Finished, 4=Failed, 5=Skipped
+	// Status: 0=Pending, 1=Running, 2=Interrupted, 3=Finished, 4=Failed, 5=Skipped
 	Status int32 `gorm:"column:status;not null;default:0"`
-	// 是否需要等待：0=No 1=Yes（触发了异步产线，等产线回调）
+	// Whether waiting is needed: 0=No 1=Yes (an async pipeline was triggered; waiting for its callback)
 	NeedWait int8 `gorm:"column:need_wait;not null;default:0"`
-	// 产品线
+	// Product line
 	Pd string `gorm:"column:pd;size:32;not null;default:''"`
-	// 智能体类型
+	// Agent type
 	AgentType string `gorm:"column:agent_type;size:32;not null;default:''"`
-	// 开始时间（毫秒时间戳）
+	// Start time (millisecond timestamp)
 	StartTime int64 `gorm:"column:start_time;not null;default:0"`
-	// 结束时间（毫秒时间戳）
+	// End time (millisecond timestamp)
 	EndTime int64 `gorm:"column:end_time;not null;default:0"`
-	// 分片键（复刻环境固定为 0）
+	// Shard key (fixed to 0 in the replica environment)
 	ShardingKey int32 `gorm:"column:sharding_key;not null;default:0"`
-	// 创建时间（毫秒时间戳）
+	// Creation time (millisecond timestamp)
 	CreateTime int64 `gorm:"column:create_time;not null"`
-	// 更新时间（毫秒时间戳）
+	// Update time (millisecond timestamp)
 	UpdateTime int64 `gorm:"column:update_time;not null"`
 }
 
 func (CGTaskStep) TableName() string { return "cg_task_step" }
 
-// cg_task_step 状态常量（真实系统有 6 个状态）。
+// cg_task_step status constants (the reference system has 6 statuses).
 const (
-	TaskStepStatusPending     int32 = 0 // 等待执行
-	TaskStepStatusRunning     int32 = 1 // 执行中
-	TaskStepStatusInterrupted int32 = 2 // 中断（HIL 断点等待用户操作）
-	TaskStepStatusFinished    int32 = 3 // 已完成
-	TaskStepStatusFailed      int32 = 4 // 执行失败
-	TaskStepStatusSkipped     int32 = 5 // 已跳过
+	TaskStepStatusPending     int32 = 0 // waiting to execute
+	TaskStepStatusRunning     int32 = 1 // running
+	TaskStepStatusInterrupted int32 = 2 // interrupted (HIL breakpoint awaiting user action)
+	TaskStepStatusFinished    int32 = 3 // finished
+	TaskStepStatusFailed      int32 = 4 // execution failed
+	TaskStepStatusSkipped     int32 = 5 // skipped
 )
 
-// NeedWait 常量。
+// NeedWait constants.
 const (
-	NeedWaitNo  int8 = 0 // 子智能体自己产出了终态结果
-	NeedWaitYes int8 = 1 // 触发了异步产线，等产线回调
+	NeedWaitNo  int8 = 0 // the sub-agent produced the terminal result itself
+	NeedWaitYes int8 = 1 // an async pipeline was triggered; waiting for its callback
 )

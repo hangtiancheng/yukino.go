@@ -8,7 +8,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// task_type 非法值被拒（第 8 章 §8.4.3 测试断言还原）
+// Invalid task_type values are rejected (chapter 8 §8.4.3 test assertions restored)
 func TestValidateGenerateResponse_BadTaskType(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"ok","task_type":"bad","task_arguments":"{}"}`)
 	testx.False(t, vr.OK)
@@ -16,34 +16,34 @@ func TestValidateGenerateResponse_BadTaskType(t *testing.T) {
 	testx.Contains(t, vr.Message, "task_type")
 }
 
-// 非合法 JSON（Markdown 包裹）→ 修复 → 校验通过
+// Invalid JSON (Markdown wrapper) → repaired → validation passes
 func TestValidateGenerateResponse_RepairMarkdown(t *testing.T) {
 	vr := manager.ValidateGenerateResponse("```json\n{\"thought\":\"t\",\"friendly_reply\":\"ok\",\"task_type\":\"only_reply\",\"task_arguments\":\"{}\"}\n```")
 	testx.True(t, vr.OK)
 	testx.Equal(t, "ok", vr.FriendlyReply)
 }
 
-// task_arguments 越权派发 idea_king → 拒绝（第 8 章 §8.4.3：选题只能走 idea_king_api，
-// 不能走子任务投递；且 idea_king 不在产线展开的 plan 内）
+// task_arguments dispatching idea_king overreach → rejected (chapter 8 §8.4.3: topic selection may only use idea_king_api,
+// not subtask dispatch; and idea_king is not in the pipeline-expanded plan)
 func TestValidateGenerateResponse_AgentWhitelistReject(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"ok","task_type":"new_agents_plan","agents_pipeline":"mix_video","task_arguments":"{\"agents\":[{\"agent_id\":\"idea_king\",\"input\":\"start\"}]}"}`)
 	testx.False(t, vr.OK)
 	testx.Contains(t, vr.Message, "idea_king")
 }
 
-// 合法 new_agents_plan → 服务端按 LLM 填的 agents 翻译（§8.4.4：LLM 决定链）
+// Valid new_agents_plan → the server translates per the LLM-filled agents (§8.4.4: the LLM decides the chain)
 func TestValidateGenerateResponse_ValidPlan(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"已派发","task_type":"new_agents_plan","agents_pipeline":"mix_video","task_arguments":"{\"agents\":[{\"agent_id\":\"gold_scriptwriter\",\"input\":\"生成海报\"}]}"}`)
 	testx.True(t, vr.OK)
 	testx.NotNil(t, vr.Plan)
 	testx.Equal(t, "new_agents_plan", vr.Plan.TaskType)
-	// 链 = LLM 填的 agents（服务端不补产线标准 agent）
+	// Chain = the LLM-filled agents (the server does not add the pipeline's standard agents)
 	testx.Len(t, vr.Plan.PlanSteps.Agents, 1)
 	testx.Equal(t, "gold_scriptwriter", vr.Plan.PlanSteps.Agents[0].AgentID)
 	testx.Equal(t, "生成海报", vr.Plan.PlanSteps.Agents[0].Input)
 }
 
-// LLM 填完整的 mix_video 链 → 服务端翻译保留顺序 + 补缺失 input
+// The LLM fills the complete mix_video chain → server translation preserves order + fills missing inputs
 func TestValidateGenerateResponse_ValidPlanFullChain(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"已派发","task_type":"new_agents_plan","agents_pipeline":"mix_video","task_arguments":"{\"agents\":[{\"agent_id\":\"gold_scriptwriter\",\"input\":\"生成海报\"},{\"agent_id\":\"edit_master\",\"input\":\"\"}]}"}`)
 	testx.True(t, vr.OK)
@@ -51,11 +51,11 @@ func TestValidateGenerateResponse_ValidPlanFullChain(t *testing.T) {
 	testx.Len(t, vr.Plan.PlanSteps.Agents, 2)
 	testx.Equal(t, "gold_scriptwriter", vr.Plan.PlanSteps.Agents[0].AgentID)
 	testx.Equal(t, "edit_master", vr.Plan.PlanSteps.Agents[1].AgentID)
-	// edit_master 没填 input → 补产线默认
+	// edit_master has no input → filled with the pipeline default
 	testx.Equal(t, subtask.DefaultPipelineAgentInput(string(subtask.PipelineMixVideo), "edit_master"), vr.Plan.PlanSteps.Agents[1].Input)
 }
 
-// agents_pipeline 填了不存在的产线 → 拒绝 + 回显合法产线（§8.4.4 枚举约束）
+// agents_pipeline filled with a nonexistent pipeline → rejected + valid pipelines echoed (§8.4.4 enum constraint)
 func TestValidateGenerateResponse_UnknownPipelineReject(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"ok","task_type":"new_agents_plan","agents_pipeline":"no_such_pipeline","task_arguments":"{\"agents\":[]}"}`)
 	testx.False(t, vr.OK)
@@ -63,50 +63,50 @@ func TestValidateGenerateResponse_UnknownPipelineReject(t *testing.T) {
 	testx.Contains(t, vr.Message, "mix_video")
 }
 
-// new_agents_plan 缺 agents_pipeline → 拒绝（§8.4.4：必须选产线）
+// new_agents_plan missing agents_pipeline → rejected (§8.4.4: a pipeline must be chosen)
 func TestValidateGenerateResponse_MissingPipelineReject(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"ok","task_type":"new_agents_plan","task_arguments":"{\"agents\":[{\"agent_id\":\"gold_scriptwriter\",\"input\":\"x\"}]}"}`)
 	testx.False(t, vr.OK)
 	testx.Contains(t, vr.Message, "agents_pipeline")
 }
 
-// 兼容旧协议：agents_pipeline 填在 task_arguments 内层也能解析（fake 链路/老测试）
+// Legacy protocol compatibility: agents_pipeline inside task_arguments also parses (fake chain / old tests)
 func TestValidateGenerateResponse_PipelineInTaskArguments(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"已派发","task_type":"new_agents_plan","task_arguments":"{\"agents_pipeline\":\"article\",\"agents\":[{\"agent_id\":\"gold_scriptwriter\",\"input\":\"生成笔记\"}]}"}`)
 	testx.True(t, vr.OK)
 	testx.NotNil(t, vr.Plan)
-	// article 链：idea_king → gold_scriptwriter；plan 从 gold_scriptwriter 起
+	// article chain: idea_king → gold_scriptwriter; the plan starts at gold_scriptwriter
 	testx.Len(t, vr.Plan.PlanSteps.Agents, 1)
 	testx.Equal(t, "gold_scriptwriter", vr.Plan.PlanSteps.Agents[0].AgentID)
 }
 
-// LLM 给产线外 agent 填 input → 拒绝（§8.4.4：agent 链由服务端固定，LLM 只填产线内 agent）
+// The LLM filling input for an agent outside the pipeline → rejected (§8.4.4: the agent chain is bounded by the server; the LLM fills only in-pipeline agents)
 func TestValidateGenerateResponse_AgentOutsidePipelineReject(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"ok","task_type":"new_agents_plan","agents_pipeline":"article","task_arguments":"{\"agents\":[{\"agent_id\":\"edit_master\",\"input\":\"x\"}]}"}`)
 	testx.False(t, vr.OK)
 	testx.Contains(t, vr.Message, "edit_master")
 }
 
-// task_arguments 被模型写成对象（非字符串）→ 容错处理
+// task_arguments written by the model as an object (not a string) → handled tolerantly
 func TestValidateGenerateResponse_ObjectTaskArguments(t *testing.T) {
 	vr := manager.ValidateGenerateResponse(`{"thought":"t","friendly_reply":"ok","task_type":"only_reply","task_arguments":{"foo":"bar"}}`)
 	testx.True(t, vr.OK)
 }
 
-// RepairJSON 去 Markdown 包裹
+// RepairJSON strips Markdown wrappers
 func TestRepairJSON(t *testing.T) {
 	out, ok := manager.RepairJSON("```json\n{\"a\":1}\n```")
 	testx.True(t, ok)
 	testx.JSONEq(t, `{"a":1}`, out)
 }
 
-// generate_response 定义注入产线枚举（§8.4.4：agents_pipeline 是顶层参数 + enum 硬约束）。
-// 产线数据源在 subtask，manager 的 protocol 注入需自动跟随。
+// The generate_response definition injects the pipeline enum (§8.4.4: agents_pipeline is a top-level parameter + hard enum constraint).
+// The pipeline data source lives in subtask; the manager's protocol injection must follow automatically.
 func TestGenerateResponseTool_InjectsPipelineEnum(t *testing.T) {
 	def := manager.ManagerProtocolTools()[0]
 	agentsPipeline, ok := def.Parameters.Properties["agents_pipeline"]
-	testx.True(t, ok, "generate_response 应有顶层 agents_pipeline 参数")
-	// 硬约束：enum 覆盖所有合法产线（模型只能从枚举里选）
+	testx.True(t, ok, "generate_response should have the top-level agents_pipeline parameter")
+	// Hard constraint: the enum covers all valid pipelines (the model can only pick from the enum)
 	testx.ElementsMatch(t, subtask.ValidPipelineNames(), agentsPipeline.Enum)
 	testx.Contains(t, agentsPipeline.Enum, string(subtask.PipelineMixVideo))
 	testx.Contains(t, agentsPipeline.Enum, string(subtask.PipelineArticle))

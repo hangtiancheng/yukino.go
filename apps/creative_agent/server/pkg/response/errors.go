@@ -1,7 +1,7 @@
 package response
 
-// 业务错误码常量。HTTP 状态码与业务错误码分离：前者用于传输层，
-// 后者（code 字段）用于前端业务分支判断。
+// Business error code constants. HTTP status codes and business error codes are separated:
+// the former is for the transport layer, the latter (the code field) is for frontend business branching.
 const (
 	CodeSuccess         = 0
 	CodeBadRequest      = 40000

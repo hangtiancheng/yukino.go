@@ -2,13 +2,13 @@ package model
 
 import "gorm.io/gorm"
 
-// User 是用户数据模型。Password 存 bcrypt 哈希，永不序列化到 JSON。
+// User is the user data model. Password stores the bcrypt hash and is never serialized to JSON.
 //
-// ⚠️ created_at/updated_at 用 int64（Unix 秒，autoCreateTime/autoUpdateTime），
-// 对齐 base-server 的 userRow（两者共用同一张远程 users 表）。
-// 不要用 gorm.Model（其 CreatedAt/UpdatedAt 是 time.Time → datetime(3)），
-// 否则 AutoMigrate 会把已对齐成 bigint 的列改回 datetime，撞上严格模式下
-// 已有 bigint 数据报错（Error 1292）。
+// ⚠️ created_at/updated_at use int64 (Unix seconds, autoCreateTime/autoUpdateTime),
+// aligned with base-server's userRow (both share the same remote users table).
+// Do not use gorm.Model (its CreatedAt/UpdatedAt are time.Time → datetime(3));
+// otherwise AutoMigrate would change the bigint-aligned columns back to datetime, hitting
+// Error 1292 under strict mode when bigint data already exists.
 type User struct {
 	ID        uint           `gorm:"column:id;primaryKey;autoIncrement"`
 	Username  string         `gorm:"column:username;uniqueIndex;size:64;not null" json:"username"`
@@ -19,5 +19,5 @@ type User struct {
 	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index"`
 }
 
-// TableName 指定表名。
+// TableName specifies the table name.
 func (User) TableName() string { return "users" }

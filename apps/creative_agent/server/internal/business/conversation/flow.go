@@ -10,10 +10,10 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/sse"
 )
 
-// FCKGdpCtx 是 flow context 中 HTTP body 的 key（re-export 自 ops）。
+// FCKGdpCtx is the flow-context key of the HTTP body (re-exported from ops).
 const FCKGdpCtx = ops.FCKGdpCtx
 
-// FlowDeps 是 /aigc/conversation 端点所需的依赖。
+// FlowDeps holds the dependencies required by the /aigc/conversation endpoint.
 type FlowDeps struct {
 	SessionRepo       repository.SessionRepository
 	MessageRecordRepo repository.MessageRecordRepository
@@ -25,16 +25,16 @@ type FlowDeps struct {
 	Locker       infra.Locker
 	AsyncEnabled bool
 
-	// Phase 4: 快捷路径（nil 时跳过 FastPath 判断）
+	// Phase 4: fast path (the FastPath check is skipped when nil)
 	FastPath *fastpath.FastPath
 
-	// Phase 4: 同步快任务回流（nil 时快路径命中只推完成帧）
+	// Phase 4: sync fast-task backflow (when nil, a fast-path hit only pushes the completion frame)
 	TaskPoller  *taskflow.Poller
 	TaskRunRepo repository.TaskRunRepository
 }
 
-// NewFlow 注册算子并返回 conversation flow 图（业务层入口方法）。
-// handler 只负责 HTTP 绑定，把 body 注入 flow context 后调用 WaitExec。
+// NewFlow registers the operators and returns the conversation flow graph (the business-layer entry method).
+// The handler only does HTTP binding: it injects the body into the flow context and calls WaitExec.
 func NewFlow(w *sse.Writer, deps FlowDeps) seda.FlowConf {
 	seda.Register("con_reader", func() seda.Operator {
 		return ops.NewConReaderNode(

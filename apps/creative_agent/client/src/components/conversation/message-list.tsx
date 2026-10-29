@@ -36,7 +36,7 @@ export function MessageList({
     return (
       <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3">
         <MessageSquare className="size-10" />
-        <p>输入你的问题，开始对话</p>
+        <p>Type your question to start the conversation</p>
       </div>
     );
   }

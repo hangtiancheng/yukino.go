@@ -8,13 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// AuthService 负责 JWT 的签发与解析。
+// AuthService handles JWT issuance and parsing.
 type AuthService struct {
 	secret []byte
 	ttl    time.Duration
 }
 
-// Claims 是 JWT 中携带的自定义声明。UserID 用于跨服务身份透传。
+// Claims are the custom claims carried in the JWT. UserID is used for cross-service identity propagation.
 type Claims struct {
 	Username string `json:"username"`
 	UserID   int64  `json:"user_id"`
@@ -22,7 +22,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// NewAuthService 创建 AuthService，token 默认有效期 24 小时。
+// NewAuthService creates an AuthService; tokens default to a 24-hour validity.
 func NewAuthService(secret string) *AuthService {
 	return &AuthService{
 		secret: []byte(secret),
@@ -30,7 +30,7 @@ func NewAuthService(secret string) *AuthService {
 	}
 }
 
-// GenerateToken 为指定用户签发带 jti + user_id 的 JWT。
+// GenerateToken issues a JWT with jti + user_id for the given user.
 func (s *AuthService) GenerateToken(username string, userID int64) (string, error) {
 	now := time.Now()
 	claims := Claims{
@@ -46,7 +46,7 @@ func (s *AuthService) GenerateToken(username string, userID int64) (string, erro
 	return token.SignedString(s.secret)
 }
 
-// ParseToken 解析并校验 token，返回 Claims。
+// ParseToken parses and validates the token, returning the Claims.
 func (s *AuthService) ParseToken(tokenString string) (*Claims, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {

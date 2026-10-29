@@ -44,7 +44,7 @@ export const useAuthStore = create<AuthState>()(
           try {
             await api.post("/api/v1/logout");
           } catch {
-            // 网络失败也要清理本地状态
+            // Clear local state even if the network call fails
           }
         }
         set({ token: null });
@@ -54,7 +54,7 @@ export const useAuthStore = create<AuthState>()(
   ),
 );
 
-/** 当前 token 的 claims（用户名 / user_id）。 */
+/** Claims of the current token (username / user_id). */
 export function currentClaims(): JwtClaims | null {
   const token = useAuthStore.getState().token;
   return token ? parseJwt(token) : null;

@@ -23,14 +23,14 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// TestAsyncTraceE2E 验证异步全链路 trace：内存 exporter 断言 span 串接。
-// 复用 phase3_test.go 的链路构建方式（memory infra + sqlite）。
-// 测试先设全局 provider 为内存 exporter（worker/executor 用 otel.Tracer() 读全局），
-// 不调用 app.New，因此不会触发 otelx.Init 覆盖全局。
-// 同时设全局 W3C propagator：默认全局是 no-op，不设则 tracex.InjectCarrier 产不出 traceparent。
+// TestAsyncTraceE2E verifies the async full-chain trace: an in-memory exporter asserts span chaining.
+// It reuses phase3_test.go's chain construction (memory infra + sqlite).
+// The test first sets the global provider to the in-memory exporter (worker/executor read the global via otel.Tracer());
+// app.New is not called, so otelx.Init never overwrites the global.
+// It also sets the global W3C propagator: the global default is no-op, and without it tracex.InjectCarrier produces no traceparent.
 func TestAsyncTraceE2E(t *testing.T) {
-	// 0. 设全局 provider + W3C propagator（carrier 透传依赖传播器），
-	//    用 defer 恢复旧值，避免污染同一测试进程里其他测试的全局状态。
+	// 0. Set the global provider + W3C propagator (carrier propagation depends on the propagator);
+	//    restore the old values with defer to avoid polluting global state for other tests in the same process.
 	tp, exp := otelx.NewMemoryExporter()
 	oldTP := otel.GetTracerProvider()
 	oldProp := otel.GetTextMapPropagator()
@@ -45,7 +45,7 @@ func TestAsyncTraceE2E(t *testing.T) {
 		_ = tp.Shutdown(context.Background())
 	}()
 
-	// 1. 构建 worker+executor 全链路（同 phase3_test.go）
+	// 1. Build the full worker+executor chain (same as phase3_test.go)
 	ctx := context.Background()
 	zlog := logger.New("error")
 	db := newPhase3TestDB(t)
@@ -86,7 +86,7 @@ func TestAsyncTraceE2E(t *testing.T) {
 	defer taskCancel()
 	go taskConsumer.Start(taskCtx)
 
-	// 2. 预建 async_request + message_record，投递带 traceparent 的 stream 消息
+	// 2. Pre-create async_request + message_record and push a stream message carrying traceparent
 	msgID := "msg-trace-e2e"
 	testx.NoError(t, asyncRepo.InsertPending(ctx, &model.CGAsyncRequest{
 		AsyncRequestID: "ar-trace-e2e", MessageID: msgID, UserID: 1,
@@ -100,10 +100,10 @@ func TestAsyncTraceE2E(t *testing.T) {
 		ChatText: string(ctJSON), Status: model.MessageStatusInProgress,
 	}))
 
-	// 用内存 tracer 建一个 parent span，注入 carrier 模拟 HTTP 链路
+	// Create a parent span with the in-memory tracer and inject the carrier, simulating the HTTP chain
 	parentCtx, parentSpan := tp.Tracer("test").Start(context.Background(), "http.conversation")
 	carrier := tracex.InjectCarrier(parentCtx)
-	testx.NotEmpty(t, carrier["traceparent"], "parent span 应产出 traceparent")
+	testx.NotEmpty(t, carrier["traceparent"], "the parent span should produce a traceparent")
 
 	convBody, _ := json.Marshal(map[string]interface{}{
 		"async_request_id": "ar-trace-e2e",
@@ -116,7 +116,7 @@ func TestAsyncTraceE2E(t *testing.T) {
 	})
 	testx.NoError(t, convStream.Push(ctx, msgID, convBody))
 
-	// 3. 等待 task_run Finished
+	// 3. Wait for task_run Finished
 	testx.Eventually(t, func() bool {
 		var runs []model.CGTaskRun
 		db.Find(&runs)
@@ -126,41 +126,41 @@ func TestAsyncTraceE2E(t *testing.T) {
 			}
 		}
 		return false
-	}, 15*time.Second, 200*time.Millisecond, "子任务应执行完成")
+	}, 15*time.Second, 200*time.Millisecond, "the subtask should finish")
 	parentSpan.End()
 
-	// 4. 断言内存 exporter 收到 worker.process + task.process，且与 HTTP parent 同一 trace。
-	// 内存 exporter 用 10ms 批处理，worker.process 是外层 span（结束最晚），需轮询等待 flush。
+	// 4. Assert the in-memory exporter received worker.process + task.process, in the same trace as the HTTP parent.
+	// The in-memory exporter batches at 10ms; worker.process is the outer span (finishing last), so poll until flushed.
 	var workerSpan, taskSpan sdktrace.ReadOnlySpan
 	testx.Eventually(t, func() bool {
 		spans := exp.GetSpans()
 		workerSpan = findSpanByName(spans, "worker.process")
 		taskSpan = findSpanByName(spans, "task.process")
 		return workerSpan != nil && taskSpan != nil
-	}, 5*time.Second, 50*time.Millisecond, "应收到 worker.process + task.process span")
+	}, 5*time.Second, 50*time.Millisecond, "worker.process + task.process spans should be received")
 
 	spans := exp.GetSpans()
 	var names []string
 	for _, s := range spans {
 		names = append(names, s.Name())
 	}
-	testx.Contains(t, names, "worker.process", "应有 worker.process span")
-	testx.Contains(t, names, "task.process", "应有 task.process span")
+	testx.Contains(t, names, "worker.process", "a worker.process span should exist")
+	testx.Contains(t, names, "task.process", "a task.process span should exist")
 
-	testx.NotNil(t, workerSpan, "worker.process span 应存在")
-	testx.NotNil(t, taskSpan, "task.process span 应存在")
+	testx.NotNil(t, workerSpan, "the worker.process span should exist")
+	testx.NotNil(t, taskSpan, "the task.process span should exist")
 	testx.Equal(t, workerSpan.SpanContext().TraceID(), taskSpan.SpanContext().TraceID(),
-		"worker 与 task 应属同一 trace")
+		"worker and task should belong to the same trace")
 	testx.Equal(t, parentSpan.SpanContext().TraceID(), workerSpan.SpanContext().TraceID(),
-		"worker.process 应继承 HTTP parent 的 trace")
+		"worker.process should inherit the HTTP parent's trace")
 
-	// 锁定 taskPayload 真实 msg_id 修复：task.process span 应带真实 messageID 属性
-	//（此前是 "task-{id}" guid，task 链路无法关联 conversation 链路）。
+	// Locks in the taskPayload real-msg_id fix: the task.process span should carry the real messageID attribute
+	// (previously it was a "task-{id}" guid, so the task chain could not be correlated with the conversation chain).
 	gotMsgID := spanAttr(taskSpan, "msg_id")
-	testx.Equal(t, msgID, gotMsgID, "task.process span 的 msg_id 应为真实 messageID")
+	testx.Equal(t, msgID, gotMsgID, "the task.process span's msg_id should be the real messageID")
 }
 
-// spanAttr 返回 span 指定 key 的字符串属性（不存在返回 ""）。
+// spanAttr returns the string attribute of a span for the given key (empty string when absent).
 func spanAttr(s sdktrace.ReadOnlySpan, key string) string {
 	for _, kv := range s.Attributes() {
 		if string(kv.Key) == key {
@@ -170,7 +170,7 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) string {
 	return ""
 }
 
-// findSpanByName 从内存 exporter 收集的 span 里按名字查找（未找到返回 nil）。
+// findSpanByName looks up a span by name among those collected by the in-memory exporter (nil when not found).
 func findSpanByName(spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
 	for _, s := range spans {
 		if s.Name() == name {

@@ -1,4 +1,4 @@
-# Stage 1: Build（生产二进制不依赖 sqlite/cgo，静态编译）
+# Stage 1: Build (the production binary does not depend on sqlite/cgo; static compilation)
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -12,7 +12,7 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /server .
 COPY config/ config/
-# SKILL.md 动态工具源：不拷贝则容器内 skill 功能静默失效
+# SKILL.md dynamic tool sources: if not copied, the skill feature silently stops working inside the container
 COPY skills/ skills/
 EXPOSE 8080
 CMD ["./server"]

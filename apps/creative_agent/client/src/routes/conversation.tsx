@@ -17,10 +17,10 @@ export function ConversationPage() {
   return (
     <div className="mx-auto flex h-svh max-w-3xl flex-col">
       <header className="flex items-center justify-between border-b p-4">
-        <h1 className="text-lg font-semibold tracking-tight">智能对话</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Agent Chat</h1>
         <Button variant="outline" size="sm" render={<Link to="/" />}>
           <Home data-icon="inline-start" />
-          返回首页
+          Back to home
         </Button>
       </header>
 

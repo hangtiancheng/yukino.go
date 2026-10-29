@@ -14,22 +14,22 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/model"
 )
 
-// runnerTracerName 是 Runner 的链路追踪器名称。
-// 每次 Run 时用 otel.Tracer(runnerTracerName) 现取：全局 provider 可能在
-// 测试中被子进程替换（otel.SetTracerProvider），包 init 捕获的 tracer 会钉死旧 provider。
+// runnerTracerName is the tracer name of the Runner.
+// Each Run fetches otel.Tracer(runnerTracerName) on the fly: the global provider may be
+// replaced in tests (otel.SetTracerProvider), and a tracer captured at package init would pin the old provider.
 const runnerTracerName = "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/provider"
 
-// SupervisorRunner 封装了 ReAct 引擎的完整运行流程。
+// SupervisorRunner encapsulates the full run flow of the ReAct engine.
 //
-// 同步路径和异步 Worker 均通过此结构体执行业务逻辑，
-// 差异仅在于 onFrame 回调的目标：
-//   - 同步路径: onFrame → pushFrame → ctx.Push(ConOnePackSSEKey, json)
-//   - 异步路径: onFrame → chunkStore.Write(msgID, json, false)
+// Both the sync path and the async Worker execute business logic through this struct;
+// the only difference is the target of the onFrame callback:
+//   - Sync path: onFrame → pushFrame → ctx.Push(ConOnePackSSEKey, json)
+//   - Async path: onFrame → chunkStore.Write(msgID, json, false)
 //
-// 这使得 ReAct 引擎 (react.Supervisor) 完全零修改即可在两种路径下复用。
+// This lets the ReAct engine (react.Supervisor) be reused on both paths with zero modifications.
 //
-// Phase 3 扩展：RunWithOutput 在管家产出 new_agents_plan 时通过 onOutput 回调
-// 通知调用方（Worker）投递子任务——这是"管家 → 子任务"链路的接线点。
+// Phase 3 extension: RunWithOutput notifies the caller (Worker) via the onOutput callback when the
+// manager produces new_agents_plan, so it can dispatch subtasks — the wiring point of the "manager → subtask" chain.
 type SupervisorRunner struct {
 	frameSuffixes []func()
 
@@ -37,28 +37,28 @@ type SupervisorRunner struct {
 	strategy react.Strategy
 	hooks    react.Hooks
 
-	// planStrategy 是 RunWithOutput 的管家决策策略（约束链）。由接线层（app.go/worker）
-	// 注入 manager.ManagerStrategy；nil 时回退 FakePlanStrategy（Phase 3 行为不变）。
-	// 通过接口注入解耦：provider 组件层不直接 import manager 业务包，避免依赖环。
+	// planStrategy is the manager decision strategy (constraint chain) for RunWithOutput. The wiring layer (app.go/worker)
+	// injects manager.ManagerStrategy; when nil it falls back to FakePlanStrategy (Phase 3 behavior unchanged).
+	// Interface injection decouples the layers: the provider component layer does not import the manager business package directly, avoiding a dependency cycle.
 	planStrategy react.Strategy
 
-	// planTools 是 RunWithOutput 的管家工具注册表（协议工具 generate_response/idea_king_api）。
-	// 由接线层注入 manager.NewManagerToolRegistry()；nil 时回退 FakeTools。
-	// 同样通过接口解耦，provider 组件层不直接 import manager 业务包。
+	// planTools is the manager tool registry for RunWithOutput (protocol tools generate_response/idea_king_api).
+	// The wiring layer injects manager.NewManagerToolRegistry(); when nil it falls back to FakeTools.
+	// Also decoupled via interfaces: the provider component layer does not import the manager business package directly.
 	planTools react.Tools
 
-	// onInterrupt 是 HIL 断点回调：引擎保存 checkpoint 到 agentCtx 后，Runner 透传给调用方持久化。
+	// onInterrupt is the HIL breakpoint callback: after the engine saves the checkpoint into agentCtx, the Runner passes it through for the caller to persist.
 	onInterrupt OnInterrupt
 
-	// prepare 是 prompt 注入函数。SetPrepare 设置后优先，否则 DefaultAssistantPrepare。
+	// prepare is the prompt-injection function. The value set via SetPrepare takes priority; otherwise DefaultAssistantPrepare.
 	prepare PrepareFunc
 
-	// streaming 是流式开关：开启时 LLM 走 ChatStream 逐 chunk 实时出 text-delta 帧
-	// （替换终态 10-rune 事后切块）。默认关闭（同步 supervisor_agent 路径零变化）。
+	// streaming is the streaming switch: when enabled the LLM uses ChatStream and emits text-delta frames per chunk in realtime
+	// (replacing the terminal 10-rune after-the-fact chunking). Disabled by default (zero change to the sync supervisor_agent path).
 	streaming bool
-	// streamedAnyContent 记录本轮 Run 流式是否发过任何 content 帧。
-	// 用于终态判断：强制 tool_choice=required 时 LLM 可能只返回 tool_call（content 空），
-	// 流式无帧可发，此时必须补发终态文本（friendly_reply）保证前端有内容。
+	// streamedAnyContent records whether this Run's streaming emitted any content frame.
+	// Used for the terminal decision: with forced tool_choice=required the LLM may return only a tool_call (empty content),
+	// leaving no frames to stream; the terminal text (friendly_reply) must then be emitted to guarantee the frontend has content.
 	streamedAnyContent bool
 }
 
@@ -67,13 +67,13 @@ func NewRunner() *SupervisorRunner {
 	return &SupervisorRunner{}
 }
 
-// EnableStreaming 开启流式输出：LLM 走 ChatStream 逐 chunk 实时出 text-delta 帧，
-// 替换终态 10-rune 事后切块。默认关闭（同步 supervisor_agent 路径零变化）。
+// EnableStreaming turns on streaming output: the LLM uses ChatStream and emits text-delta frames per chunk in realtime,
+// replacing the terminal 10-rune after-the-fact chunking. Disabled by default (zero change to the sync supervisor_agent path).
 func (r *SupervisorRunner) EnableStreaming() { r.streaming = true }
 
-// buildTextDeltaCallback 把 LLM 流式 chunk 转 text-delta 帧回调 onFrame。
-// 同一次 stream 内共享一个 textId（参考 comic buildStreamCallback 的 ensureTextID）。
-// 跳过 isEndingChunk=true 的末包（其 content 是完整累积值，逐 chunk 已发过，避免重复帧）。
+// buildTextDeltaCallback converts LLM streaming chunks into text-delta frames via the onFrame callback.
+// One textId is shared within a single stream (see comic buildStreamCallback's ensureTextID).
+// The final chunk with isEndingChunk=true is skipped (its content is the full accumulated value already sent chunk by chunk, avoiding duplicate frames).
 func (r *SupervisorRunner) buildTextDeltaCallback(onFrame func(SSEFrame)) react.StreamCallbackFunc {
 	textID := ""
 	return func(_ context.Context, payload *react.StreamedChatResponsePayload, isEnding bool) error {
@@ -92,14 +92,14 @@ func (r *SupervisorRunner) buildTextDeltaCallback(onFrame func(SSEFrame)) react.
 	}
 }
 
-// SetProviders 注入 LLM/Strategy/Hooks。传入 nil 表示使用默认值。
+// SetProviders injects LLM/Strategy/Hooks. Passing nil means using the defaults.
 func (r *SupervisorRunner) SetProviders(llm react.LLM, strategy react.Strategy, hooks react.Hooks) {
 	r.llm = llm
 	r.strategy = strategy
 	r.hooks = hooks
 }
 
-// 私有方法：取组件（nil 时用默认）。
+// Private helpers: fetch components (defaults when nil).
 func (r *SupervisorRunner) llmOr() react.LLM {
 	if r.llm != nil {
 		return r.llm
@@ -124,10 +124,10 @@ func (r *SupervisorRunner) hooksOr() react.Hooks {
 	return &appkitfake.FakeHooks{}
 }
 
-// SetPrepare 注入 prompt（业务层调用）。nil 时用 DefaultAssistantPrepare。
+// SetPrepare injects the prompt (called by the business layer). When nil, DefaultAssistantPrepare is used.
 func (r *SupervisorRunner) SetPrepare(fn PrepareFunc) { r.prepare = fn }
 
-// prepareOr 取 prompt：优先注入值，否则默认通用 assistant。
+// prepareOr fetches the prompt: the injected value takes priority, otherwise the generic assistant default.
 func (r *SupervisorRunner) prepareOr() PrepareFunc {
 	if r.prepare != nil {
 		return r.prepare
@@ -135,7 +135,7 @@ func (r *SupervisorRunner) prepareOr() PrepareFunc {
 	return DefaultAssistantPrepare
 }
 
-// RunWithOutput 的默认组件（Plan 专属：FakePlanLLM/FakePlanStrategy）。
+// Default components for RunWithOutput (plan-specific: FakePlanLLM/FakePlanStrategy).
 func (r *SupervisorRunner) planLLMOr() react.LLM {
 	if r.llm != nil {
 		return r.llm
@@ -159,19 +159,19 @@ func (r *SupervisorRunner) planStrategyOr() react.Strategy {
 	return appkitfake.FakePlanStrategy{}
 }
 
-// SetPlanStrategy 注入 RunWithOutput 的管家决策策略（约束链）。
-// 接线层（app.go/worker）在配置了真实 LLM 时注入 manager.ManagerStrategy。
+// SetPlanStrategy injects the manager decision strategy (constraint chain) for RunWithOutput.
+// The wiring layer (app.go/worker) injects manager.ManagerStrategy when a real LLM is configured.
 func (r *SupervisorRunner) SetPlanStrategy(s react.Strategy) {
 	r.planStrategy = s
 }
 
-// SetPlanTools 注入 RunWithOutput 的管家工具注册表（协议工具）。
-// 接线层注入 manager.NewManagerToolRegistry()。
+// SetPlanTools injects the manager tool registry (protocol tools) for RunWithOutput.
+// The wiring layer injects manager.NewManagerToolRegistry().
 func (r *SupervisorRunner) SetPlanTools(t react.Tools) {
 	r.planTools = t
 }
 
-// planToolsOr 取 RunWithOutput 的工具：优先注入值，否则 FakeTools。
+// planToolsOr fetches the tools for RunWithOutput: the injected value takes priority, otherwise FakeTools.
 func (r *SupervisorRunner) planToolsOr() react.Tools {
 	if r.planTools != nil {
 		return r.planTools
@@ -185,24 +185,24 @@ func (r *SupervisorRunner) AddFrameSuffix(fn func()) {
 	r.frameSuffixes = append(r.frameSuffixes, fn)
 }
 
-// SSEFrame 是 ReAct 执行过程中产出的一帧，对应 SSE 协议的一个事件。
+// SSEFrame is one frame produced during ReAct execution, corresponding to one SSE protocol event.
 type SSEFrame struct {
-	// Type 是 SSE 事件类型：message-start / text-delta / tool-call-start / message-complete / error /
+	// Type is the SSE event type: message-start / text-delta / tool-call-start / message-complete / error /
 	// ui-block-start / ui-block-complete
 	Type string `json:"type"`
-	// Content 是 text-delta 或 error 事件的文本内容
+	// Content is the text content of a text-delta or error event
 	Content string `json:"content,omitempty"`
-	// MsgID 是 message-start / message-complete 事件的消息 ID
+	// MsgID is the message ID of message-start / message-complete events
 	MsgID string `json:"msgId,omitempty"`
-	// TextID 是 text-delta 事件的文本块 ID（用于前端增量渲染）
+	// TextID is the text-block ID of text-delta events (for incremental frontend rendering)
 	TextID string `json:"textId,omitempty"`
-	// BlockID 是 ui-block-start / ui-block-complete 事件的卡片块 ID
+	// BlockID is the card-block ID of ui-block-start / ui-block-complete events
 	BlockID string `json:"blockId,omitempty"`
-	// UIMeta 是 ui-block-start 事件的 UI 组件元数据（flex 布局 + 组件模板）
+	// UIMeta is the UI component metadata of ui-block-start events (flex layout + component template)
 	UIMeta any `json:"uiMeta,omitempty"`
-	// UIData 是 ui-block-start 事件的实际数据（如 PromptOptionGroup 的 promptItems）
+	// UIData is the actual data of ui-block-start events (e.g. PromptOptionGroup's promptItems)
 	UIData any `json:"uiData,omitempty"`
-	// Interactive 标记 ui-block-start 卡片是否可交互（用户可点击）
+	// Interactive marks whether the ui-block-start card is interactive (user-clickable)
 	Interactive bool `json:"interactive,omitempty"`
 }
 
@@ -225,14 +225,14 @@ func (r *SupervisorRunner) Run(ctx context.Context, query, serverMsgID string, o
 	sup.SetHooks(hooks)
 	sup.SetPrepare(r.prepareOr())
 
-	// 流式开关：开启时 LLM 走 ChatStream 逐 chunk 实时出 text-delta（替换终态切块）
+	// Streaming switch: when enabled the LLM uses ChatStream and emits text-delta per chunk in realtime (replacing terminal chunking)
 	if r.streaming {
 		sup.SetStreamCallback(r.buildTextDeltaCallback(onFrame))
 	}
 
 	agentCtx := react.NewAgentContext(query)
-	// 先建 supervisor.react span 再写 agentCtx.Ctx：LLM 调用（react.Supervisor 读 c.Ctx）
-	// 会挂进 span 下，而不是父 span（worker.process / HTTP）下。
+	// Create the supervisor.react span before writing agentCtx.Ctx: LLM calls (react.Supervisor reads c.Ctx)
+	// then hang under this span instead of the parent span (worker.process / HTTP).
 	ctx, span := otel.Tracer(runnerTracerName).Start(ctx, "supervisor.react")
 	defer span.End()
 	agentCtx.Ctx = ctx
@@ -248,12 +248,12 @@ func (r *SupervisorRunner) Run(ctx context.Context, query, serverMsgID string, o
 	if err != nil {
 		onFrame(SSEFrame{
 			Type:    "error",
-			Content: "agent 执行出错: " + err.Error(),
+			Content: "agent execution error: " + err.Error(),
 		})
 		return "", err
 	}
 
-	// HIL 中断：透传 checkpoint 给调用方持久化 + 产 interrupt 帧
+	// HIL interrupt: pass the checkpoint through for the caller to persist + emit the interrupt frame
 	if result.Interrupted {
 		if cp := r.takeCheckpoint(agentCtx); cp != nil && r.onInterrupt != nil {
 			r.onInterrupt(cp)
@@ -267,7 +267,7 @@ func (r *SupervisorRunner) Run(ctx context.Context, query, serverMsgID string, o
 		return result.Content, nil
 	}
 
-	// 热点卡：strategy 直出（同步路径若接管家策略也会产出）。
+	// Hot-topic card: emitted directly by the strategy (the sync path also produces it when wired to the manager strategy).
 	if card := r.extractHotCard(result); card != nil {
 		r.emitCardFrames(onFrame, serverMsgID, card)
 		for _, fn := range r.frameSuffixes {
@@ -277,9 +277,9 @@ func (r *SupervisorRunner) Run(ctx context.Context, query, serverMsgID string, o
 		return result.Content, nil
 	}
 
-	// 终态文本：流式已实时发过 content 则跳过（避免重复）；否则必须补发——
-	// 强制 tool_choice=required 时 LLM 可能只返回 tool_call（content 空），
-	// 流式无帧可发，补发 strategy 封装的终态文本（friendly_reply）。
+	// Terminal text: skip if streaming already sent content in realtime (avoid duplicates); otherwise it must be emitted —
+	// with forced tool_choice=required the LLM may return only a tool_call (empty content),
+	// leaving no frames to stream, so emit the strategy-wrapped terminal text (friendly_reply).
 	r.emitTerminalText(onFrame, result.Content)
 
 	// Push message-complete frame
@@ -294,10 +294,10 @@ func (r *SupervisorRunner) Run(ctx context.Context, query, serverMsgID string, o
 	return result.Content, nil
 }
 
-// emitTerminalText 按流式状态决定是否补发终态文本帧。
-//   - 非流式：正常 10-rune 切块（原模拟流）
-//   - 流式已发过 content：跳过（已实时出帧）
-//   - 流式但没发过 content：补发终态文本（保证前端有内容）
+// emitTerminalText decides whether to emit the terminal text frame based on the streaming state.
+//   - Non-streaming: normal 10-rune chunking (the original simulated stream)
+//   - Streaming already sent content: skip (frames were emitted in realtime)
+//   - Streaming but no content sent: emit the terminal text (guarantee the frontend has content)
 func (r *SupervisorRunner) emitTerminalText(onFrame func(SSEFrame), text string) {
 	if r.streaming && r.streamedAnyContent {
 		return
@@ -310,8 +310,8 @@ func (r *SupervisorRunner) emitTerminalText(onFrame func(SSEFrame), text string)
 	}
 }
 
-// extractHotCard 从终态 AgentResult.Ext 提取热点卡数据（strategy 直出透传）。
-// 优先类型断言（同进程），fallback 到 json.Unmarshal（跨序列化鲁棒）。无卡返回 nil。
+// extractHotCard extracts hot-card data from the terminal AgentResult.Ext (passed through from the strategy).
+// Type assertion first (same process), falling back to json.Unmarshal (robust across serialization). Returns nil when there is no card.
 func (r *SupervisorRunner) extractHotCard(result *react.AgentResult) *HotCardData {
 	if result == nil {
 		return nil
@@ -319,7 +319,7 @@ func (r *SupervisorRunner) extractHotCard(result *react.AgentResult) *HotCardDat
 	if v, ok := result.Ext["hot_card"].(*HotCardData); ok && v != nil {
 		return v
 	}
-	// 跨序列化兜底：hot_card 可能是 JSON 字符串或 map
+	// Cross-serialization fallback: hot_card may be a JSON string or a map
 	if raw, ok := result.Ext["hot_card"].(string); ok && raw != "" {
 		var card HotCardData
 		if err := json.Unmarshal([]byte(raw), &card); err == nil && len(card.TitleData) > 0 {
@@ -329,9 +329,9 @@ func (r *SupervisorRunner) extractHotCard(result *react.AgentResult) *HotCardDat
 	return nil
 }
 
-// emitCardFrames 渲染热点卡帧序列：hotspot text-delta → ui-block-start → ui-block-complete。
-// 对齐参考抓包帧序（message-start → text-delta(热点markdown) → ui-block-start →
-// ui-block-complete → message-complete）。
+// emitCardFrames renders the hot-card frame sequence: hotspot text-delta → ui-block-start → ui-block-complete.
+// Aligned with the reference capture's frame order (message-start → text-delta(hotspot markdown) → ui-block-start →
+// ui-block-complete → message-complete).
 func (r *SupervisorRunner) emitCardFrames(onFrame func(SSEFrame), serverMsgID string, card *HotCardData) {
 	if card.HotspotData != "" {
 		onFrame(SSEFrame{Type: "text-delta", TextID: "t1", Content: card.HotspotData})
@@ -341,8 +341,8 @@ func (r *SupervisorRunner) emitCardFrames(onFrame func(SSEFrame), serverMsgID st
 	}
 }
 
-// RunResume 与 Run 相同，但用 HIL checkpoint 预置 AgentContext 后从断点恢复。
-// 预置 Messages/Step 并置 Interrupted=true（resume 轮 strategy 据此直接 Terminal）。
+// RunResume is the same as Run, but pre-loads the AgentContext from the HIL checkpoint and resumes from the breakpoint.
+// It pre-sets Messages/Step and marks Interrupted=true (the resume-round strategy terminates directly based on this).
 func (r *SupervisorRunner) RunResume(ctx context.Context, query, serverMsgID string, onFrame func(SSEFrame), cp *react.Checkpoint) (string, error) {
 	llm := r.llmOr()
 	tools := appkittools.FakeTools{}
@@ -359,14 +359,14 @@ func (r *SupervisorRunner) RunResume(ctx context.Context, query, serverMsgID str
 	sup.SetHooks(hooks)
 	sup.SetPrepare(r.prepareOr())
 
-	// 流式开关：开启时 LLM 走 ChatStream 逐 chunk 实时出 text-delta（替换终态切块）
+	// Streaming switch: when enabled the LLM uses ChatStream and emits text-delta per chunk in realtime (replacing terminal chunking)
 	if r.streaming {
 		sup.SetStreamCallback(r.buildTextDeltaCallback(onFrame))
 	}
 
 	agentCtx := react.NewAgentContext(query)
-	// 先建 supervisor.react span 再写 agentCtx.Ctx：LLM 调用（react.Supervisor 读 c.Ctx）
-	// 会挂进 span 下，而不是父 span（worker.process / HTTP）下。
+	// Create the supervisor.react span before writing agentCtx.Ctx: LLM calls (react.Supervisor reads c.Ctx)
+	// then hang under this span instead of the parent span (worker.process / HTTP).
 	ctx, span := otel.Tracer(runnerTracerName).Start(ctx, "supervisor.react")
 	defer span.End()
 	agentCtx.Ctx = ctx
@@ -379,11 +379,11 @@ func (r *SupervisorRunner) RunResume(ctx context.Context, query, serverMsgID str
 
 	result, err := sup.Run(agentCtx)
 	if err != nil {
-		onFrame(SSEFrame{Type: "error", Content: "agent 执行出错: " + err.Error()})
+		onFrame(SSEFrame{Type: "error", Content: "agent execution error: " + err.Error()})
 		return "", err
 	}
 
-	// 终态文本：流式已发过则跳过，否则补发（保证前端有内容）
+	// Terminal text: skip if streaming already sent it, otherwise emit it (guarantee the frontend has content)
 	r.emitTerminalText(onFrame, result.Content)
 	for _, fn := range r.frameSuffixes {
 		fn()
@@ -398,43 +398,43 @@ func FrameToJSON(f SSEFrame) string {
 	return string(b)
 }
 
-// PlanOutput 是管家 ReAct 产出 new_agents_plan 时的解析结果。
+// PlanOutput is the parsed result when the manager ReAct produces new_agents_plan.
 type PlanOutput struct {
-	// TaskType 任务类型（"new_agents_plan"）。
+	// TaskType is the task type ("new_agents_plan").
 	TaskType string `json:"task_type"`
-	// FriendlyReply 展示给用户的回复文本。
+	// FriendlyReply is the reply text shown to the user.
 	FriendlyReply string `json:"friendly_reply"`
-	// AgentsPipeline 管家选的产线（对齐真实系统 PlanConfig.AgentsPipeline）。
-	// LLM 决定链，产线限定合法 agent 集合；随 ToModelPlan 落库供下游记录/复用。
+	// AgentsPipeline is the pipeline chosen by the manager (aligned with the reference system's PlanConfig.AgentsPipeline).
+	// The LLM decides the chain; the pipeline bounds the valid agent set. Persisted via ToModelPlan for downstream recording/reuse.
 	AgentsPipeline string `json:"agents_pipeline,omitempty"`
-	// PlanSteps 计划步骤 JSON（含完整 Agents 列表）。
+	// PlanSteps is the plan-steps JSON (containing the full Agents list).
 	PlanSteps PlanStepsPayload `json:"plan_steps"`
 }
 
-// PlanStepsPayload 是管家产出计划的结构（与 model.PlanSteps 对应）。
+// PlanStepsPayload is the structure of the plan produced by the manager (corresponds to model.PlanSteps).
 type PlanStepsPayload struct {
 	Agents []PlanAgentPayload `json:"agents"`
 }
 
-// PlanAgentPayload 计划中的一个 agent。
+// PlanAgentPayload is one agent in the plan.
 type PlanAgentPayload struct {
 	AgentID string `json:"agent_id"`
 	Input   string `json:"input"`
 }
 
-// OnOutput 回调签名：管家产出 new_agents_plan 时触发。
+// OnOutput callback signature: triggered when the manager produces new_agents_plan.
 type OnOutput func(plan *PlanOutput)
 
-// OnInterrupt 回调签名：ReAct 产出 HIL 断点（ActionInterrupt）时触发，携带完整 checkpoint。
-// 调用方（Worker）在此 SaveCheckpoint 持久化恢复点，使 interrupt → persist → resume 循环闭环。
+// OnInterrupt callback signature: triggered when ReAct produces an HIL breakpoint (ActionInterrupt), carrying the full checkpoint.
+// The caller (Worker) SaveCheckpoints here to persist the recovery point, closing the interrupt → persist → resume loop.
 type OnInterrupt func(cp *react.Checkpoint)
 
-// SetOnInterrupt 注册 HIL 断点回调（调用方在此 SaveCheckpoint 持久化恢复点）。
+// SetOnInterrupt registers the HIL breakpoint callback (the caller SaveCheckpoints here to persist the recovery point).
 func (r *SupervisorRunner) SetOnInterrupt(fn OnInterrupt) {
 	r.onInterrupt = fn
 }
 
-// takeCheckpoint 从 AgentContext 取引擎存的 *react.Checkpoint（取不到则 nil）。
+// takeCheckpoint fetches the *react.Checkpoint stored by the engine from the AgentContext (nil when absent).
 func (r *SupervisorRunner) takeCheckpoint(agentCtx *react.AgentContext) *react.Checkpoint {
 	if v := agentCtx.Get(react.CheckpointKey); v != nil {
 		if cp, ok := v.(*react.Checkpoint); ok {
@@ -444,8 +444,8 @@ func (r *SupervisorRunner) takeCheckpoint(agentCtx *react.AgentContext) *react.C
 	return nil
 }
 
-// RunWithOutput 与 Run 相同，但在管家产出 new_agents_plan 时通过 onOutput 通知调用方。
-// 用于接线 Phase 3 的"管家 → Submitter"链路。
+// RunWithOutput is the same as Run, but notifies the caller via onOutput when the manager produces new_agents_plan.
+// Used to wire the Phase 3 "manager → Submitter" chain.
 func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID string, onFrame func(SSEFrame), onOutput OnOutput) (string, error) {
 	llm := r.planLLMOr()
 	tools := r.planToolsOr()
@@ -462,14 +462,14 @@ func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID
 	sup.SetHooks(hooks)
 	sup.SetPrepare(r.prepareOr())
 
-	// 流式开关：开启时 LLM 走 ChatStream 逐 chunk 实时出 text-delta（替换终态切块）
+	// Streaming switch: when enabled the LLM uses ChatStream and emits text-delta per chunk in realtime (replacing terminal chunking)
 	if r.streaming {
 		sup.SetStreamCallback(r.buildTextDeltaCallback(onFrame))
 	}
 
 	agentCtx := react.NewAgentContext(query)
-	// 先建 supervisor.react span 再写 agentCtx.Ctx：LLM 调用（react.Supervisor 读 c.Ctx）
-	// 会挂进 span 下，而不是父 span（worker.process / HTTP）下。
+	// Create the supervisor.react span before writing agentCtx.Ctx: LLM calls (react.Supervisor reads c.Ctx)
+	// then hang under this span instead of the parent span (worker.process / HTTP).
 	ctx, span := otel.Tracer(runnerTracerName).Start(ctx, "supervisor.react")
 	defer span.End()
 	agentCtx.Ctx = ctx
@@ -479,12 +479,12 @@ func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID
 
 	result, err := sup.Run(agentCtx)
 	if err != nil {
-		onFrame(SSEFrame{Type: "error", Content: "agent 执行出错: " + err.Error()})
+		onFrame(SSEFrame{Type: "error", Content: "agent execution error: " + err.Error()})
 		return "", err
 	}
 
-	// HIL 中断：透传 checkpoint 给调用方持久化 + 产 interrupt 帧。
-	// 中断时不触发 onOutput、不拆 text-delta。
+	// HIL interrupt: pass the checkpoint through for the caller to persist + emit the interrupt frame.
+	// On interrupt, onOutput is not triggered and no text-delta is split out.
 	if result.Interrupted {
 		if cp := r.takeCheckpoint(agentCtx); cp != nil && r.onInterrupt != nil {
 			r.onInterrupt(cp)
@@ -498,8 +498,8 @@ func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID
 		return result.Content, nil
 	}
 
-	// 热点卡：strategy 直出（idea_king_api 调外部热点服务 → Terminal + hot_card）。
-	// 渲染成 ui-block-start/ui-block-complete 卡帧序列，不进 plan/onOutput。
+	// Hot-topic card: emitted directly by the strategy (idea_king_api calls the external hotspot service → Terminal + hot_card).
+	// Rendered into the ui-block-start/ui-block-complete card frame sequence; does not enter plan/onOutput.
 	if card := r.extractHotCard(result); card != nil {
 		r.emitCardFrames(onFrame, serverMsgID, card)
 		for _, fn := range r.frameSuffixes {
@@ -509,15 +509,15 @@ func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID
 		return result.Content, nil
 	}
 
-	// 解析终态 JSON：若为 new_agents_plan，触发 onOutput 回调。
-	// 优先取 Strategy 透传的 plan_output（完整 JSON），fallback 到解析 result.Content。
+	// Parse the terminal JSON: if it is new_agents_plan, trigger the onOutput callback.
+	// Prefer the plan_output passed through by the Strategy (complete JSON), falling back to parsing result.Content.
 	rawPlan, _ := result.Ext["plan_output"].(string)
 	if rawPlan == "" {
 		rawPlan = result.Content
 	}
 	if plan := ParsePlanOutput(rawPlan); plan != nil {
-		// 终态结构化输出（new_agents_plan）：friendly_reply 帧必须发（流式 text-delta
-		// 是 LLM 原始 content，这里发的是终态封装的友好回复），onOutput 投子任务。
+		// Terminal structured output (new_agents_plan): the friendly_reply frame must be sent (streamed text-deltas
+		// are the LLM's raw content; what is sent here is the terminal-wrapped friendly reply); onOutput dispatches the subtask.
 		onFrame(SSEFrame{
 			Type:    "text-delta",
 			TextID:  "t1",
@@ -527,9 +527,9 @@ func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID
 			onOutput(plan)
 		}
 	} else {
-		// 普通回复：终态文本。流式已实时发过 content 则跳过（避免重复），
-		// 否则补发——强制 tool_choice=required 时 LLM 可能只返回 tool_call，
-		// 流式无帧可发，必须补发 strategy 封装的终态文本保证前端有内容。
+		// Plain reply: terminal text. Skip if streaming already sent content in realtime (avoid duplicates);
+		// otherwise emit it — with forced tool_choice=required the LLM may return only a tool_call,
+		// leaving no frames to stream, so the strategy-wrapped terminal text must be emitted to guarantee the frontend has content.
 		r.emitTerminalText(onFrame, result.Content)
 	}
 
@@ -541,7 +541,7 @@ func (r *SupervisorRunner) RunWithOutput(ctx context.Context, query, serverMsgID
 	return result.Content, nil
 }
 
-// ParsePlanOutput 解析 LLM 终态 JSON，若 task_type 为 new_agents_plan 返回计划，否则 nil。
+// ParsePlanOutput parses the LLM terminal JSON; returns the plan when task_type is new_agents_plan, otherwise nil.
 func ParsePlanOutput(content string) *PlanOutput {
 	var plan PlanOutput
 	if err := json.Unmarshal([]byte(content), &plan); err != nil {
@@ -553,7 +553,7 @@ func ParsePlanOutput(content string) *PlanOutput {
 	return &plan
 }
 
-// ToModelPlan 将 PlanOutput 转换为 model.PlanSteps（供 Submitter 落库）。
+// ToModelPlan converts PlanOutput into model.PlanSteps (for the Submitter to persist).
 func (p *PlanOutput) ToModelPlan() *model.PlanSteps {
 	agents := make([]model.PlanAgent, 0, len(p.PlanSteps.Agents))
 	for _, a := range p.PlanSteps.Agents {

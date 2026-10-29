@@ -51,7 +51,7 @@ func TestHeartbeat_LockAndRenew(t *testing.T) {
 	testx.NoError(t, err)
 	testx.NotNil(t, taken)
 
-	// Set lock（内存锁底座，语义对齐 Redis SetNX）
+	// Set lock (in-memory lock backend, semantics aligned with Redis SetNX)
 	hbKey := "cg:hb:msg-001"
 	ok, err := locker.SetNX(ctx, hbKey, "worker-test", 30*time.Second)
 	testx.NoError(t, err)
@@ -98,10 +98,10 @@ func TestAsyncRequest_Takeover_CAS(t *testing.T) {
 	testx.Nil(t, second)
 }
 
-// TestAsyncRequest_Takeover_ByBusinessKey 回归测试：Takeover 必须用雪花业务键
-// async_request_id（stream 载荷携带的值）做 CAS 匹配，而不是自增主键 id。
-// 修复前：consumer 把雪花键 ParseInt 成 int64 后匹配 WHERE id=?，永远不命中，
-// 导致「takeover failed (already taken)」，异步任务无法被消费。
+// TestAsyncRequest_Takeover_ByBusinessKey regression test: Takeover must CAS-match on the snowflake business key
+// async_request_id (the value carried in the stream payload), not the auto-increment primary key id.
+// Before the fix: the consumer ParseInt-ed the snowflake key into int64 and matched WHERE id=?, never hitting,
+// causing "takeover failed (already taken)" and async tasks could not be consumed.
 func TestAsyncRequest_Takeover_ByBusinessKey(t *testing.T) {
 	db := newTestDB(t)
 	asyncRepo := repository.NewAsyncRequestRepository(db)
@@ -113,14 +113,14 @@ func TestAsyncRequest_Takeover_ByBusinessKey(t *testing.T) {
 	}
 	testx.NoError(t, asyncRepo.InsertPending(ctx, req))
 
-	// 用业务键字符串抢占，而不是自增 id
+	// Claim with the business-key string, not the auto-increment id
 	taken, err := asyncRepo.Takeover(ctx, req.AsyncRequestID, "w1")
 	testx.NoError(t, err)
 	testx.NotNil(t, taken)
 	testx.Equal(t, model.AsyncStatusInProgress, taken.Status)
 	testx.Equal(t, "w1", taken.WorkerID)
 
-	// 不存在的业务键 → 冲突
+	// A nonexistent business key → conflict
 	none, err := asyncRepo.Takeover(ctx, "ar-no-such-key", "w2")
 	testx.ErrorIs(t, err, repository.ErrAsyncRequestConflict)
 	testx.Nil(t, none)

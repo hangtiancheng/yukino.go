@@ -38,27 +38,27 @@ import (
 //  6. FlushChatTextToDB  →  batch write message_record
 //  7. MarkTerminal + release lock + ACK
 //
-// Phase 3 扩展：管家产出 new_agents_plan 时，通过 Submitter 投递子任务，
-// 并用 Poller 轮询 cg_task_step 把进度推成 chunk 回流前端。
+// Phase 3 extension: when the manager produces new_agents_plan, subtasks are dispatched via the Submitter,
+// and a Poller polls cg_task_step, pushing progress as chunks back to the frontend.
 type Consumer struct {
-	streamQ    infra.StreamQueue                  // 消息队列：XREADGROUP/XACK
-	chunkStore infra.ChunkStore                   // chunk 中转站：Write/After
-	lock       infra.Locker                       // 心跳锁（Redis 或进程内实现）
+	streamQ    infra.StreamQueue                  // message queue: XREADGROUP/XACK
+	chunkStore infra.ChunkStore                   // chunk relay store: Write/After
+	lock       infra.Locker                       // heartbeat lock (Redis or in-process implementation)
 	asyncRepo  repository.AsyncRequestRepository  // cg_async_request DAO
 	msgRepo    repository.MessageRecordRepository // cg_message_record DAO
-	workerID   string                             // 本 worker 唯一标识
+	workerID   string                             // unique identifier of this worker
 	logger     *zap.Logger
 
-	// Phase 3: 子任务链路（nil 时跳过 plan 分支）
+	// Phase 3: subtask chain (the plan branch is skipped when nil)
 	taskSubmitter *subtaskexecutor.Submitter
 	taskPoller    *taskflow.Poller
 
-	// Phase 4: cron 注册（nil 时跳过）
+	// Phase 4: cron registration (skipped when nil)
 	cronRepo repository.CronTaskRepository
-	// Phase 4: 快任务回流定位 task_run（GetByMsgID）
+	// Phase 4: locate task_run for fast-task backflow (GetByMsgID)
 	taskRunRepo repository.TaskRunRepository
 
-	// 业务决策回调（由 app 装配注入）。nil 时退化为无业务接线的消费壳。
+	// Business decision callback (injected by the app wiring). When nil it degrades to a consumption shell without business wiring.
 	hooks *TaskRunnerHooks
 }
 
@@ -75,15 +75,15 @@ type ConsumerConfig struct {
 	WorkerID string
 	Logger   *zap.Logger
 
-	// Phase 3: 子任务链路（nil 时跳过 plan 分支）。
+	// Phase 3: subtask chain (the plan branch is skipped when nil).
 	TaskSubmitter *subtaskexecutor.Submitter
 	TaskPoller    *taskflow.Poller
 
-	// Phase 4: cron 注册（nil 时跳过）。
+	// Phase 4: cron registration (skipped when nil).
 	CronRepo repository.CronTaskRepository
-	// Phase 4: 快任务回流定位 task_run（GetByMsgID）。
+	// Phase 4: locate task_run for fast-task backflow (GetByMsgID).
 	TaskRunRepo repository.TaskRunRepository
-	// Phase 4: 业务决策回调（由 app 装配注入；nil 时退化为无业务接线消费壳）。
+	// Phase 4: business decision callback (injected by the app wiring; when nil it degrades to a consumption shell without business wiring).
 	Hooks *TaskRunnerHooks
 }
 
@@ -142,13 +142,13 @@ type conversationPayload struct {
 	AgentID        string `json:"agent_id"`
 	Query          string `json:"query"`
 
-	// Phase 4: 快捷路径参数（con_reader 在 stream body 中透传）
+	// Phase 4: fast-path parameters (passed through by con_reader in the stream body)
 	RequestType string `json:"requestType"` // "" / "retry" / "cron"
-	Resume      bool   `json:"resume"`      // HIL 断点恢复
-	// OriginMsgID 点卡确认后回传的上一步消息 ID（fastpath 追溯前序脚本用）。
+	Resume      bool   `json:"resume"`      // HIL breakpoint resume
+	// OriginMsgID is the previous-step message ID echoed after card confirmation (fastpath uses it to trace the preceding script).
 	OriginMsgID string `json:"originMsgId"`
 
-	// TraceParent 是 W3C traceparent，跨进程透传 trace。
+	// TraceParent is the W3C traceparent, propagating the trace across processes.
 	TraceParent string `json:"traceparent,omitempty"`
 }
 
@@ -161,19 +161,19 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 		return
 	}
 
-	// 从 stream 恢复 trace（跨进程透传）。
+	// Restore the trace from the stream (cross-process propagation).
 	ctx = tracex.ContextFromCarrier(ctx, map[string]string{
 		tracex.TraceParentKey: payload.TraceParent,
 	})
 
-	// 包 worker.process span：把整条异步处理（锁/CAS/ReAct/落库）挂进 HTTP 恢复出的 trace。
+	// Wrap the worker.process span: hang the whole async processing (lock/CAS/ReAct/persistence) under the trace restored from HTTP.
 	ctx, span := otel.Tracer("github.com/hangtiancheng/yukino.go/apps/creative_agent/server/worker").Start(ctx, "worker.process")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("msg_id", payload.MsgID),
 		attribute.String("worker_id", c.workerID),
 	)
-	// 入口派生 logger 放在开 span 之后：日志的 trace_id/span_id 指向 worker.process 本身。
+	// Derive the entry logger after starting the span: log trace_id/span_id then point at worker.process itself.
 	logger := tracex.Logger(c.logger, ctx)
 	logger.Info("worker: processing message",
 		zap.String("msgID", payload.MsgID),
@@ -188,9 +188,9 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 		return
 	}
 
-	// Step 2: MySQL CAS takeover — Pending → InProgress。
-	// asyncRequestID 是雪花业务键（stream 载荷携带的值），
-	// Takeover 用 async_request_id 做 CAS 匹配，而不是自增主键 id。
+	// Step 2: MySQL CAS takeover — Pending → InProgress.
+	// asyncRequestID is the snowflake business key (the value carried in the stream payload);
+	// Takeover CAS-matches on async_request_id, not the auto-increment primary key id.
 	asyncReq, err := c.asyncRepo.Takeover(ctx, payload.AsyncRequestID, c.workerID)
 	if err != nil || asyncReq == nil {
 		logger.Warn("worker: takeover failed (already taken)", zap.String("msgID", payload.MsgID))
@@ -204,9 +204,9 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 	go runHeartbeat(ctx, hbDone, c.lock, c.asyncRepo, payload.MsgID, asyncReq.ID, c.workerID, logger)
 	defer close(hbDone)
 
-	// Step 3.5 (Phase 4): 快捷路径（HIL resume / Retry / CanFastTask）。
-	// 命中后由 Worker 直接处理回流，不跑管家 ReAct。
-	// FastPath 判定通过 hooks 注入（决策归 app），worker 只负责执行命中后的分支。
+	// Step 3.5 (Phase 4): fast path (HIL resume / Retry / CanFastTask).
+	// On a hit, the Worker handles the backflow directly without running the manager ReAct.
+	// The FastPath decision is injected via hooks (decisions belong to the app); the worker only executes the branch after a hit.
 	if fp := c.fastPathOr(); fp != nil {
 		handled, fpErr := fp.CheckFastTask(ctx, &fastpath.FastTaskRequest{
 			SessionID:   payload.SessionID,
@@ -223,27 +223,27 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 		}
 		if handled {
 			if payload.Resume {
-				// HIL resume：预置 checkpoint 后正常跑 ReAct（引擎从断点继续）。
-				// cp==nil 时说明 checkpoint 已被另一连接恢复后清除（竞态）——
-				// 写提示帧而非零帧静默，避免 resume 意图丢失。
+				// HIL resume: pre-load the checkpoint and run ReAct normally (the engine continues from the breakpoint).
+				// cp==nil means the checkpoint was already consumed and cleared by another connection (race) —
+				// write a hint frame instead of silent zero frames, so the resume intent is not lost.
 				loader := c.checkpointLoader()
 				var cp *react.Checkpoint
 				if loader != nil {
 					cp = loader(payload.SessionID)
 				}
 				if cp != nil {
-					logger.Info("worker: HIL resume 恢复执行",
+					logger.Info("worker: HIL resume execution restored",
 						zap.String("sessionID", payload.SessionID))
 					c.runReActWithCheckpoint(ctx, payload, cp)
 				} else {
-					logger.Warn("worker: resume 命中但 checkpoint 已不存在（可能已恢复）",
+					logger.Warn("worker: resume hit but the checkpoint no longer exists (possibly already resumed)",
 						zap.String("sessionID", payload.SessionID))
 					_ = c.chunkStore.Write(ctx, payload.MsgID,
-						appkitrunner.FrameToJSON(appkitrunner.SSEFrame{Type: "error", Content: "恢复点已被消费，请重新发起请求"}), false)
+						appkitrunner.FrameToJSON(appkitrunner.SSEFrame{Type: "error", Content: "the resume point has been consumed; please send a new request"}), false)
 					_ = c.chunkStore.Write(ctx, payload.MsgID, "", true)
 				}
 			} else {
-				// CanFastTask/Retry：已投递子任务，轮询回流
+				// CanFastTask/Retry: subtasks already dispatched; poll the backflow
 				c.fastTaskPollAndFinish(ctx, payload)
 			}
 			c.asyncRepo.MarkTerminal(ctx, asyncReq.ID, model.AsyncStatusCompleted)
@@ -264,32 +264,32 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 	}
 
 	if c.taskSubmitter != nil {
-		// Phase 3: 管家产出 new_agents_plan → 投递子任务
+		// Phase 3: the manager produced new_agents_plan → dispatch subtasks
 
-		// 流式恢复：每轮 LLM 输出实时写 Redis chunk（token 级累积，崩溃可重建）
+		// Streaming recovery: each LLM round writes Redis chunks in realtime (token-level accumulation, rebuildable after a crash)
 		runner.EnableStreaming()
 		thoughtHooks := c.thoughtHooksFor(payload, logger)
 
-		// 业务装配（管家约束链策略 + 管家 prompt + HIL 注入）走 hooks。
-		// UseManagerStrategy=true（app 在配置了真实管家 LLM 时置）→ 注入
-		// ManagerStrategy + ManagerPrepare；否则回退 FakePlanStrategy 默认行为。
-		// 是否走 RunWithOutput 由 taskSubmitter 是否接线决定（执行细节）。
+		// Business assembly (manager constraint-chain strategy + manager prompt + HIL injection) goes through hooks.
+		// UseManagerStrategy=true (set by the app when a real manager LLM is configured) → inject
+		// ManagerStrategy + ManagerPrepare; otherwise fall back to FakePlanStrategy default behavior.
+		// Whether RunWithOutput is used depends on taskSubmitter being wired (an execution detail).
 		c.setupRunner(runner, func(cp *react.Checkpoint) {
-			// Phase 4 HIL：管家 ReAct 产出 Interrupt 时，保存 checkpoint。
-			// onInterrupt 回调拿到引擎存的完整 checkpoint（messages+step+query）。
+			// Phase 4 HIL: when the manager ReAct produces Interrupt, save the checkpoint.
+			// The onInterrupt callback receives the full checkpoint stored by the engine (messages+step+query).
 			saver := c.checkpointSaver()
 			if saver != nil {
 				saver(payload.SessionID, cp)
-				logger.Info("worker: HIL checkpoint 已保存",
+				logger.Info("worker: HIL checkpoint saved",
 					zap.String("sessionID", payload.SessionID),
 					zap.Int("step", cp.Step))
 			}
 		})
 
-		// Phase 4 HIL：query 命中触发词（app 注入的 ShouldEnableHIL）时，
-		// 管家 ReAct 会产 Interrupt（FakeHILStrategy 判据），配合上面的
-		// SetOnInterrupt 保存 checkpoint → 前端可点"继续"发起 resume。
-		// thought 与 HIL 并存：用 thoughtHooks 替代 FakeHooks，避免 hooks 被覆盖。
+		// Phase 4 HIL: when the query hits the trigger word (the app-injected ShouldEnableHIL),
+		// the manager ReAct produces Interrupt (the FakeHILStrategy criterion); combined with
+		// SetOnInterrupt above it saves the checkpoint → the frontend can click "Continue" to resume.
+		// thought and HIL coexist: thoughtHooks replaces FakeHooks so hooks are not overwritten.
 		if c.hilEnabled(payload.Query) {
 			hooks := thoughtHooks
 			if hooks == nil {
@@ -318,18 +318,18 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 			}
 			planTaskRunID = id
 
-			// Phase 4 cron：requestType=cron → 登记 cg_cron_task（完整 agents 列表 + 推进索引 0）
+			// Phase 4 cron: requestType=cron → register cg_cron_task (full agents list + advance index 0)
 			if payload.RequestType == "cron" && c.cronRepo != nil {
 				cron := &model.CGCronTask{
 					CronTaskID:       model.NextID(),
 					SessionID:        payload.SessionID,
 					MsgID:            payload.MsgID,
-					PlanSteps:        run.PlanSteps, // 完整 agents JSON（执行器只吃第一个，Cron Poller 推进后续）
+					PlanSteps:        run.PlanSteps, // full agents JSON (the executor consumes only the first; the Cron Poller advances the rest)
 					CurrentStepIndex: 0,
 					Status:           model.CronTaskStatusRunning,
 				}
 				if err := c.cronRepo.Insert(ctx, cron); err != nil {
-					logger.Error("worker: cron task 登记失败", zap.Error(err))
+					logger.Error("worker: failed to register cron task", zap.Error(err))
 				} else {
 					logger.Info("worker: cron task registered",
 						zap.Int64("cronTaskID", cron.CronTaskID),
@@ -345,12 +345,12 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 			return
 		}
 
-		// 已投递子任务 → 同步轮询 task_step 回流进度（阻塞到终态），
-		// 进度帧实时写 chunk → attach 拉 → 前端 SSE。全部完成后才写 EndTurn，
-		// 保证前端连接在子任务执行期间保持打开、能收到 task-step/task-done 帧。
+		// Subtasks dispatched → synchronously poll task_step for progress backflow (blocking until terminal);
+		// progress frames are written to chunks in realtime → pulled by attach → frontend SSE. EndTurn is written only after everything completes,
+		// guaranteeing the frontend connection stays open during subtask execution and receives task-step/task-done frames.
 		if planTaskRunID != 0 && c.taskPoller != nil {
-			// pollCtx 从带 span 的 ctx 派生：轮询 SQL span 挂进 worker.process trace，
-			// 而不是 Background（否则长达 60s 的轮询阶段脱离 trace）。
+			// pollCtx derives from the span-carrying ctx: polling SQL spans hang under the worker.process trace
+			// instead of Background (otherwise the up-to-60s polling phase would leave the trace).
 			pollCtx, pollCancel := context.WithTimeout(ctx, 60*time.Second)
 			c.taskPoller.PollUntilDone(pollCtx, planTaskRunID, payload.MsgID,
 				func(f taskflow.TaskStepFrame) {
@@ -361,15 +361,15 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 				}, 500*time.Millisecond)
 			pollCancel()
 
-			// 子任务完成 → 写 EndTurn 让 attach 退出
+			// Subtasks complete → write EndTurn so attach exits
 			if err := c.chunkStore.Write(ctx, payload.MsgID, "", true); err != nil {
 				logger.Error("worker: endturn write error", zap.Error(err))
 			}
 
-			// 落库兜底：flush 失败不标 Completed、不 ACK，交由 recovery 从 chunk 重建。
+			// Persistence fallback: on flush failure do not mark Completed and do not ACK; recovery rebuilds from chunks.
 			if err := c.flushChatTextToDB(ctx, payload.MsgID); err != nil {
 				if !errors.Is(err, ErrChunkExpired) {
-					logger.Error("worker: flushChatTextToDB error — 保持 InProgress 等待 recovery 重建",
+					logger.Error("worker: flushChatTextToDB error — keeping InProgress for recovery rebuild",
 						zap.Error(err), zap.String("msgID", payload.MsgID))
 					_ = c.lock.Del(ctx, hbKey)
 					return
@@ -387,7 +387,7 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 			return
 		}
 	} else {
-		// 无子任务投递：普通 ReAct。流式恢复：每轮 LLM 输出实时写 Redis chunk。
+		// No subtasks dispatched: plain ReAct. Streaming recovery: each LLM round writes Redis chunks in realtime.
 		runner.EnableStreaming()
 		thoughtHooks := c.thoughtHooksFor(payload, logger)
 		if thoughtHooks != nil {
@@ -410,23 +410,22 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 
 	// Step 6: FlushChatTextToDB — assemble all chunks and write to message_record
 	if err := c.flushChatTextToDB(ctx, payload.MsgID); err != nil {
-		// 落库兜底：flush 失败（Redis 读失败 / chunk 已过期 / MySQL 写失败）时不标 Completed、
-		// 不 ACK，保持 InProgress 且心跳随之停止 → 由 RecoveryScanner 扫到后从 Redis chunk 重建落库。
-		// 重建成功→策略 A 翻 Completed；重建失败→Failed（避免无限重试死循环）。数据以 chunk 为准。
-		// 例外：ErrChunkExpired 表示 chunk 已过期（TTL 1h），ReAct 产出已无从重建——
-		// 用户连接早已关闭，只落空 chat_text + 标 Failed，避免留下"已完成但无内容"的脏记录。
-		// 详见 docs/impl/async-flush-failure-recovery.md。
+		// Persistence fallback: on flush failure (Redis read failure / expired chunks / MySQL write failure) do not mark Completed
+		// and do not ACK; keep InProgress and let the heartbeat stop → RecoveryScanner picks it up and rebuilds the persistence from Redis chunks.
+		// Rebuild success → strategy A flips to Completed; rebuild failure → Failed (avoiding an infinite retry loop). Chunks are the source of truth.
+		// Exception: ErrChunkExpired means the chunks expired (TTL 1h) and the ReAct output can no longer be rebuilt —
+		// the user connection closed long ago, so persist an empty chat_text + mark Failed, avoiding a dirty "completed but empty" record.
 		if !errors.Is(err, ErrChunkExpired) {
-			// 不 ACK：让 Redis Stream 消息留在 Pending（同一条消息在超时窗口内重新投递，
-			// 但 NX 锁已删 + 状态 InProgress，新消费会因 Takeover 冲突而快速 ACK 跳过，
-			// 不会重复执行）。真正的接管者是 recovery 对 cg_async_request 的重建+翻态。
-			logger.Error("worker: flushChatTextToDB error — 保持 InProgress 等待 recovery 重建",
+			// Do not ACK: leave the Redis Stream message Pending (the same message is redelivered within the timeout window,
+			// but with the NX lock deleted + status InProgress, the new consumer quickly ACK-skips due to the Takeover conflict,
+			// so there is no duplicate execution). The real takeover is recovery rebuilding cg_async_request and flipping its state.
+			logger.Error("worker: flushChatTextToDB error — keeping InProgress for recovery rebuild",
 				zap.Error(err), zap.String("msgID", payload.MsgID))
 			_ = c.lock.Del(ctx, hbKey)
 			return
 		}
 
-		// chunk 过期：重建无输入，只能标记失败收口
+		// Chunks expired: no input for rebuilding; the only option is to mark it failed and close out
 		logger.Warn("worker: chunks expired, marking Failed",
 			zap.String("msgID", payload.MsgID))
 		_ = c.asyncRepo.MarkTerminal(ctx, asyncReq.ID, model.AsyncStatusFailed)
@@ -443,8 +442,8 @@ func (c *Consumer) handleConversation(ctx context.Context, msg *infra.StreamMess
 	logger.Info("worker: message completed", zap.String("msgID", payload.MsgID))
 }
 
-// thoughtHooksFor 构建落 thought 表的 hooks（OnAfterLLM 每轮落一条）。
-// hooks 未装配 ThoughtRepo 时返回 nil（跳过 thought 落库）。
+// thoughtHooksFor builds the hooks that persist to the thought table (OnAfterLLM writes one row per round).
+// Returns nil when hooks have no ThoughtRepo wired (skipping thought persistence).
 func (c *Consumer) thoughtHooksFor(payload conversationPayload, logger *zap.Logger) react.Hooks {
 	if c.hooks == nil || c.hooks.ThoughtRepo == nil {
 		return nil
@@ -452,9 +451,9 @@ func (c *Consumer) thoughtHooksFor(payload conversationPayload, logger *zap.Logg
 	return NewThoughtHooks(c.hooks.ThoughtRepo, &payload, "", logger)
 }
 
-// runReActWithCheckpoint 用 HIL checkpoint 预置 AgentContext 跑 ReAct。
-// 引擎 resume 支持：Runtime.Messages/Step 预置后从断点继续，且必须置 Interrupted=true
-// 让 HIL strategy 识别这是"恢复轮次"（直接 Terminal 而非再次 Interrupt）。
+// runReActWithCheckpoint pre-loads the AgentContext from the HIL checkpoint and runs ReAct.
+// Engine resume support: with Runtime.Messages/Step pre-set it continues from the breakpoint, and Interrupted=true must be set
+// so the HIL strategy recognizes this as a "resume round" (Terminal directly instead of Interrupting again).
 func (c *Consumer) runReActWithCheckpoint(ctx context.Context, payload conversationPayload, cp *react.Checkpoint) {
 	runner := &appkitrunner.SupervisorRunner{}
 	onFrame := func(frame appkitrunner.SSEFrame) {
@@ -463,47 +462,47 @@ func (c *Consumer) runReActWithCheckpoint(ctx context.Context, payload conversat
 			c.logger.Error("worker: chunk write error", zap.Error(err))
 		}
 	}
-	// 流式恢复：每轮 LLM 输出实时写 Redis chunk（token 级累积，崩溃可重建）
+	// Streaming recovery: each LLM round writes Redis chunks in realtime (token-level accumulation, rebuildable after a crash)
 	runner.EnableStreaming()
 	thoughtHooks := c.thoughtHooksFor(payload, c.logger)
-	// 注入 HIL strategy（resume 时直接 Terminal）。
-	// thought 与 HIL 并存：用 thoughtHooks 替代 FakeHooks，避免 hooks 被覆盖。
+	// Inject the HIL strategy (Terminal directly on resume).
+	// thought and HIL coexist: thoughtHooks replaces FakeHooks so hooks are not overwritten.
 	hooks := thoughtHooks
 	if hooks == nil {
 		hooks = &appkitfake.FakeHooks{}
 	}
 	runner.SetProviders(&appkitfake.FakeHILLLM{}, appkitfake.FakeHILStrategy{}, hooks)
-	// RunResume 预置 checkpoint 状态（messages/step/Interrupted）后跑 ReAct
+	// RunResume pre-loads the checkpoint state (messages/step/Interrupted) and runs ReAct
 	_, _ = runner.RunResume(ctx, payload.Query, payload.MsgID, onFrame, cp)
 
-	// 写 EndTurn
+	// Write EndTurn
 	_ = c.chunkStore.Write(ctx, payload.MsgID, "", true)
 	if err := c.flushChatTextToDB(ctx, payload.MsgID); err != nil {
 		c.logger.Error("worker: flushChatTextToDB error", zap.Error(err))
 	}
-	// resume 完成 → 清除 checkpoint（避免下次误判）
+	// Resume complete → clear the checkpoint (avoiding a false hit next time)
 	if clearer := c.checkpointClearer(); clearer != nil {
 		clearer(payload.SessionID)
 	}
 }
 
-// fastTaskPollAndFinish 快路径命中（已投递子任务）后：轮询 task_step 回流 + 写 EndTurn。
+// fastTaskPollAndFinish runs after a fast-path hit (subtasks already dispatched): poll task_step backflow + write EndTurn.
 func (c *Consumer) fastTaskPollAndFinish(ctx context.Context, payload conversationPayload) {
 	if c.taskRunRepo == nil || c.taskPoller == nil {
-		c.logger.Warn("worker: fasttask 缺 taskRunRepo/taskPoller，仅写 EndTurn",
+		c.logger.Warn("worker: fasttask missing taskRunRepo/taskPoller, writing EndTurn only",
 			zap.String("msgID", payload.MsgID))
 		_ = c.chunkStore.Write(ctx, payload.MsgID, "", true)
 		return
 	}
-	// 从 DB 查该 msgID 关联的最新 task_run
+	// Query the DB for the latest task_run associated with this msgID
 	run, err := c.taskRunRepo.GetByMsgID(ctx, payload.MsgID)
 	if err != nil || run == nil {
-		c.logger.Warn("worker: fasttask 未找到关联 task_run",
+		c.logger.Warn("worker: fasttask found no associated task_run",
 			zap.String("msgID", payload.MsgID))
 		_ = c.chunkStore.Write(ctx, payload.MsgID, "", true)
 		return
 	}
-	// 轮询 SQL/Redis span 挂进 worker.process trace（ctx 带 span，不用 Background）。
+	// Polling SQL/Redis spans hang under the worker.process trace (ctx carries the span; Background is not used).
 	pollCtx, pollCancel := context.WithTimeout(ctx, 60*time.Second)
 	defer pollCancel()
 	c.taskPoller.PollUntilDone(pollCtx, run.TaskRunID, payload.MsgID,
@@ -513,7 +512,7 @@ func (c *Consumer) fastTaskPollAndFinish(ctx context.Context, payload conversati
 				c.logger.Error("worker: poll frame write error", zap.Error(err))
 			}
 		}, 500*time.Millisecond)
-	// 子任务完成 → 发 message-complete 帧（前端据此释放 streaming 状态），再写 EndTurn
+	// Subtasks complete → send the message-complete frame (the frontend releases its streaming state on it), then write EndTurn
 	_ = c.chunkStore.Write(ctx, payload.MsgID,
 		appkitrunner.FrameToJSON(appkitrunner.SSEFrame{Type: "message-complete", MsgID: payload.MsgID}), false)
 	_ = c.chunkStore.Write(ctx, payload.MsgID, "", true)
@@ -528,14 +527,14 @@ func (c *Consumer) flushChatTextToDB(ctx context.Context, msgID string) error {
 	return RebuildChatTextFromChunks(ctx, c.msgRepo, c.chunkStore, msgID)
 }
 
-// ErrChunkExpired 表示 Redis chunk 已过期（TTL 1h），无法从 chunk 重建 chat_text。
-// 此时终端用户连接已关闭，落库只能保持缺失；调用方需自行决定终态语义。
+// ErrChunkExpired indicates the Redis chunks expired (TTL 1h) and chat_text can no longer be rebuilt from them.
+// By then the end-user connection has closed and persistence can only remain missing; the caller decides the terminal semantics.
 var ErrChunkExpired = errors.New("chunks expired: no EndTurn found before chunk TTL")
 
-// RebuildChatTextFromChunks 从 ChunkStore 读全量 chunk 组装 chat_text 写回 message_record。
-// 幂等：重复调用只会重建出相同内容，可安全地被 worker 与 recovery 复用。
-// 返回 ErrChunkExpired 时表示 chunk 已过期（读到 0 帧且无 EndTurn），
-// 此时重建无输入，调用方应降级（仅翻终态/标记失败），不能据此声称已重建。
+// RebuildChatTextFromChunks reads all chunks from the ChunkStore, assembles chat_text, and writes it back to message_record.
+// Idempotent: repeated calls rebuild the same content, safe for reuse by both worker and recovery.
+// Returning ErrChunkExpired means the chunks expired (0 frames read and no EndTurn);
+// with no input to rebuild, the caller should degrade (only flip the terminal state / mark failed) and must not claim a rebuild happened.
 func RebuildChatTextFromChunks(ctx context.Context, msgRepo repository.MessageRecordRepository,
 	chunkStore infra.ChunkStore, msgID string) error {
 	// Read all chunks from the store

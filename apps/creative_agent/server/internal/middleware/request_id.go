@@ -10,8 +10,8 @@ const (
 	ContextRequestID = "request_id"
 )
 
-// RequestID 为每个请求生成唯一标识，注入到 ctx.State 和响应头中。
-// 如果客户端已通过 X-Request-ID 头提供了 ID，则复用该值。
+// RequestID generates a unique identifier for each request and injects it into ctx.State and the response headers.
+// If the client already provided an ID via the X-Request-ID header, that value is reused.
 func RequestID() yukino.Middleware {
 	return func(ctx *yukino.Context, next func()) {
 		requestID := ctx.Get(headerRequestID)

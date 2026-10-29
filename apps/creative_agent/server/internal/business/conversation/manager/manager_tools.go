@@ -7,12 +7,12 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/infra/ideaking"
 )
 
-// NewManagerToolRegistry 构建管家（Supervisor）的工具注册表（调度类 + 协议执行）。
+// NewManagerToolRegistry builds the manager (Supervisor) tool registry (scheduling class + protocol execution).
 //
-// 迁移自 provider/builtin_tools.go：这是管家业务构建函数，依赖 provider 的
-// ToolRegistry 基类与通用工具（search/dispatch_agent），并注册管家专属的
-// 协议工具（idea_king_api）。依赖方向 manager → provider（单向，无环）。
-// p 为热点检索 provider（nil 时 RunIdeaKingWithProvider 内部用 MockProvider 兜底）。
+// Migrated from provider/builtin_tools.go: this is the manager business builder; it depends on the provider's
+// ToolRegistry base and generic tools (search/dispatch_agent), and registers the manager-specific
+// protocol tool (idea_king_api). Dependency direction manager → provider (one-way, no cycle).
+// p is the hotspot retrieval provider (when nil, RunIdeaKingWithProvider falls back to MockProvider internally).
 func NewManagerToolRegistry(p ideaking.IdeaKingProvider) *appkittools.ToolRegistry {
 	r := appkittools.NewToolRegistry()
 	r.Register(appkittools.ToolEntry{Def: appkittools.ToolSearch, Runner: appkittools.RunSearch})

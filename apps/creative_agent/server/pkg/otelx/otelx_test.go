@@ -10,7 +10,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestNewMemoryExporter 验证内存 exporter 能产出 span。
+// TestNewMemoryExporter verifies that the in-memory exporter produces spans.
 func TestNewMemoryExporter(t *testing.T) {
 	tp, exp := otelx.NewMemoryExporter()
 	defer func() { testx.NoError(t, tp.Shutdown(context.Background())) }()
@@ -20,13 +20,13 @@ func TestNewMemoryExporter(t *testing.T) {
 
 	testx.Eventually(t, func() bool {
 		return len(exp.GetSpans()) > 0
-	}, 2*time.Second, 10*time.Millisecond, "内存 exporter 应收到 span")
+	}, 2*time.Second, 10*time.Millisecond, "the in-memory exporter should receive spans")
 
 	spans := exp.GetSpans()
 	testx.Equal(t, "test-span", spans[0].Name())
 }
 
-// TestInitDisabled 验证 enabled=false 时返回 no-op provider。
+// TestInitDisabled verifies that enabled=false returns a no-op provider.
 func TestInitDisabled(t *testing.T) {
 	tp, err := otelx.Init(config.OTelConfig{
 		Enabled:          false,
@@ -37,8 +37,8 @@ func TestInitDisabled(t *testing.T) {
 	testx.NoError(t, err)
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 
-	// no-op provider：Start 应返回 non-recording span（IsRecording()==false）
+	// no-op provider: Start should return a non-recording span (IsRecording()==false)
 	_, span := tp.Tracer("test").Start(context.Background(), "x")
 	defer span.End()
-	testx.False(t, span.IsRecording(), "disabled 时不应记录 span")
+	testx.False(t, span.IsRecording(), "no spans should be recorded when disabled")
 }

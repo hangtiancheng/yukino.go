@@ -7,35 +7,35 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/infra/ideaking"
 )
 
-// ManagerStrategy 是管家（Supervisor）的决策策略（第 8 章约束链）。
+// ManagerStrategy is the decision strategy of the manager (Supervisor) (the chapter 8 constraint chain).
 //
-//   - 约束① 强制 Function Calling：GetTools 只给 generate_response + idea_king_api，
-//     无 tool_calls 直接 Retry（防御兜底）。
-//   - 约束② 工具名白名单：tool_calls 的 name 必须在策略工具内，否则 Retry。
-//   - 约束③ Schema 校验：generate_response 参数走 ValidateGenerateResponse。
-//   - 约束④ 失败闭环：所有失败 → ActionRetry 注入纠错提示（引擎最多重试 2 次）。
+//   - Constraint ① forced function calling: GetTools only offers generate_response + idea_king_api;
+//     no tool_calls → immediate Retry (defensive fallback).
+//   - Constraint ② tool-name whitelist: the name in tool_calls must be among the strategy tools, otherwise Retry.
+//   - Constraint ③ schema validation: generate_response arguments go through ValidateGenerateResponse.
+//   - Constraint ④ failure closure: every failure → ActionRetry injects a correction hint (the engine retries at most twice).
 //
-// task_type=new_agents_plan 校验通过 → Terminal，透传顶层 PlanOutput JSON
-// （plan_steps 提到顶层，供 RunWithOutput 的 ParsePlanOutput 解析投递）。
+// task_type=new_agents_plan passing validation → Terminal, passing the top-level PlanOutput JSON through
+// (plan_steps is lifted to the top level for RunWithOutput's ParsePlanOutput to parse and dispatch).
 //
-// 热点卡（Phase 5）：idea_king_api 工具被拦截后 strategy 直出——
-// 调外部热点服务，Terminal + Metadata.hot_card（不进下一轮 LLM），
-// 由 Runner 渲染成 ui-block-start 热点卡。对齐原始实现 handleIdeaKingAPI。
+// Hot-topic card (Phase 5): after the idea_king_api tool is intercepted, the strategy emits directly —
+// it calls the external hotspot service, Terminal + Metadata.hot_card (without another LLM round),
+// and the Runner renders it into a ui-block-start hot-topic card. Aligned with the original handleIdeaKingAPI.
 type ManagerStrategy struct {
-	// IdeaKing 是热点/选题检索 provider。nil 时用 MockProvider（未配置热点服务回退）。
+	// IdeaKing is the hotspot/topic retrieval provider. When nil, MockProvider is used (fallback when no hotspot service is configured).
 	IdeaKing ideaking.IdeaKingProvider
 }
 
-// GetTools 返回管家可用的策略工具（约束①）。
+// GetTools returns the strategy tools available to the manager (constraint ①).
 func (ManagerStrategy) GetTools(c *react.AgentContext) []react.FunctionDef {
 	return ManagerProtocolTools()
 }
 
-// Decide 决策管家下一步 Action。
+// Decide determines the manager's next Action.
 func (s *ManagerStrategy) Decide(c *react.AgentContext) *react.Decision {
 	resp := c.Runtime.LastResponse
 
-	// 约束①兜底：无 tool_calls → Retry
+	// Constraint ① fallback: no tool_calls → Retry
 	if len(resp.ToolCalls) == 0 {
 		return &react.Decision{
 			Action: react.ActionRetry,
@@ -45,12 +45,12 @@ func (s *ManagerStrategy) Decide(c *react.AgentContext) *react.Decision {
 		}
 	}
 
-	// 逐个校验 tool_calls
+	// Validate tool_calls one by one
 	var retryMsg string
 	for _, tc := range resp.ToolCalls {
 		switch tc.Name {
 		case "idea_king_api":
-			// 热点/选题：strategy 直出（调外部热点服务 → Terminal + hot_card，不进下一轮 LLM）。
+			// Hotspot/topic: the strategy emits directly (call the external hotspot service → Terminal + hot_card, no next LLM round).
 			return s.handleIdeaKing(c, tc)
 		case "generate_response":
 			vr := ValidateGenerateResponse(tc.Args)
@@ -59,7 +59,7 @@ func (s *ManagerStrategy) Decide(c *react.AgentContext) *react.Decision {
 				continue
 			}
 			if vr.Plan != nil {
-				// new_agents_plan：Terminal + 透传顶层 plan_output
+				// new_agents_plan: Terminal + pass the top-level plan_output through
 				planJSON, _ := json.Marshal(vr.Plan)
 				return &react.Decision{
 					Action: react.ActionTerminal,
@@ -70,7 +70,7 @@ func (s *ManagerStrategy) Decide(c *react.AgentContext) *react.Decision {
 				}
 			}
 			if vr.Card != nil {
-				// push_card：Terminal + 透传卡数据（创作功能卡等），runner 渲染 ui-block-start
+				// push_card: Terminal + pass the card data through (creation-feature card, etc.); the runner renders ui-block-start
 				return &react.Decision{
 					Action: react.ActionTerminal,
 					Metadata: map[string]any{
@@ -79,13 +79,13 @@ func (s *ManagerStrategy) Decide(c *react.AgentContext) *react.Decision {
 					},
 				}
 			}
-			// 其它 task_type（only_reply / execute_agent）：Terminal
+			// Other task_types (only_reply / execute_agent): Terminal
 			return &react.Decision{
 				Action:   react.ActionTerminal,
 				Metadata: map[string]any{"friendly_reply": vr.FriendlyReply},
 			}
 		default:
-			// 约束②：工具名白名单
+			// Constraint ②: tool-name whitelist
 			if !ManagerToolNameAllowed(tc.Name) {
 				retryMsg = "工具名错误！请检查工具名，修正后重新调用！可用工具：generate_response、idea_king_api"
 			}
@@ -94,11 +94,11 @@ func (s *ManagerStrategy) Decide(c *react.AgentContext) *react.Decision {
 	if retryMsg != "" {
 		return &react.Decision{Action: react.ActionRetry, Metadata: map[string]any{"retry_message": retryMsg}}
 	}
-	// 全是白名单内非协议工具（如 idea_king_api）→ Continue 执行工具，结果当 observation
+	// All whitelisted non-protocol tools (e.g. idea_king_api) → Continue executing the tools; results become observations
 	return &react.Decision{Action: react.ActionContinue}
 }
 
-// ideaKing 返回热点检索 provider（nil 时用 MockProvider 兜底，demo 恒可跑）。
+// ideaKing returns the hotspot retrieval provider (falls back to MockProvider when nil, so the demo always runs).
 func (s *ManagerStrategy) ideaKing() ideaking.IdeaKingProvider {
 	if s.IdeaKing != nil {
 		return s.IdeaKing
@@ -106,12 +106,12 @@ func (s *ManagerStrategy) ideaKing() ideaking.IdeaKingProvider {
 	return ideaking.NewMockProvider()
 }
 
-// handleIdeaKing 处理 idea_king_api 工具调用（strategy 直出热点卡）。
-// 对齐原始实现 DujiaStrategy.handleIdeaKingAPI：
-//   - 解析 query/hotspot_count → 调外部热点服务
-//   - 成功：ActionTerminal + Metadata.hot_card（*HotCardData，Runner 渲染成 ui-block-start 卡），
-//     不进下一轮 LLM（热点卡数据从外部服务来，LLM 不参与组织）
-//   - 失败：Terminal 兜底文案
+// handleIdeaKing handles the idea_king_api tool call (the strategy emits the hot-topic card directly).
+// Aligned with the original DujiaStrategy.handleIdeaKingAPI:
+//   - Parse query/hotspot_count → call the external hotspot service
+//   - Success: ActionTerminal + Metadata.hot_card (*HotCardData, rendered by the Runner into a ui-block-start card);
+//     no next LLM round (hot-card data comes from the external service; the LLM does not organize it)
+//   - Failure: Terminal fallback copy
 func (s *ManagerStrategy) handleIdeaKing(c *react.AgentContext, tc react.ToolCall) *react.Decision {
 	params := ParseArgs(tc.Args)
 	query := ArgString(params, "query", "")
@@ -130,7 +130,7 @@ func (s *ManagerStrategy) handleIdeaKing(c *react.AgentContext, tc react.ToolCal
 	return &react.Decision{
 		Action: react.ActionTerminal,
 		Metadata: map[string]any{
-			"friendly_reply": "", // 卡帧自带文本，不发空终态 text-delta
+			"friendly_reply": "", // the card frames carry their own text; no empty terminal text-delta
 			"hot_card": &HotCardData{
 				CardType:    "热点及选题卡",
 				HotspotData: res.HotspotData,

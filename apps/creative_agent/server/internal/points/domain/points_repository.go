@@ -5,20 +5,20 @@ import (
 	"errors"
 )
 
-// ErrAlreadyRefunded 表示该订单已退过积分（幂等拦截）。
+// ErrAlreadyRefunded indicates the order's points were already refunded (idempotency interception).
 var ErrAlreadyRefunded = errors.New("already refunded")
 
-// PointsRepository 积分流水仓储接口（domain 定义，infra 实现）。
+// PointsRepository is the points-ledger repository interface (defined in domain, implemented in infra).
 type PointsRepository interface {
-	// GetBalance 计算用户当前余额。
+	// GetBalance computes the user's current balance.
 	GetBalance(ctx context.Context, userID int64) (int, error)
-	// InsertConsume 写扣积分流水。order_id UNIQUE 保证同一订单不重复扣。
+	// InsertConsume writes a deduction entry. The order_id UNIQUE guarantees one order is never deducted twice.
 	InsertConsume(ctx context.Context, flow *PointsFlow) (uint64, error)
-	// InsertRefund 写退积分流水，同时把对应扣分流水标记为已回退。
-	// 已退过返回 ErrAlreadyRefunded。
+	// InsertRefund writes a refund entry and marks the matching deduction entry rolled back.
+	// Returns ErrAlreadyRefunded when already refunded.
 	InsertRefund(ctx context.Context, flow *PointsFlow) (uint64, error)
-	// RefundByOrderID 按订单号幂等退积分：已退过返回 nil。
+	// RefundByOrderID refunds points idempotently by order ID: already-refunded returns nil.
 	RefundByOrderID(ctx context.Context, orderID string, userID int64, title string) error
-	// ListByProject 反查某作品的所有扣退记录（对账）。
+	// ListByProject looks up all deduction/refund records of a work (reconciliation).
 	ListByProject(ctx context.Context, projectID string) ([]*PointsFlow, error)
 }

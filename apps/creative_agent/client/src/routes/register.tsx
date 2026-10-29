@@ -48,8 +48,8 @@ export function RegisterPage() {
     <div className="bg-muted/40 flex min-h-svh items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">注册</CardTitle>
-          <CardDescription>创建新账号</CardDescription>
+          <CardTitle className="text-xl">Register</CardTitle>
+          <CardDescription>Create a new account</CardDescription>
         </CardHeader>
         <CardContent>
           {error ? (
@@ -60,12 +60,12 @@ export function RegisterPage() {
           {success ? (
             <Alert className="mb-4">
               <AlertDescription>
-                注册成功！{" "}
+                Registered successfully!{" "}
                 <Link
                   to="/login"
                   className="font-medium underline-offset-4 hover:underline"
                 >
-                  点击这里去登录
+                  Click here to sign in
                 </Link>
               </AlertDescription>
             </Alert>
@@ -73,7 +73,7 @@ export function RegisterPage() {
           <form onSubmit={onSubmit}>
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="reg-username">用户名</FieldLabel>
+                <FieldLabel htmlFor="reg-username">Username</FieldLabel>
                 <Input
                   id="reg-username"
                   value={username}
@@ -85,7 +85,7 @@ export function RegisterPage() {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="reg-password">密码</FieldLabel>
+                <FieldLabel htmlFor="reg-password">Password</FieldLabel>
                 <Input
                   id="reg-password"
                   type="password"
@@ -97,7 +97,7 @@ export function RegisterPage() {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="reg-email">邮箱</FieldLabel>
+                <FieldLabel htmlFor="reg-email">Email</FieldLabel>
                 <Input
                   id="reg-email"
                   type="email"
@@ -111,24 +111,24 @@ export function RegisterPage() {
                 {pending ? (
                   <>
                     <Spinner data-icon="inline-start" />
-                    注册中...
+                    Registering...
                   </>
                 ) : (
                   <>
                     <UserPlus data-icon="inline-start" />
-                    注册
+                    Register
                   </>
                 )}
               </Button>
             </FieldGroup>
           </form>
           <p className="text-muted-foreground mt-4 text-center text-sm">
-            已有账号？{" "}
+            Already have an account?{" "}
             <Link
               to="/login"
               className="text-primary font-medium underline-offset-4 hover:underline"
             >
-              去登录
+              Sign in
             </Link>
           </p>
         </CardContent>

@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// pointsFlowRow 持久化结构（gorm 映射 cg_points_flow）。
+// pointsFlowRow is the persistence structure (gorm mapping cg_points_flow).
 type pointsFlowRow struct {
 	ID         uint64 `gorm:"column:id;primaryKey;autoIncrement"`
 	UserID     int64  `gorm:"column:user_id;not null;index:idx_user"`
@@ -23,25 +23,25 @@ type pointsFlowRow struct {
 	CreateTime int64  `gorm:"column:create_time;not null"`
 }
 
-// TableName 指定表名。
+// TableName specifies the table name.
 func (pointsFlowRow) TableName() string { return "cg_points_flow" }
 
-// Migrate 对本 context 的表执行 AutoMigrate（database.Init 启动时调用）。
+// Migrate runs AutoMigrate for this context's tables (called at database.Init startup).
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(&pointsFlowRow{})
 }
 
-// PointsRepositoryImpl 基于 gorm 的 PointsRepository 实现。
+// PointsRepositoryImpl is the gorm-based PointsRepository implementation.
 type PointsRepositoryImpl struct {
 	db *gorm.DB
 }
 
-// NewPointsRepositoryImpl 创建实现。
+// NewPointsRepositoryImpl creates the implementation.
 func NewPointsRepositoryImpl(db *gorm.DB) *PointsRepositoryImpl {
 	return &PointsRepositoryImpl{db: db}
 }
 
-// toRow 将域实体转为持久化结构。
+// toRow converts the domain entity into the persistence structure.
 func toRow(f *domain.PointsFlow) *pointsFlowRow {
 	return &pointsFlowRow{
 		ID:         f.ID,
@@ -56,7 +56,7 @@ func toRow(f *domain.PointsFlow) *pointsFlowRow {
 	}
 }
 
-// toDomain 将持久化结构转为域实体。
+// toDomain converts the persistence structure into the domain entity.
 func toDomain(r *pointsFlowRow) *domain.PointsFlow {
 	return &domain.PointsFlow{
 		ID:         r.ID,
@@ -71,11 +71,11 @@ func toDomain(r *pointsFlowRow) *domain.PointsFlow {
 	}
 }
 
-// GetBalance 查询用户当前余额 = 总入账（退/返还） - 总扣分（有效）。
+// GetBalance queries the user's current balance = total credits (refunds/returns) - total deductions (valid).
 //
-// ⚠️ 方向说明：flow_type=1 是"扣积分"（用户支出），flow_type=2 是"退积分"（用户收回）。
-// 用户视角的可用余额 = 入账 - 支出 = sum(flow_type=2) - sum(flow_type=1 AND status=1)。
-// 已退款的扣分记录被置 status=0，不再计入支出（退款本身已通过 flow_type=2 加回余额）。
+// ⚠️ Direction note: flow_type=1 is "deduct points" (user spending); flow_type=2 is "refund points" (user receiving back).
+// The user-visible available balance = credits - spending = sum(flow_type=2) - sum(flow_type=1 AND status=1).
+// Refunded deduction records are set status=0 and no longer count as spending (the refund itself already added back via flow_type=2).
 func (r *PointsRepositoryImpl) GetBalance(ctx context.Context, userID int64) (int, error) {
 	// SELECT COALESCE(SUM(CASE WHEN flow_type=2 THEN amount ELSE 0 END), 0)
 	//      - COALESCE(SUM(CASE WHEN flow_type=1 AND status=1 THEN amount ELSE 0 END), 0)
@@ -90,7 +90,7 @@ func (r *PointsRepositoryImpl) GetBalance(ctx context.Context, userID int64) (in
 	return balance, err
 }
 
-// InsertConsume 写扣积分流水。order_id UNIQUE 索引保证同一个订单不能重复扣。
+// InsertConsume writes a deduction entry. The order_id UNIQUE index guarantees one order is never deducted twice.
 func (r *PointsRepositoryImpl) InsertConsume(ctx context.Context, flow *domain.PointsFlow) (uint64, error) {
 	row := toRow(flow)
 	row.FlowType = domain.FlowTypeConsume
@@ -99,15 +99,15 @@ func (r *PointsRepositoryImpl) InsertConsume(ctx context.Context, flow *domain.P
 		row.CreateTime = time.Now().Unix()
 	}
 	err := r.db.WithContext(ctx).Create(row).Error
-	// 回填自增 ID
+	// Backfill the auto-increment ID
 	flow.ID = row.ID
 	return flow.ID, err
 }
 
-// InsertRefund 写退积分流水，同时将对应扣积分流水的 status 置为 0（标记已回退）。
+// InsertRefund writes a refund entry and sets the matching deduction entry's status to 0 (marked rolled back).
 //
-// 两步在同一数据库事务内：先插退积分记录，再标记原扣分记录为已回退；
-// 若原扣分记录已回退过（affected rows=0）则回滚并返回 ErrAlreadyRefunded。
+// Both steps run in one database transaction: insert the refund record first, then mark the original deduction rolled back;
+// if the original deduction was already rolled back (affected rows=0), roll back and return ErrAlreadyRefunded.
 func (r *PointsRepositoryImpl) InsertRefund(ctx context.Context, flow *domain.PointsFlow) (uint64, error) {
 	row := toRow(flow)
 	row.FlowType = domain.FlowTypeRefund
@@ -117,13 +117,13 @@ func (r *PointsRepositoryImpl) InsertRefund(ctx context.Context, flow *domain.Po
 	}
 	var id uint64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. 插退积分记录
+		// 1. Insert the refund record
 		if err := tx.Create(row).Error; err != nil {
 			return err
 		}
 		id = row.ID
 
-		// 2. 标记原扣分记录为已回退
+		// 2. Mark the original deduction record rolled back
 		res := tx.Model(&pointsFlowRow{}).
 			Where("order_id = ? AND flow_type = ? AND status = ?", row.OrderID, domain.FlowTypeConsume, domain.FlowStatusValid).
 			Update("status", domain.FlowStatusRolledBack)
@@ -131,19 +131,19 @@ func (r *PointsRepositoryImpl) InsertRefund(ctx context.Context, flow *domain.Po
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			// 已退过：不允许同一笔订单重复退积分
+			// Already refunded: one order is never refunded twice
 			return domain.ErrAlreadyRefunded
 		}
 		return nil
 	})
-	// 回填自增 ID
+	// Backfill the auto-increment ID
 	flow.ID = row.ID
 	return id, err
 }
 
-// RefundByOrderID 根据订单号退积分（幂等版本，业务代码统一用这个）。
+// RefundByOrderID refunds points by order ID (the idempotent version; business code uses this uniformly).
 //
-// 先查是否已退过，已退直接返回 nil（幂等）；否则走 InsertRefund。
+// It first checks whether it was already refunded; already-refunded returns nil directly (idempotent); otherwise it goes through InsertRefund.
 func (r *PointsRepositoryImpl) RefundByOrderID(ctx context.Context, orderID string, userID int64, title string) error {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&pointsFlowRow{}).
@@ -153,16 +153,16 @@ func (r *PointsRepositoryImpl) RefundByOrderID(ctx context.Context, orderID stri
 		return err
 	}
 	if count > 0 {
-		return nil // 幂等：已退过
+		return nil // idempotent: already refunded
 	}
-	// 需要退还的金额 = 该订单原扣分金额（拿最新一条有效扣分记录）
+	// The amount to refund = the order's original deduction amount (take the latest valid deduction record)
 	var consume pointsFlowRow
 	err = r.db.WithContext(ctx).
 		Where("order_id = ? AND flow_type = ?", orderID, domain.FlowTypeConsume).
 		Order("id DESC").
 		First(&consume).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 没有可退的扣分记录（比如扣分流水本身就失败）—— 视为已退，幂等返回
+		// No refundable deduction record (e.g. the deduction entry itself failed) — treat as refunded, return idempotently
 		return nil
 	}
 	if err != nil {
@@ -176,12 +176,12 @@ func (r *PointsRepositoryImpl) RefundByOrderID(ctx context.Context, orderID stri
 		SceneDesc: title,
 	})
 	if errors.Is(err, domain.ErrAlreadyRefunded) {
-		return nil // 并发下已被其他请求退过，幂等返回
+		return nil // already refunded by another request under concurrency; return idempotently
 	}
 	return err
 }
 
-// ListByProject 反查某作品的所有扣退记录（对账能力）。
+// ListByProject looks up all deduction/refund records of a work (reconciliation capability).
 func (r *PointsRepositoryImpl) ListByProject(ctx context.Context, projectID string) ([]*domain.PointsFlow, error) {
 	var rows []*pointsFlowRow
 	err := r.db.WithContext(ctx).

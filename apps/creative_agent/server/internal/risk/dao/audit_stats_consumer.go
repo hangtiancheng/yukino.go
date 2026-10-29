@@ -14,53 +14,53 @@ import (
 	"gorm.io/gorm"
 )
 
-// RiskConsumerState 是消费组件的运行时状态（双游标）。
+// RiskConsumerState is the consumer component's runtime state (dual cursors).
 type RiskConsumerState struct {
-	LastInsertID   uint64 // 游标 A：新增游标（id > LastInsertID）
-	LastUpdateTime int64  // 游标 B：更新游标（update_time > LastUpdateTime）
+	LastInsertID   uint64 // cursor A: insert cursor (id > LastInsertID)
+	LastUpdateTime int64  // cursor B: update cursor (update_time > LastUpdateTime)
 }
 
-// RiskConsumerCursor 游标持久化接口（内存实现 + Redis 实现）。
+// RiskConsumerCursor is the cursor persistence interface (in-memory + Redis implementations).
 type RiskConsumerCursor interface {
 	Load(ctx context.Context) (*RiskConsumerState, error)
 	Save(ctx context.Context, state *RiskConsumerState) error
 }
 
-// RiskHitRecord 一条风控命中记录（消费端看到的"事件"）。
+// RiskHitRecord is one risk-hit record (an "event" as seen by the consumer).
 type RiskHitRecord struct {
 	ID         uint64
 	UserID     int64
-	SubProduct string // 统计/评估/拦截共用的维度 key（role:type 或异步 subProduct）
+	SubProduct string // the dimension key shared by statistics/evaluation/interception (role:type or the async subProduct)
 	RiskType   string
 	UpdateTime int64
 }
 
-// RiskPoller 轮询数据源接口（可注入，便于单测）。
+// RiskPoller is the polling data-source interface (injectable for unit tests).
 //
-// 消费目标表为 cg_risk_audit_record（风控记录独立成表后，全是 risk: 前缀，
-// 不再需要按前缀过滤脏数据——事件源语义更干净）。
+// The consumption target table is cg_risk_audit_record (after risk records got their own table, everything has the risk: prefix,
+// so prefix-based dirty-data filtering is no longer needed — cleaner event-source semantics).
 type RiskPoller interface {
-	// PollNew 取 id > lastInsertID 且 status='fail' 的新增命中记录。
+	// PollNew fetches new hit records with id > lastInsertID and status='fail'.
 	PollNew(ctx context.Context, lastInsertID uint64, limit int) ([]*RiskHitRecord, error)
-	// PollUpdated 取 update_time > lastUpdateTime 且 update_time <= now 的更新命中记录。
-	// lastInsertID 用于排除新增游标（游标 A）已消费过的行（双游标去重）。
+	// PollUpdated fetches updated hit records with update_time > lastUpdateTime and update_time <= now.
+	// lastInsertID excludes rows already consumed by the insert cursor (cursor A) (dual-cursor dedup).
 	PollUpdated(ctx context.Context, lastUpdateTime int64, lastInsertID uint64, limit int) ([]*RiskHitRecord, error)
 }
 
-// AuditStatsConsumer 常驻消费组件：双游标轮询 cg_risk_audit_record，累加进 cg_risk_stats。
+// AuditStatsConsumer is the resident consumer: dual-cursor polling of cg_risk_audit_record, accumulating into cg_risk_stats.
 //
-// 模拟 binlog 消费语义（spec §3）：
-//   - 游标 A（新增）：id > LastInsertID，捕同步风控命中（插入即 fail）
-//   - 游标 B（更新）：update_time > LastUpdateTime，捕异步风控命中（回调 Update 成 fail）
-//   - Ack：整批处理成功才推进游标（"全部成功才 Ack"）；失败不推进，下轮重试（at-least-once）
-//   - 脏数据：缺关键字段（UserID=0 / SubProduct 为空）的 fail 不累加，但游标照常推进（"脏消息直接 Ack"）
-//   - 去重（仅批内）：同一条被 A/B 各看到一次，靠 `id > lastInsertID` 下界排除，
-//     批内不再重复累加（UNIQUE 键只保证不产生重复行，本身不幂等）
-//   - ⚠️ 跨批次局限：同步命中插入即 fail、update_time 永不变，游标 B 可能在后续批次
-//     重新选中它（update_time 仍 > lastUpdateTime），而 cg_risk_stats 的
-//     hit_count + 1 UPSERT 不幂等 → 跨批次重复累加仍可能发生。
-//     已知继承局限（旧 internal/service/creation/risk_stats_consumer.go 同样存在），
-//     留待后续修复（如按 (id, update_time) 去重，或排除 update_time <= lastUpdateTime）
+// It simulates binlog consumption semantics (spec §3):
+//   - Cursor A (inserts): id > LastInsertID, catching sync risk hits (inserted as fail)
+//   - Cursor B (updates): update_time > LastUpdateTime, catching async risk hits (the callback Updates to fail)
+//   - Ack: cursors advance only when the whole batch succeeds ("Ack only when all succeed"); failures do not advance and retry next round (at-least-once)
+//   - Dirty data: fail records missing key fields (UserID=0 / empty SubProduct) are not accumulated, but cursors advance as usual ("Ack dirty messages directly")
+//   - Dedup (in-batch only): the same record seen by both A/B is excluded by the `id > lastInsertID` lower bound,
+//     so no duplicate accumulation within a batch (the UNIQUE key only prevents duplicate rows; it is not idempotent itself)
+//   - ⚠️ Cross-batch limitation: sync hits are inserted as fail with update_time never changing, so cursor B may
+//     re-select them in later batches (update_time still > lastUpdateTime), and cg_risk_stats's
+//     hit_count + 1 UPSERT is not idempotent → cross-batch duplicate accumulation can still happen.
+//     A known inherited limitation (the old internal/service/creation/risk_stats_consumer.go had it too),
+//     left for a future fix (e.g. dedup by (id, update_time), or excluding update_time <= lastUpdateTime)
 type AuditStatsConsumer struct {
 	poller   RiskPoller
 	stats    domain.RiskStatsRepository
@@ -70,7 +70,7 @@ type AuditStatsConsumer struct {
 	limit    int
 }
 
-// NewAuditStatsConsumer 创建消费组件。cursor 为 nil 时退化为内存态（重启重放，幂等兜底）。
+// NewAuditStatsConsumer creates the consumer component. When cursor is nil it degrades to in-memory state (replay on restart, idempotent fallback).
 func NewAuditStatsConsumer(poller RiskPoller, stats domain.RiskStatsRepository, cursor RiskConsumerCursor, logger *zap.Logger) *AuditStatsConsumer {
 	if cursor == nil {
 		cursor = &memoryCursor{}
@@ -88,7 +88,7 @@ func NewAuditStatsConsumer(poller RiskPoller, stats domain.RiskStatsRepository, 
 	}
 }
 
-// Run 常驻消费循环，直到 ctx 取消。每次 tick 消费一批。
+// Run is the resident consumption loop until ctx is canceled. Each tick consumes one batch.
 func (c *AuditStatsConsumer) Run(ctx context.Context) error {
 	state, err := c.cursor.Load(ctx)
 	if err != nil {
@@ -97,7 +97,7 @@ func (c *AuditStatsConsumer) Run(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
-	// 启动即消费一次
+	// Consume once at startup
 	if err := c.consumeBatch(ctx, state); err != nil {
 		c.logger.Error("risk stats consumer batch failed", zap.Error(err))
 	}
@@ -113,7 +113,7 @@ func (c *AuditStatsConsumer) Run(ctx context.Context) error {
 	}
 }
 
-// RunOnce 执行一次消费（monitor 用 ticker 驱动，复用 runLoop 生命周期）。
+// RunOnce performs one consumption round (the monitor drives it with a ticker, reusing the runLoop lifecycle).
 func (c *AuditStatsConsumer) RunOnce(ctx context.Context) error {
 	state, err := c.cursor.Load(ctx)
 	if err != nil {
@@ -122,19 +122,19 @@ func (c *AuditStatsConsumer) RunOnce(ctx context.Context) error {
 	return c.consumeBatch(ctx, state)
 }
 
-// ConsumeBatchForTest 单测钩子：暴露一次 consumeBatch（不启动常驻循环）。
+// ConsumeBatchForTest is a unit-test hook: exposes one consumeBatch (without starting the resident loop).
 func (c *AuditStatsConsumer) ConsumeBatchForTest(ctx context.Context, state *RiskConsumerState) error {
 	return c.consumeBatch(ctx, state)
 }
 
-// consumeBatch 消费一批：先新增后更新，全部成功才推进游标。
+// consumeBatch consumes one batch: inserts first, then updates; cursors advance only when all succeed.
 //
-// 双游标去重 + 跨批次幂等：同步命中（插入即 fail）只会被游标 A（新增）捕获一次——
-// PollUpdated 用 `update_time > create_time` 排除从未被 Update 过的行（同步 fail 行
-// update_time == create_time），异步命中（回调变 fail）才会被游标 B（更新）捕获。
-// 消费完新增后，用本批新增的最大 id 作为游标 B 的下界，批内 A/B 不重复。
+// Dual-cursor dedup + cross-batch idempotency: sync hits (inserted as fail) are captured only once by cursor A (inserts) —
+// PollUpdated excludes rows never Updated with `update_time > create_time` (sync fail rows have
+// update_time == create_time); only async hits (turned fail by callbacks) are captured by cursor B (updates).
+// After consuming inserts, this batch's max insert id becomes cursor B's lower bound, so A/B do not overlap within the batch.
 func (c *AuditStatsConsumer) consumeBatch(ctx context.Context, state *RiskConsumerState) error {
-	// 1. 消费新增（游标 A）
+	// 1. Consume inserts (cursor A)
 	newRecords, err := c.poller.PollNew(ctx, state.LastInsertID, c.limit)
 	if err != nil {
 		return fmt.Errorf("poll new: %w", err)
@@ -145,13 +145,13 @@ func (c *AuditStatsConsumer) consumeBatch(ctx context.Context, state *RiskConsum
 		}
 	}
 
-	// 本批新增最大 id：游标 B 用它排除新增游标已消费的行（双游标去重）
+	// This batch's max insert id: cursor B uses it to exclude rows already consumed by the insert cursor (dual-cursor dedup)
 	newInsertID := state.LastInsertID
 	if len(newRecords) > 0 {
 		newInsertID = newRecords[len(newRecords)-1].ID
 	}
 
-	// 2. 消费更新（游标 B）
+	// 2. Consume updates (cursor B)
 	updated, err := c.poller.PollUpdated(ctx, state.LastUpdateTime, newInsertID, c.limit)
 	if err != nil {
 		return fmt.Errorf("poll updated: %w", err)
@@ -162,7 +162,7 @@ func (c *AuditStatsConsumer) consumeBatch(ctx context.Context, state *RiskConsum
 		}
 	}
 
-	// 3. Ack：全部成功才推进游标
+	// 3. Ack: advance cursors only when all succeed
 	newState := *state
 	if len(newRecords) > 0 {
 		newState.LastInsertID = newRecords[len(newRecords)-1].ID
@@ -179,21 +179,21 @@ func (c *AuditStatsConsumer) consumeBatch(ctx context.Context, state *RiskConsum
 	return nil
 }
 
-// accumulate 把一条命中记录累加进统计表（hit_count + 1）。
-// 去重由消费端保证：同步命中只走游标 A、异步命中只走游标 B（PollUpdated 的
-// `update_time > create_time` 条件），同一条记录不会被 A/B 各消费一次，也不跨批次重复。
-// UNIQUE 键作为最后的行级兜底。
+// accumulate accumulates one hit record into the statistics table (hit_count + 1).
+// Dedup is guaranteed by the consumer: sync hits go through cursor A only, async hits through cursor B only (PollUpdated's
+// `update_time > create_time` condition), so one record is never consumed by both A/B nor duplicated across batches.
+// The UNIQUE key is the last row-level fallback.
 func (c *AuditStatsConsumer) accumulate(ctx context.Context, rec *RiskHitRecord) error {
 	if rec == nil || rec.UserID == 0 || rec.SubProduct == "" {
-		return nil // 脏数据：缺关键字段，跳过累加
+		return nil // dirty data: missing key fields; skip accumulation
 	}
 	windowStart := rec.UpdateTime - rec.UpdateTime%60
 	return c.stats.UpsertIncrement(ctx, rec.UserID, rec.SubProduct, rec.RiskType, windowStart)
 }
 
-// --- 游标实现 ---
+// --- Cursor implementations ---
 
-// memoryCursor 内存游标（无 Redis / 单测时用）。
+// memoryCursor is the in-memory cursor (no Redis / unit tests).
 type memoryCursor struct{}
 
 func (m *memoryCursor) Load(ctx context.Context) (*RiskConsumerState, error) {
@@ -201,15 +201,15 @@ func (m *memoryCursor) Load(ctx context.Context) (*RiskConsumerState, error) {
 }
 func (m *memoryCursor) Save(ctx context.Context, state *RiskConsumerState) error { return nil }
 
-// NewMemoryCursor 创建内存游标（单测 / 无 Redis 场景）。
+// NewMemoryCursor creates the in-memory cursor (unit tests / no-Redis scenarios).
 func NewMemoryCursor() RiskConsumerCursor { return &memoryCursor{} }
 
-// redisCursor 游标的 Redis 持久化（进程重启不重放）。
+// redisCursor is the Redis-persisted cursor (no replay across process restarts).
 type redisCursor struct {
 	rdb *redis.Client
 }
 
-// NewRedisCursor 创建 Redis 游标。rdb 为 nil 时退化为内存游标。
+// NewRedisCursor creates the Redis cursor. When rdb is nil it degrades to the in-memory cursor.
 func NewRedisCursor(rdb *redis.Client) RiskConsumerCursor {
 	if rdb == nil {
 		return &memoryCursor{}
@@ -249,27 +249,27 @@ func (r *redisCursor) Save(ctx context.Context, state *RiskConsumerState) error 
 	).Err()
 }
 
-// --- 轮询器（读取 cg_risk_audit_record） ---
+// --- Poller (reads cg_risk_audit_record) ---
 
-// AuditRecordPoller 轮询 cg_risk_audit_record 表，实现 RiskPoller 接口。
+// AuditRecordPoller polls the cg_risk_audit_record table, implementing the RiskPoller interface.
 //
-// 分表后风控审计记录独立成表，轮询器直查该表（表结构审计记录行，
-// 不再混读任务回调记录）。不通过 domain.AuditRecordRepository 查询——
-// 仓储接口面向业务读写，没有批量的游标轮询方法；轮询器作为基础设施内部的
-// 专用数据源实现，直接持有 *gorm.DB（与旧 CallbackRecordPoller 持 DAO 同构）。
+// After table splitting, risk-audit records have their own table; the poller queries it directly (audit-record rows,
+// no longer mixed with task callback records). It does not query through domain.AuditRecordRepository —
+// the repository interface serves business reads/writes and has no batch cursor-polling methods; the poller is an
+// infrastructure-internal dedicated data source holding *gorm.DB directly (isomorphic to the old CallbackRecordPoller holding a DAO).
 type AuditRecordPoller struct {
 	db *gorm.DB
 }
 
-// NewAuditRecordPoller 创建轮询器。
+// NewAuditRecordPoller creates the poller.
 func NewAuditRecordPoller(db *gorm.DB) *AuditRecordPoller {
 	return &AuditRecordPoller{db: db}
 }
 
-// 编译期断言：确保实现满足 RiskPoller 接口。
+// Compile-time assertion: the implementation satisfies the RiskPoller interface.
 var _ RiskPoller = (*AuditRecordPoller)(nil)
 
-// PollNew 取 id > lastInsertID 且 status='fail' 的命中记录（新增游标）。
+// PollNew fetches hit records with id > lastInsertID and status='fail' (insert cursor).
 func (p *AuditRecordPoller) PollNew(ctx context.Context, lastInsertID uint64, limit int) ([]*RiskHitRecord, error) {
 	var rows []*auditRecordRow
 	err := p.db.WithContext(ctx).
@@ -283,18 +283,18 @@ func (p *AuditRecordPoller) PollNew(ctx context.Context, lastInsertID uint64, li
 	return auditRowsToRiskHits(rows), nil
 }
 
-// PollUpdated 取 update_time > lastUpdateTime 且 update_time <= now 且 status='fail' 的记录。
+// PollUpdated fetches records with update_time > lastUpdateTime and update_time <= now and status='fail'.
 //
-// ⚠️ 时间戳边界：update_time 是秒级，同一秒多条更新可能漏。
-// 用 `update_time <= now` 排除"正在写入"的行。
+// ⚠️ Timestamp boundary: update_time is second-granularity; multiple updates in the same second may be missed.
+// `update_time <= now` excludes rows "being written".
 //
-// ⚠️ 双游标去重 + 跨批次幂等：游标 A（新增）已消费过 id <= lastInsertID 的行，这里用
-// `id > lastInsertID` 排除新增游标已覆盖的行（批内去重）。同时用 `update_time > create_time`
-// 排除"从未被 Update 过"的行——同步命中插入即 fail，其 update_time == create_time，更新游标
-// 不应捕获它（它只属于新增游标 A）。异步命中插入时 update_time == create_time，但回调变 fail
-// 时 Update 刷新 update_time > create_time，更新游标只捕这类真正变化过的行。这一条件从 SQL
-// 层面根除跨批次重复累加（否则同步 fail 行在后续批次会被 update_time > lastUpdateTime 重新选中，
-// 而 hit_count + 1 的 UPSERT 不幂等）。
+// ⚠️ Dual-cursor dedup + cross-batch idempotency: cursor A (inserts) already consumed rows with id <= lastInsertID; here
+// `id > lastInsertID` excludes rows covered by the insert cursor (in-batch dedup). Also `update_time > create_time`
+// excludes rows "never Updated" — sync hits are inserted as fail with update_time == create_time, and the update cursor
+// must not capture them (they belong to insert cursor A only). Async hits are inserted with update_time == create_time, but when the callback turns them fail
+// the Update refreshes update_time > create_time, so the update cursor captures only these genuinely changed rows. This condition eradicates
+// cross-batch duplicate accumulation at the SQL level (otherwise sync fail rows would be re-selected in later batches by update_time > lastUpdateTime,
+// and the hit_count + 1 UPSERT is not idempotent).
 func (p *AuditRecordPoller) PollUpdated(ctx context.Context, lastUpdateTime int64, lastInsertID uint64, limit int) ([]*RiskHitRecord, error) {
 	now := time.Now().Unix()
 	var rows []*auditRecordRow
@@ -309,17 +309,17 @@ func (p *AuditRecordPoller) PollUpdated(ctx context.Context, lastUpdateTime int6
 	return auditRowsToRiskHits(rows), nil
 }
 
-// auditRowsToRiskHits 把审计记录行转成消费事件。
+// auditRowsToRiskHits converts audit-record rows into consumption events.
 //
-// 新表 cg_risk_audit_record 全为风控记录，无需再按 risk: 前缀过滤脏数据；
-// 维度 key 由 extractRiskSubProduct 从 task_type 提取，无法提取时跳过累加
-// （游标照常推进）。
+// The new table cg_risk_audit_record contains only risk records, so risk:-prefix dirty-data filtering is no longer needed;
+// the dimension key is extracted from task_type by extractRiskSubProduct; when extraction fails, accumulation is skipped
+// (cursors advance as usual).
 func auditRowsToRiskHits(rows []*auditRecordRow) []*RiskHitRecord {
 	hits := make([]*RiskHitRecord, 0, len(rows))
 	for _, r := range rows {
 		subProduct := extractRiskSubProduct(r.TaskType)
 		if subProduct == "" {
-			continue // 无有效维度 key，跳过累加（游标照常推进）
+			continue // no valid dimension key; skip accumulation (cursors advance as usual)
 		}
 		hits = append(hits, &RiskHitRecord{
 			ID:         r.ID,
@@ -332,25 +332,25 @@ func auditRowsToRiskHits(rows []*auditRecordRow) []*RiskHitRecord {
 	return hits
 }
 
-// extractRiskSubProduct 从审计记录的 task_type 提取聚合维度 key。
+// extractRiskSubProduct extracts the aggregation dimension key from an audit record's task_type.
 //
-// task_type 形如：
-//   - "risk:async:{subProduct}"       异步命中 → 取末段真实 subProduct
-//   - "risk:{role}:{type}:{stage}"    同步命中 → 取 {role}:{type}
+// task_type looks like:
+//   - "risk:async:{subProduct}"       async hit → take the trailing real subProduct
+//   - "risk:{role}:{type}:{stage}"    sync hit → take {role}:{type}
 //
-// 语义（统计/评估/拦截共用的维度 key）：
-//   - 异步命中取末段真实 subProduct（如 dujiaapp_mixvideo60s_t2v_output）
-//   - 同步命中取 {role}:{type}（如 5:mix_video）——同步命中的真实策略名要查
-//     PreCreationInputMap，消费端拿不到请求上下文；用 {role}:{type} 作聚合维度，
-//     与 pre_create 拦截时用的维度保持一致。
+// Semantics (the dimension key shared by statistics/evaluation/interception):
+//   - Async hits take the trailing real subProduct (e.g. dujiaapp_mixvideo60s_t2v_output)
+//   - Sync hits take {role}:{type} (e.g. 5:mix_video) — the real policy name of a sync hit requires looking up
+//     PreCreationInputMap, and the consumer has no request context; using {role}:{type} as the aggregation dimension
+//     stays consistent with the dimension used by pre_create interception.
 //
-// 无法提取（空/畸形）时返回 ""，调用方跳过累加（游标照常推进）。
+// When extraction fails (empty/malformed) it returns "", and callers skip accumulation (cursors advance as usual).
 func extractRiskSubProduct(taskType string) string {
 	if taskType == "" || !strings.HasPrefix(taskType, "risk:") {
 		return ""
 	}
 	parts := strings.Split(taskType, ":")
-	// 拆分后至少有 ["risk", ...]
+	// After splitting there is at least ["risk", ...]
 	if len(parts) >= 3 && parts[1] == "async" {
 		// risk:async:{subProduct}
 		return parts[len(parts)-1]

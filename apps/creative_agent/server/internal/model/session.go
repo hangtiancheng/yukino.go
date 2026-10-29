@@ -1,7 +1,7 @@
 package model
 
-// CGSession 是 cg_session 表的 GORM 模型。
-// 一个 session（会话窗口）对应多条 message_record。
+// CGSession is the GORM model of the cg_session table.
+// One session (conversation window) maps to many message_record rows.
 type CGSession struct {
 	ID               int64  `gorm:"column:id;primaryKey;autoIncrement"`
 	SessionID        string `gorm:"column:session_id;uniqueIndex;size:64;not null"`
@@ -18,8 +18,8 @@ type CGSession struct {
 
 func (CGSession) TableName() string { return "cg_session" }
 
-// Session 状态常量。
+// Session status constants.
 const (
-	SessionStatusInit      int8 = 0 // 初始状态
-	SessionStatusDialogued int8 = 1 // 已对话
+	SessionStatusInit      int8 = 0 // initial state
+	SessionStatusDialogued int8 = 1 // has conversation
 )

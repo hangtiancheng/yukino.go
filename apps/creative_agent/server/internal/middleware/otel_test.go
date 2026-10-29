@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TestOTelTracing 验证 OTel 中间件把带 span 的 ctx 注入请求。
+// TestOTelTracing verifies that the OTel middleware injects a span-carrying ctx into the request.
 func TestOTelTracing(t *testing.T) {
 	tp, exp := otelx.NewMemoryExporter()
 	defer func() { _ = tp.Shutdown(context.Background()) }()
@@ -27,8 +27,8 @@ func TestOTelTracing(t *testing.T) {
 	r.Use(middleware.OTelTracing("test-svc", tp))
 	r.Get("/ping", func(c *yukino.Context, _ func()) {
 		sc := trace.SpanContextFromContext(c.Request.Context())
-		testx.True(t, sc.IsValid(), "请求 ctx 应带有效 span")
-		testx.True(t, sc.IsSampled(), "span 应为 sampled（AlwaysSample）")
+		testx.True(t, sc.IsValid(), "the request ctx should carry a valid span")
+		testx.True(t, sc.IsSampled(), "the span should be sampled (AlwaysSample)")
 		c.SetStatus(200)
 	})
 
@@ -37,7 +37,7 @@ func TestOTelTracing(t *testing.T) {
 	r.ServeHTTP(w, req)
 	testx.Equal(t, 200, w.Code)
 
-	// RequestID 中间件生成 uuid，OTel 中间件应把它写入 span 属性（http.request_id）。
+	// The RequestID middleware generates a uuid; the OTel middleware should write it into the span attributes (http.request_id).
 	testx.Eventually(t, func() bool {
 		for _, s := range exp.GetSpans() {
 			if s.Name() == "HTTP GET /ping" {
@@ -49,17 +49,17 @@ func TestOTelTracing(t *testing.T) {
 			}
 		}
 		return false
-	}, 2*time.Second, 10*time.Millisecond, "span 应带 http.request_id 属性")
+	}, 2*time.Second, 10*time.Millisecond, "the span should carry the http.request_id attribute")
 }
 
-// TestOTelTracingTraceParent 验证：入站请求带 traceparent 头时，
-// 中间件 Extract 恢复远端父 span 并建 child span（同一 TraceID → 同一条 trace）。
+// TestOTelTracingTraceParent verifies that when an inbound request carries a traceparent header,
+// the middleware Extracts the remote parent span and creates a child span (same TraceID → same trace).
 func TestOTelTracingTraceParent(t *testing.T) {
 	tp, exp := otelx.NewMemoryExporter()
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 
-	// 生产路径：otelx.Init 启用时设置全局 W3C propagator，中间件经 otel.GetTextMapPropagator 读取。
-	// NewMemoryExporter 故意不改全局（测试隔离），这里手动设置并 defer 恢复。
+	// Production path: otelx.Init sets the global W3C propagator when enabled; the middleware reads it via otel.GetTextMapPropagator.
+	// NewMemoryExporter deliberately does not touch globals (test isolation), so set it manually here and restore with defer.
 	propagator := propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
@@ -72,12 +72,12 @@ func TestOTelTracingTraceParent(t *testing.T) {
 	r.Use(middleware.OTelTracing("test-svc", tp))
 	r.Get("/ping", func(c *yukino.Context, _ func()) {
 		sc := trace.SpanContextFromContext(c.Request.Context())
-		testx.True(t, sc.IsValid(), "请求 ctx 应带有效 span")
-		testx.True(t, sc.IsSampled(), "span 应为 sampled（AlwaysSample）")
+		testx.True(t, sc.IsValid(), "the request ctx should carry a valid span")
+		testx.True(t, sc.IsSampled(), "the span should be sampled (AlwaysSample)")
 		c.SetStatus(200)
 	})
 
-	// 构造一个已知 TraceID 的远端父 span ctx，用全局 W3C propagator 序列化为 traceparent 头。
+	// Build a remote parent span ctx with a known TraceID and serialize it into a traceparent header with the global W3C propagator.
 	parentTraceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
 	parentSpanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
 	parentSC := trace.NewSpanContext(trace.SpanContextConfig{
@@ -97,7 +97,7 @@ func TestOTelTracingTraceParent(t *testing.T) {
 	r.ServeHTTP(w, req)
 	testx.Equal(t, 200, w.Code)
 
-	// child span 应继承父 TraceID（同一条 trace），并带 request_id 属性。
+	// The child span should inherit the parent TraceID (same trace) and carry the request_id attribute.
 	testx.Eventually(t, func() bool {
 		for _, s := range exp.GetSpans() {
 			if s.Name() == "HTTP GET /ping" {
@@ -112,18 +112,18 @@ func TestOTelTracingTraceParent(t *testing.T) {
 			}
 		}
 		return false
-	}, 2*time.Second, 10*time.Millisecond, "child span 应继承父 TraceID 且带 request_id 属性")
+	}, 2*time.Second, 10*time.Millisecond, "the child span should inherit the parent TraceID and carry the request_id attribute")
 }
 
-// TestOTelTracingNilProvider 验证：TracerProvider 为 nil（OTel 未启用）时
-// 中间件直接放行，不建 span、不 panic。
+// TestOTelTracingNilProvider verifies that when TracerProvider is nil (OTel disabled)
+// the middleware passes through without creating a span or panicking.
 func TestOTelTracingNilProvider(t *testing.T) {
 	r := yukino.New()
 	r.Use(middleware.RequestID())
 	r.Use(middleware.OTelTracing("test-svc", nil))
 	r.Get("/ping", func(c *yukino.Context, _ func()) {
 		sc := trace.SpanContextFromContext(c.Request.Context())
-		testx.False(t, sc.IsValid(), "nil provider 时 ctx 不应带 span")
+		testx.False(t, sc.IsValid(), "the ctx should carry no span when the provider is nil")
 		c.SetStatus(200)
 	})
 

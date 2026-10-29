@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	// MaxLoginFail 允许的连续登录失败次数，超过即锁定。
+	// MaxLoginFail is the number of consecutive login failures allowed before locking.
 	MaxLoginFail = 5
-	// LoginLockSecs 失败计数窗口（锁定时长）。
+	// LoginLockSecs is the failure-count window (lock duration).
 	LoginLockSecs = 900
 )
 
-// 业务错误（迁移自 legacy service，语义与 handler 错误映射保持一致）。
+// Business errors (migrated from the legacy service; semantics stay consistent with the handler error mapping).
 var (
 	ErrUserExists         = errors.New("user already exists")
 	ErrEmailExists        = errors.New("email already exists")
@@ -28,36 +28,36 @@ var (
 	ErrUserLocked         = errors.New("account locked due to too many failed attempts")
 )
 
-// dummyHash 用于用户不存在时执行一次等价开销的 bcrypt 比较，消除时序侧信道，
-// 避免攻击者通过响应时间差异探测用户名是否存在。
+// dummyHash is used to perform an equivalent-cost bcrypt comparison when the user does not exist, eliminating the timing side channel
+// so attackers cannot probe whether a username exists via response-time differences.
 var dummyHash = func() []byte {
 	h, _ := bcrypt.GenerateFromPassword([]byte("dummy-timing-equalizer"), bcrypt.DefaultCost)
 	return h
 }()
 
-// loginFailKey 构造登录失败计数 key。小写私有（与 legacy 一致，仅本包使用）。
+// loginFailKey builds the login-failure count key. Lowercase-private (consistent with legacy; used only in this package).
 func loginFailKey(username string) string {
 	return fmt.Sprintf("login:fail:%s", username)
 }
 
-// JwtBlacklistKey 返回 jti 对应的黑名单键。供 middleware 复用。
+// JwtBlacklistKey returns the blacklist key for a jti. Reused by the middleware.
 func JwtBlacklistKey(jti string) string {
 	return fmt.Sprintf("jwt:blacklist:%s", jti)
 }
 
-// AuthApp 承载用户注册、登录、登出业务逻辑（应用服务）。
+// AuthApp carries the business logic for user registration, login, and logout (application service).
 type AuthApp struct {
 	repo domain.UserRepository
 	rdb  domain.RedisPort
 	auth *domain.AuthService
 }
 
-// NewAuthApp 创建 AuthApp。rdb 可为 nil（无 Redis 时降级：跳过缓存/黑名单，业务照常）。
+// NewAuthApp creates an AuthApp. rdb may be nil (no-Redis degradation: skip cache/blacklist, business proceeds).
 func NewAuthApp(repo domain.UserRepository, rdb domain.RedisPort, auth *domain.AuthService) *AuthApp {
 	return &AuthApp{repo: repo, rdb: rdb, auth: auth}
 }
 
-// Register 注册新用户：查重（用户名 + 邮箱）、bcrypt 哈希、入库。
+// Register creates a new user: duplicate checks (username + email), bcrypt hashing, persistence.
 func (a *AuthApp) Register(ctx context.Context, username, password, email string) error {
 	if _, err := a.repo.FindByUsername(ctx, username); err == nil {
 		return ErrUserExists
@@ -78,18 +78,18 @@ func (a *AuthApp) Register(ctx context.Context, username, password, email string
 		PasswordHash: string(hash),
 		Email:        email,
 	})
-	// 并发下查重与插入之间的竞态由唯一索引兜底。
+	// Under concurrency, the race between the duplicate check and the insert is covered by the unique index.
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return ErrUserExists
 	}
 	return err
 }
 
-// Login 校验用户名密码并签发 token，含失败计数限流。
+// Login validates the username/password and issues a token, with failure-count rate limiting.
 func (a *AuthApp) Login(ctx context.Context, username, password string) (string, error) {
 	if a.rdb != nil {
 		v, _ := a.rdb.Get(ctx, loginFailKey(username))
-		failCount, _ := strconv.Atoi(v) // 键不存在/非数字时视为 0，与 legacy Get().Int() 语义一致
+		failCount, _ := strconv.Atoi(v) // missing key / non-numeric counts as 0, consistent with legacy Get().Int() semantics
 		if failCount >= MaxLoginFail {
 			return "", ErrUserLocked
 		}
@@ -97,7 +97,7 @@ func (a *AuthApp) Login(ctx context.Context, username, password string) (string,
 
 	user, err := a.repo.FindByUsername(ctx, username)
 	if err != nil {
-		// 用户不存在时也做一次等价 bcrypt 比较，避免通过响应时序探测用户是否存在。
+		// Perform an equivalent bcrypt comparison even when the user does not exist, so user existence cannot be probed via response timing.
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		a.recordLoginFail(ctx, username)
 		return "", ErrInvalidCredentials
@@ -127,8 +127,8 @@ func (a *AuthApp) recordLoginFail(ctx context.Context, username string) {
 	}
 }
 
-// LogoutByJTI 将指定 jti 写入 Redis 黑名单，TTL 为 token 剩余有效期。
-// jti 与 exp 由 JWT 中间件解析后注入 gin.Context，避免在登出处重复解析 token。
+// LogoutByJTI writes the given jti into the Redis blacklist with a TTL equal to the token's remaining validity.
+// jti and exp are parsed by the JWT middleware and injected into the context, avoiding re-parsing the token at logout.
 func (a *AuthApp) LogoutByJTI(ctx context.Context, jti string, exp time.Time) error {
 	if a.rdb == nil || jti == "" {
 		return nil

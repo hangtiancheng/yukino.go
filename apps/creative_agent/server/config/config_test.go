@@ -65,7 +65,7 @@ func TestMergeFile(t *testing.T) {
 	if cfg.MySQL.Host != "db.local" || cfg.MySQL.Port != "3307" {
 		t.Fatalf("mysql = %+v", cfg.MySQL)
 	}
-	// 未出现的字段保持默认值
+	// Fields absent from the file keep their defaults
 	if cfg.MySQL.User != "root" {
 		t.Fatalf("mysql.user = %q, want default root", cfg.MySQL.User)
 	}
@@ -216,7 +216,7 @@ func TestLoadLLMFromJSONAndEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 从 JSON 文件加载
+	// Load from JSON files
 	cfg := config.Defaults()
 	if err := config.MergeFile(cfg, configPath); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestLoadLLMFromJSONAndEnv(t *testing.T) {
 		t.Fatalf("llm.model = %q", cfg.LLM.Model)
 	}
 
-	// 环境变量覆盖
+	// Env vars override
 	config.ApplyEnv(cfg, func(key string) (string, bool) {
 		switch key {
 		case "LLM_BASE_URL":
@@ -249,7 +249,7 @@ func TestLoadLLMFromJSONAndEnv(t *testing.T) {
 func TestLoadSecretsOverridesConfig(t *testing.T) {
 	dir := t.TempDir()
 
-	// 公开配置（无密码）
+	// Public config (no passwords)
 	configPath := filepath.Join(dir, "config.json")
 	configJSON := `{
 	  "mysql": { "host": "db.local", "port": "3306" },
@@ -259,7 +259,7 @@ func TestLoadSecretsOverridesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 密码文件
+	// Secrets file
 	secretsPath := filepath.Join(dir, "secrets.json")
 	secretsJSON := `{
 	  "mysql": { "password": "my-secret-password" },
@@ -269,7 +269,7 @@ func TestLoadSecretsOverridesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Load 的合并顺序：默认值 → config.json → secrets.json → 环境变量。
+	// Load merge order: defaults → config.json → secrets.json → env vars.
 	cfg := config.Defaults()
 	if err := config.MergeFile(cfg, configPath); err != nil {
 		t.Fatal(err)

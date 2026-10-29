@@ -16,7 +16,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestSubmitClarification_AdvanceStage 验证点卡确认推进 FlowStage。
+// TestSubmitClarification_AdvanceStage verifies that card confirmation advances FlowStage.
 func TestSubmitClarification_AdvanceStage(t *testing.T) {
 	memory := memory.NewIntentMemory()
 
@@ -28,11 +28,11 @@ func TestSubmitClarification_AdvanceStage(t *testing.T) {
 		IntentMemory: memory,
 	})
 
-	// Task 8: 对话路由强制鉴权，点卡确认需携带用户 JWT。
+	// Task 8: conversation routes require auth; card confirmation must carry the user JWT.
 	token, err := service.NewAuthService("test-secret").GenerateToken("alice", 7)
 	testx.NoError(t, err)
 
-	// 选题卡确认
+	// Topic card confirmation
 	do := func(cardType, pipeline, agentID, msgID string) map[string]any {
 		reqBody := map[string]string{
 			"sessionId": "s1",
@@ -69,22 +69,22 @@ func TestSubmitClarification_AdvanceStage(t *testing.T) {
 		}
 	}
 
-	// 选题卡 → topic_confirmed，不推进 agent
+	// Topic card → topic_confirmed, agent not advanced
 	res := do("topic", "mix_video", string(subtask.AgentIdeaKing), "")
 	testx.Equal(t, "topic_confirmed", res["stage"])
 	testx.Equal(t, "", res["nextAgent"])
 
-	// 脚本卡 → script_confirmed，算出下一个 agent（edit_master），回传 originMsgId
+	// Script card → script_confirmed, next agent computed (edit_master), originMsgId echoed
 	res2 := do("script", "mix_video", string(subtask.AgentGoldScriptwriter), "msg-script-1")
 	testx.Equal(t, "script_confirmed", res2["stage"])
 	testx.Equal(t, string(subtask.AgentEditMaster), res2["nextAgent"])
 	testx.Equal(t, "msg-script-1", res2["originMsgId"])
 
-	// 脚本卡后 CanFastTask 应命中
+	// CanFastTask should hit after the script card
 	testx.True(t, memory.GetStage("s1").CanFastTask())
 }
 
-// TestSubmitClarification_Validation 验证必填与合法性校验。
+// TestSubmitClarification_Validation verifies required-field and validity checks.
 func TestSubmitClarification_Validation(t *testing.T) {
 	r := router.Setup(router.Dependencies{
 		UserSvc:      nil,
@@ -94,7 +94,7 @@ func TestSubmitClarification_Validation(t *testing.T) {
 		IntentMemory: memory.NewIntentMemory(),
 	})
 
-	// Task 8: 对话路由强制鉴权，点卡确认需携带用户 JWT。
+	// Task 8: conversation routes require auth; card confirmation must carry the user JWT.
 	token, err := service.NewAuthService("test-secret").GenerateToken("alice", 7)
 	testx.NoError(t, err)
 	auth := func(req *http.Request) *http.Request {
@@ -102,7 +102,7 @@ func TestSubmitClarification_Validation(t *testing.T) {
 		return req
 	}
 
-	// 缺 sessionId → 400
+	// Missing sessionId → 400
 	body, _ := json.Marshal(map[string]string{"cardType": "script"})
 	req := auth(httptest.NewRequest(http.MethodPost, "/aigc/agent/submit_clarification", bytes.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -110,7 +110,7 @@ func TestSubmitClarification_Validation(t *testing.T) {
 	r.ServeHTTP(w, req)
 	testx.Equal(t, http.StatusBadRequest, w.Code)
 
-	// 非法 cardType → 400
+	// Invalid cardType → 400
 	body2, _ := json.Marshal(map[string]string{"sessionId": "s1", "cardType": "bogus"})
 	req2 := auth(httptest.NewRequest(http.MethodPost, "/aigc/agent/submit_clarification", bytes.NewReader(body2)))
 	req2.Header.Set("Content-Type", "application/json")
@@ -118,7 +118,7 @@ func TestSubmitClarification_Validation(t *testing.T) {
 	r.ServeHTTP(w2, req2)
 	testx.Equal(t, http.StatusBadRequest, w2.Code)
 
-	// 脚本卡缺 msgId → 400（无法追溯前序脚本）
+	// Script card missing msgId → 400 (cannot trace the preceding script)
 	body3, _ := json.Marshal(map[string]string{
 		"sessionId": "s1", "cardType": "script", "agentId": "gold_scriptwriter", "pipeline": "mix_video",
 	})
@@ -128,7 +128,7 @@ func TestSubmitClarification_Validation(t *testing.T) {
 	r.ServeHTTP(w3, req3)
 	testx.Equal(t, http.StatusBadRequest, w3.Code)
 
-	// 脚本卡缺 pipeline → 200，但 nextAgent 为空（无法算下一个）；msgId 回传
+	// Script card missing pipeline → 200, but nextAgent is empty (cannot compute the next one); msgId echoed
 	body4, _ := json.Marshal(map[string]string{
 		"sessionId": "s1", "cardType": "script", "agentId": "gold_scriptwriter", "msgId": "msg-script-2",
 	})
@@ -151,9 +151,9 @@ func TestSubmitClarification_Validation(t *testing.T) {
 	testx.Equal(t, "msg-script-2", resp.Data.OriginMsgID)
 }
 
-// TestSubmitClarification_HotTopic_SelectedEid 验证热点卡（topic）确认：
-// 携带 selectedEid/topicTitle → 写入 IntentMemory（GetTopicEid/GetTopicTitle）+
-// 响应回传 selectedEid/originMsgId。
+// TestSubmitClarification_HotTopic_SelectedEid verifies hot-topic card confirmation:
+// carrying selectedEid/topicTitle → written into IntentMemory (GetTopicEid/GetTopicTitle) +
+// the response echoes selectedEid/originMsgId.
 func TestSubmitClarification_HotTopic_SelectedEid(t *testing.T) {
 	im := memory.NewIntentMemory()
 
@@ -196,14 +196,14 @@ func TestSubmitClarification_HotTopic_SelectedEid(t *testing.T) {
 	}
 	testx.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	testx.Equal(t, "topic_confirmed", resp.Data.Stage)
-	testx.Equal(t, "eid-abc123", resp.Data.SelectedEid, "响应应回传 selectedEid")
+	testx.Equal(t, "eid-abc123", resp.Data.SelectedEid, "the response should echo selectedEid")
 	testx.Equal(t, "选题一", resp.Data.TopicTitle)
 	testx.Equal(t, "msg-hot-1", resp.Data.OriginMsgID)
 
-	// IntentMemory 已写入点选的热点 eid + 选题标题
+	// IntentMemory holds the clicked hot-topic eid + topic title
 	testx.Equal(t, "eid-abc123", im.GetTopicEid("s-hot"))
 	testx.Equal(t, "选题一", im.GetTopicTitle("s-hot"))
 }
 
-// 确保 handler 包的核心函数被引用（编译检查）。
+// Ensure the handler package's core functions are referenced (compile check).
 var _ = handler.ClarificationRequest{}

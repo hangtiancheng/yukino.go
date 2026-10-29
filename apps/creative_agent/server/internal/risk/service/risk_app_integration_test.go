@@ -1,24 +1,24 @@
 //go:build integration
 
-// Package application_test risk 应用服务集成测试：走真实 MySQL + Redis。
+// Package application_test risk application-service integration tests: against real MySQL + Redis.
 //
-// 运行方式（需 MySQL/Redis 可用）：
+// How to run (requires MySQL/Redis):
 //
 //	cd base-server && go test -tags=integration -p 1 ./internal/risk/... -count=1 -v
 //
-// 覆盖 Task 6.2 的送审 + 终态落定闭环（risk 应用层，经过真实 gorm 仓储）：
-//   - 同步送审 SyncAudit：文本通过 / 敏感词拦截（本地后端显式设置敏感词表）
-//   - 异步送审 AsyncAudit：插 auditing 记录 + task_type=risk:async:{subProduct} + 提交成功写 task_input
-//   - 异步送审提交失败：写 cg_audit_compensation 补偿记录（biz_type=1）；补偿重试
-//     RetryAsyncAudit 复用原始 auditing 记录重新提交
-//   - 回调终态落定 AuditOutputApp：passed → audit_record=done + project=done（不退积分）；
-//     !passed → audit_record=fail + project=fail + 退积分（幂等）；重复回调终态短路不重复退
-//   - 同步合并记录器 SyncAuditRecorder：多次 Run + Finish 合并落一条记录（真实仓储）
+// Covers Task 6.2's submission + terminal-settling loop (risk application layer, through real gorm repositories):
+//   - Sync submission SyncAudit: text passes / sensitive-word interception (the local backend's word list is set explicitly)
+//   - Async submission AsyncAudit: inserts an auditing record + task_type=risk:async:{subProduct} + writes task_input on successful submission
+//   - Async submission failure: writes a cg_audit_compensation record (biz_type=1); the compensation retry
+//     RetryAsyncAudit reuses the original auditing record to resubmit
+//   - Callback terminal settling AuditOutputApp: passed → audit_record=done + project=done (no refund);
+//     !passed → audit_record=fail + project=fail + refund (idempotent); duplicate callbacks short-circuit on terminal, no double refund
+//   - Sync merged recorder SyncAuditRecorder: multiple Runs + Finish merge into one record (real repository)
 //
-// 装配（对齐 internal/app/app.go 的 New）：本地敏感词后端（LocalAuditBackend，
-// 敏感词表显式设置）+ 真实 points/risk/creation 仓储 + Redis 黑名单检查器。
-// 治理闭环（消费者/评估 job/黑名单）已由 internal/monitor/risk_governance_integration_test.go
-// 覆盖，本文件不重复。
+// Assembly (aligned with internal/app/app.go's New): the local sensitive-word backend (LocalAuditBackend,
+// word list set explicitly) + real points/risk/creation repositories + the Redis blacklist checker.
+// The governance loop (consumer/evaluation job/blacklist) is covered by internal/monitor/risk_governance_integration_test.go;
+// this file does not repeat it.
 package service_test
 
 import (
@@ -50,20 +50,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// riskDeps 是测试装配好的新架构组件（等价 internal/app/app.go 的 New 产物，聚焦 risk 侧）。
+// riskDeps holds the test-assembled new-architecture components (equivalent to internal/app/app.go's New output, focused on the risk side).
 type riskDeps struct {
 	db           *gorm.DB
 	rdb          *redis.Client
 	riskAudit    *riskapp.RiskAuditApp
 	auditOutput  *riskapp.AuditOutputApp
-	records      riskdomain.AuditRecordRepository // 审计记录仓储（断言用）
+	records      riskdomain.AuditRecordRepository // audit-record repository (for assertions)
 	projects     creationdomain.ProjectRepository
 	comp         creationdomain.CompensationRepository
 	points       pointsapp.PointsApp
-	auditBackend *riskinfra.LocalAuditBackend // 测试可覆写敏感词表
+	auditBackend *riskinfra.LocalAuditBackend // tests can override the sensitive-word list
 }
 
-// RiskAppIntegrationSuite 集成测试套件。
+// RiskAppIntegrationSuite is the integration test suite.
 type RiskAppIntegrationSuite struct {
 	suite.Suite
 	deps *riskDeps
@@ -74,7 +74,7 @@ func (s *RiskAppIntegrationSuite) SetupSuite() {
 	db := openMySQLTestDB(t)
 	rdb := openRedisTestDB(t)
 
-	// 各 bounded context 表结构 AutoMigrate（幂等，缺列才补）
+	// AutoMigrate each bounded context's schema (idempotent; missing columns are added)
 	testx.NoError(t, creationinfra.Migrate(db))
 	testx.NoError(t, pointsinfra.Migrate(db))
 	testx.NoError(t, riskinfra.Migrate(db))
@@ -90,31 +90,31 @@ func (s *RiskAppIntegrationSuite) SetupTest() {
 	testx.NoError(t, s.deps.db.Exec("TRUNCATE TABLE cg_points_flow").Error)
 	testx.NoError(t, s.deps.db.Exec("TRUNCATE TABLE cg_audit_compensation").Error)
 	testx.NoError(t, s.deps.rdb.FlushDB(context.Background()).Err())
-	// 每个用例重置敏感词表（默认含"赌博"等，防止用例间状态泄漏）
+	// Reset the sensitive-word list per case (defaults contain "赌博" etc., preventing state leakage between cases)
 	s.deps.auditBackend.SetSensitiveWords(riskinfra.DefaultSensitiveWords)
 }
 
-// TestSyncAuditPassAndBlock 同步送审：干净文本通过；命中敏感词拦截并给出原因。
+// TestSyncAuditPassAndBlock sync submission: clean text passes; sensitive-word hits are intercepted with a reason.
 func (s *RiskAppIntegrationSuite) TestSyncAuditPassAndBlock() {
 	ctx := context.Background()
 	userID := int64(71001)
 	s.deps.auditBackend.SetSensitiveWords([]string{"赌博", "代考"})
 
-	// 干净文本 → 通过
+	// Clean text → passes
 	passed, reason, err := s.deps.riskAudit.SyncAudit(ctx, riskdomain.NewRiskSubmitRequest(userID, "p-sync-pass", "b-sync-1", "今天天气不错"), "5:mix_video")
 	testx.NoError(s.T(), err)
 	testx.True(s.T(), passed)
 	testx.Empty(s.T(), reason)
 
-	// 敏感词文本 → 拦截，reason 含命中词
+	// Sensitive-word text → intercepted; the reason contains the hit word
 	passed, reason, err = s.deps.riskAudit.SyncAudit(ctx, riskdomain.NewRiskSubmitRequest(userID, "p-sync-block", "b-sync-2", "这里有个赌博网站"), "5:mix_video")
 	testx.NoError(s.T(), err)
 	testx.False(s.T(), passed)
 	testx.Contains(s.T(), reason, "赌博")
 }
 
-// TestAsyncAuditWritesAuditingRecord 异步送审：插 auditing 记录 + task_type=risk:async:{subProduct}；
-// 提交成功把提交入参（sub_product + 回调纽带）写进 task_input，callback_url 回填到请求。
+// TestAsyncAuditWritesAuditingRecord async submission: inserts an auditing record + task_type=risk:async:{subProduct};
+// a successful submission writes the submission inputs (sub_product + callback bonds) into task_input, and callback_url is backfilled into the request.
 func (s *RiskAppIntegrationSuite) TestAsyncAuditWritesAuditingRecord() {
 	ctx := context.Background()
 	userID := int64(71002)
@@ -129,66 +129,66 @@ func (s *RiskAppIntegrationSuite) TestAsyncAuditWritesAuditingRecord() {
 	testx.NoError(s.T(), err)
 	testx.Greater(s.T(), recordID, int64(0))
 
-	// 库里有且仅有一条 auditing 记录，task_type 含 subProduct
+	// There is exactly one auditing record in the DB; task_type contains the subProduct
 	rec, err := s.deps.records.Get(ctx, uint64(recordID))
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), int64(userID), rec.UserID)
 	testx.Equal(s.T(), "p-async-ok", rec.ProjectID)
 	testx.Equal(s.T(), "risk:async:"+subProduct, rec.TaskType)
-	testx.Equal(s.T(), riskdomain.StatusAuditing, rec.Status, "异步送审插入即 auditing")
+	testx.Equal(s.T(), riskdomain.StatusAuditing, rec.Status, "async submission inserts as auditing")
 
-	// 回调纽带回填进请求 + task_input 记录了提交入参
+	// Callback bonds are backfilled into the request + task_input records the submission inputs
 	testx.Equal(s.T(), callbackURL, req.CallbackURL)
 	testx.Equal(s.T(), fmt.Sprintf("%d", recordID), req.Extra["callback_record_id"])
 	testx.Contains(s.T(), rec.TaskInput, subProduct)
 	testx.Contains(s.T(), rec.TaskInput, callbackURL)
 
-	// 未写补偿表（提交成功）
+	// No compensation record written (submission succeeded)
 	_, err = s.deps.comp.GetByBizID(ctx, fmt.Sprintf("%d", recordID), creationdomain.BizTypeAsyncAudit)
-	testx.ErrorIs(s.T(), err, creationdomain.ErrCompensationNotFound, "提交成功不写补偿")
+	testx.ErrorIs(s.T(), err, creationdomain.ErrCompensationNotFound, "a successful submission writes no compensation")
 }
 
-// TestAsyncAuditSubmitFailureWritesCompensation 异步送审提交失败：空内容 → submitAuditRequest
-// 校验失败 → 写一条 biz_type=1 补偿记录（复用原始 recordID），原始记录保持 auditing 供重试复用。
+// TestAsyncAuditSubmitFailureWritesCompensation async submission failure: empty content → submitAuditRequest
+// validation fails → one biz_type=1 compensation record is written (reusing the original recordID); the original record stays auditing for retry reuse.
 func (s *RiskAppIntegrationSuite) TestAsyncAuditSubmitFailureWritesCompensation() {
 	ctx := context.Background()
 	userID := int64(71003)
 	subProduct := riskdomain.MixVideo60sT2VOutputSubproduct
 
-	// 空内容（无文本无图片）→ 提交失败
+	// Empty content (no text, no image) → submission fails
 	req := &riskdomain.RiskSubmitRequest{UserID: userID, ThirdID: "p-async-fail", BizID: "b-async-2"}
 	retRecordID, err := s.deps.riskAudit.AsyncAudit(ctx, req, subProduct, "")
 	testx.Error(s.T(), err)
-	testx.Equal(s.T(), int64(0), retRecordID, "提交失败不返回 recordID")
+	testx.Equal(s.T(), int64(0), retRecordID, "a failed submission returns no recordID")
 
-	// 补偿表写了一条 biz_type=1 记录，biz_id 即原始 recordID（对账纽带）
+	// One biz_type=1 record is written to the compensation table; biz_id is the original recordID (the reconciliation bond)
 	recordID := mustAtoiID(s.T(), req.Extra["callback_record_id"])
 	comp, err := s.deps.comp.GetByBizID(ctx, fmt.Sprintf("%d", recordID), creationdomain.BizTypeAsyncAudit)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.BizTypeAsyncAudit, comp.BizType)
 	testx.Equal(s.T(), creationdomain.CompensationStatusPending, comp.Status)
 	testx.Equal(s.T(), userID, comp.UserID)
-	// payload 含重试所需字段（供 RetryAsyncAudit 解析）
+	// The payload contains the fields needed for retry (parsed by RetryAsyncAudit)
 	payload := map[string]any{}
 	testx.NoError(s.T(), json.Unmarshal([]byte(comp.Payload), &payload))
 	testx.Equal(s.T(), subProduct, payload["sub_product"])
 	testx.Equal(s.T(), "p-async-fail", payload["third_id"])
 	testx.Equal(s.T(), float64(userID), payload["user_id"])
 
-	// 原始记录仍 auditing（补偿 job 重试复用）
+	// The original record stays auditing (reused by the compensation job's retry)
 	rec, err := s.deps.records.Get(ctx, uint64(recordID))
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), riskdomain.StatusAuditing, rec.Status, "提交失败记录保持 auditing 供重试")
+	testx.Equal(s.T(), riskdomain.StatusAuditing, rec.Status, "a failed-submission record stays auditing for retry")
 }
 
-// TestRetryAsyncAuditDrivesFromCompensationPayload 补偿重试：从补偿 payload 驱动 RetryAsyncAudit，
-// 复用原始 auditing 记录重新提交（task_input 写入提交标记），不产生第二条记录。
+// TestRetryAsyncAuditDrivesFromCompensationPayload compensation retry: drives RetryAsyncAudit from the compensation payload,
+// reusing the original auditing record to resubmit (task_input gets the submission marker); no second record is created.
 func (s *RiskAppIntegrationSuite) TestRetryAsyncAuditDrivesFromCompensationPayload() {
 	ctx := context.Background()
 	userID := int64(71004)
 	subProduct := riskdomain.MixVideo60sT2VOutputSubproduct
 
-	// 预置一条 auditing 记录 + 对应补偿记录（payload 含 content_text），等价补偿 job 扫描到的状态
+	// Pre-create an auditing record + the matching compensation record (payload with content_text), equivalent to what the compensation job scans
 	recordID, err := s.deps.records.Insert(ctx, &riskdomain.AuditRecord{
 		UserID: userID, ProjectID: "p-retry", TaskType: "risk:async:" + subProduct,
 		Status: riskdomain.StatusAuditing,
@@ -210,7 +210,7 @@ func (s *RiskAppIntegrationSuite) TestRetryAsyncAuditDrivesFromCompensationPaylo
 	})
 	testx.NoError(s.T(), err)
 
-	// 从补偿 payload 驱动重试（等价 monitor.RunCompensationJob 的 retryCompensation）
+	// Drive the retry from the compensation payload (equivalent to monitor.RunCompensationJob's retryCompensation)
 	testx.NoError(s.T(), s.deps.riskAudit.RetryAsyncAudit(ctx, map[string]any{
 		"sub_product":  subProduct,
 		"record_id":    int64(recordID),
@@ -221,7 +221,7 @@ func (s *RiskAppIntegrationSuite) TestRetryAsyncAuditDrivesFromCompensationPaylo
 		"content_text": "一段成片视频描述",
 	}))
 
-	// 复用原始记录（仅一条）：status 仍 auditing（等风控回调），task_input 写入提交标记
+	// The original record is reused (only one): status stays auditing (awaiting the risk callback); task_input gets the submission marker
 	rec, err := s.deps.records.Get(ctx, recordID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), riskdomain.StatusAuditing, rec.Status)
@@ -229,8 +229,8 @@ func (s *RiskAppIntegrationSuite) TestRetryAsyncAuditDrivesFromCompensationPaylo
 	testx.Contains(s.T(), rec.TaskInput, fmt.Sprintf(`"callback_record_id":"%d"`, recordID))
 }
 
-// TestSyncAuditRecorderRealDB 同步合并记录器（真实仓储）：多次 Run + Finish 合并落一条记录，
-// task_input 记录本次所有 bizID + subProduct；命中敏感词时状态为 fail。
+// TestSyncAuditRecorderRealDB sync merged recorder (real repository): multiple Runs + Finish merge into one record;
+// task_input records all bizIDs + subProducts of this round; a sensitive-word hit makes the status fail.
 func (s *RiskAppIntegrationSuite) TestSyncAuditRecorderRealDB() {
 	ctx := context.Background()
 	userID := int64(71005)
@@ -247,7 +247,7 @@ func (s *RiskAppIntegrationSuite) TestSyncAuditRecorderRealDB() {
 	testx.Contains(s.T(), r2, "赌博")
 	recorder.Finish(p1 && p2, firstNonEmpty(r1, r2), firstNonNil(err1, err2))
 
-	// 只有一条记录：状态 fail（任一不通过），task_type 与 bizID/subProduct 合并
+	// There is only one record: status fail (any rejection), with task_type and bizID/subProduct merged
 	var row struct {
 		ID        uint64
 		UserID    int64
@@ -258,11 +258,11 @@ func (s *RiskAppIntegrationSuite) TestSyncAuditRecorderRealDB() {
 	}
 	testx.NoError(s.T(), s.deps.db.Raw(
 		"SELECT id, user_id, project_id, task_type, task_input, status FROM cg_risk_audit_record").Scan(&row).Error)
-	// 行为断言：多次 Run 合并为恰好一条记录（自增 ID 有效即可，具体自增值是数据库实现细节，不做断言）
+	// Behavior assertion: multiple Runs merge into exactly one record (a valid auto-increment ID suffices; the concrete value is a DB implementation detail, not asserted)
 	var recordCount int64
 	testx.NoError(s.T(), s.deps.db.Raw("SELECT COUNT(*) FROM cg_risk_audit_record").Scan(&recordCount).Error)
-	testx.Equal(s.T(), int64(1), recordCount, "多次 Run + Finish 合并为一条记录")
-	testx.Greater(s.T(), row.ID, uint64(0), "合并记录的自增 ID 有效")
+	testx.Equal(s.T(), int64(1), recordCount, "multiple Runs + Finish merge into one record")
+	testx.Greater(s.T(), row.ID, uint64(0), "the merged record has a valid auto-increment ID")
 	testx.Equal(s.T(), int64(userID), row.UserID)
 	testx.Equal(s.T(), projectID, row.ProjectID)
 	testx.Equal(s.T(), "risk:5:mix_video:precreate", row.TaskType)
@@ -274,7 +274,7 @@ func (s *RiskAppIntegrationSuite) TestSyncAuditRecorderRealDB() {
 	testx.ElementsMatch(s.T(), []string{"dujiaapp_mixvideo_t2t_input", "dujiaapp_mixvideo60s_t2v_output"}, in.SubTypes)
 }
 
-// TestAuditOutputPassedSettlesDone 回调通过落定：audit_record → done，project → done，不退积分。
+// TestAuditOutputPassedSettlesDone a passed callback settles: audit_record → done, project → done, no points refund.
 func (s *RiskAppIntegrationSuite) TestAuditOutputPassedSettlesDone() {
 	ctx := context.Background()
 	userID := int64(71006)
@@ -288,7 +288,7 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputPassedSettlesDone() {
 	})
 	recordID := seedAuditingRecord(s.T(), s.deps.records, ctx, userID, sessionID)
 
-	// 回调 passed=true
+	// Callback passed=true
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, &riskcontracts.RiskCallbackReq{
 		BizID: "dujiaapp_mixvideo60s_t2v_output-1", ThirdID: sessionID, UserID: userID,
 		Passed: true, Extra: map[string]string{"callback_record_id": fmt.Sprintf("%d", recordID)},
@@ -299,15 +299,15 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputPassedSettlesDone() {
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), riskdomain.StatusDone, rec.Status)
 
-	// project → done，积分已扣未退
+	// project → done; points deducted, not refunded
 	project, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusDone, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusUsed, project.PointsStatus)
-	testx.Equal(s.T(), 90, mustBalance(s.T(), s.deps.points, ctx, userID), "通过不退积分（100-10）")
+	testx.Equal(s.T(), 90, mustBalance(s.T(), s.deps.points, ctx, userID), "a pass refunds nothing (100-10)")
 }
 
-// TestAuditOutputNotPassedRefundsAndFails 回调不通过落定：audit_record → fail，project → fail + 退积分。
+// TestAuditOutputNotPassedRefundsAndFails a rejected callback settles: audit_record → fail, project → fail + points refund.
 func (s *RiskAppIntegrationSuite) TestAuditOutputNotPassedRefundsAndFails() {
 	ctx := context.Background()
 	userID := int64(71007)
@@ -321,7 +321,7 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputNotPassedRefundsAndFails() {
 	})
 	recordID := seedAuditingRecord(s.T(), s.deps.records, ctx, userID, sessionID)
 
-	// 回调 passed=false
+	// Callback passed=false
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, &riskcontracts.RiskCallbackReq{
 		BizID: "dujiaapp_mixvideo60s_t2v_output-1", ThirdID: sessionID, UserID: userID,
 		Passed: false, Reason: "输出包含违规内容",
@@ -333,28 +333,28 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputNotPassedRefundsAndFails() {
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), riskdomain.StatusFail, rec.Status)
 
-	// project → fail + 退积分（种子 100 - 扣 10 + 退 10 = 110）
+	// project → fail + refund (seed 100 - deduct 10 + refund 10 = 110)
 	project, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusFail, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus)
-	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID), "不通过退积分（原扣分流水置回退，退款加回余额）")
+	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID), "a rejection refunds points (the deduction entry is marked refunded; the refund is added back)")
 
-	// 只有一条退款流水（无重复退）
+	// There is exactly one refund entry (no double refund)
 	flows, err := s.deps.points.ListByProject(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), 2, len(flows), "扣分 + 退款两条流水（种子入账 project_id='seed' 不在此列表）")
+	testx.Equal(s.T(), 2, len(flows), "two entries: deduction + refund (the seed credit with project_id='seed' is not in this list)")
 	var refundN int
 	for _, f := range flows {
 		if f.FlowType == pointsdomain.FlowTypeRefund {
 			refundN++
 		}
 	}
-	testx.Equal(s.T(), 1, refundN, "只退一次积分")
+	testx.Equal(s.T(), 1, refundN, "points refunded exactly once")
 }
 
-// TestAuditOutputDuplicateCallbackNoDoubleRefund 重复回调：审计记录终态短路 + project 终态短路 →
-// 不重复落定、不重复退积分。
+// TestAuditOutputDuplicateCallbackNoDoubleRefund duplicate callbacks: audit-record terminal short-circuit + project terminal short-circuit →
+// no repeated settling, no repeated refunds.
 func (s *RiskAppIntegrationSuite) TestAuditOutputDuplicateCallbackNoDoubleRefund() {
 	ctx := context.Background()
 	userID := int64(71008)
@@ -372,7 +372,7 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputDuplicateCallbackNoDoubleRefund
 		Passed: false, Reason: "违规", Extra: map[string]string{"callback_record_id": fmt.Sprintf("%d", recordID)},
 	}
 
-	// 第一次：fail + 退积分（种子 100 - 扣 10 + 退 10 = 110）
+	// First time: fail + refund (seed 100 - deduct 10 + refund 10 = 110)
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, riskCb))
 	project, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
@@ -380,23 +380,23 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputDuplicateCallbackNoDoubleRefund
 	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus)
 	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID))
 
-	// 第二次（同一 record）：终态短路 → 不再退款、终态不被覆盖
+	// Second time (same record): terminal short-circuit → no further refund, terminal state not overwritten
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, riskCb))
 	project, err = s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusFail, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus)
-	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID), "重复回调不重复退积分")
+	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID), "duplicate callbacks do not refund again")
 
-	// audit_record 终态不被覆盖
+	// The audit_record terminal state is not overwritten
 	rec, err := s.deps.records.Get(ctx, recordID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), riskdomain.StatusFail, rec.Status)
 }
 
-// TestAuditOutputThirdIDIsProjectID 回调仅带 projectID（无 recordID，旧协议兼容）：
-// 跳过审计记录对账（recordID=0），仍通知 creation 落定 project（终态以 project 侧短路兜底），
-// 退款由 project 侧幂等处理。
+// TestAuditOutputThirdIDIsProjectID the callback carries only projectID (no recordID, legacy protocol compatibility):
+// audit-record reconciliation is skipped (recordID=0); creation is still notified to settle the project (the terminal state is covered by the project-side short-circuit),
+// and refunds are handled idempotently on the project side.
 func (s *RiskAppIntegrationSuite) TestAuditOutputThirdIDIsProjectID() {
 	ctx := context.Background()
 	userID := int64(71009)
@@ -409,7 +409,7 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputThirdIDIsProjectID() {
 		PointsOrderID: sessionID + "_1", RetryNum: 1,
 	})
 
-	// Extra 无 callback_record_id → recordID=0，跳过审计记录对账，仅通知 creation
+	// Extra has no callback_record_id → recordID=0; audit-record reconciliation is skipped, only creation is notified
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, &riskcontracts.RiskCallbackReq{
 		BizID: "x", ThirdID: sessionID, UserID: userID, Passed: false, Reason: "无记录直接拒绝",
 		Extra: map[string]string{},
@@ -418,13 +418,13 @@ func (s *RiskAppIntegrationSuite) TestAuditOutputThirdIDIsProjectID() {
 	project, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusFail, project.Status)
-	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus, "无 record 仍通过 project 侧落定退款")
-	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID), "种子 100 - 扣 10 + 退 10")
+	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus, "without a record the refund still settles on the project side")
+	testx.Equal(s.T(), 110, mustBalance(s.T(), s.deps.points, ctx, userID), "seed 100 - deduct 10 + refund 10")
 }
 
-// --- 工具函数 ---
+// --- Helpers ---
 
-// openMySQLTestDB 切到仓库根目录读 config，打开 testdb MySQL 连接。
+// openMySQLTestDB switches to the repository root to read config and opens the testdb MySQL connection.
 func openMySQLTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	_, filename, _, _ := runtime.Caller(0)
@@ -440,11 +440,11 @@ func openMySQLTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// openRedisTestDB 打开 testdb Redis，使用独立的 DB 索引（DB 5），避免污染开发缓存。
+// openRedisTestDB opens the testdb Redis with a separate DB index (DB 5), avoiding pollution of the development cache.
 //
-// Redis DB 索引约定：三个集成套件共用同一 testdb MySQL，各自使用不同的 Redis DB 索引
-// 以隔离命名空间、避免跨套件污染 —— monitor=3、creation=4、risk=5（黑名单 key 等）。
-// 套件间串行执行（go test -p 1）保证 DB 索引不冲突，所以 risk 用 5 而非复用前两者的索引。
+// Redis DB index convention: the three integration suites share one testdb MySQL, each using a different Redis DB index
+// to isolate namespaces and avoid cross-suite pollution — monitor=3, creation=4, risk=5 (blacklist keys, etc.).
+// Suites run serially (go test -p 1) so DB indexes never collide; hence risk uses 5 instead of reusing the first two indexes.
 func openRedisTestDB(t *testing.T) *redis.Client {
 	t.Helper()
 	_, filename, _, _ := runtime.Caller(0)
@@ -457,11 +457,11 @@ func openRedisTestDB(t *testing.T) *redis.Client {
 	return rdb
 }
 
-// buildRiskDeps 装配新架构组件（对齐 internal/app/app.go 的 New，聚焦 risk 应用层）。
+// buildRiskDeps assembles the new-architecture components (aligned with internal/app/app.go's New, focused on the risk application layer).
 //
-// 与 creation 集成测试的 buildCreationDeps 同构，但用"会出现的敏感词"（默认表）以
-// 验证拦截路径；依赖反转：CompensationSink / AuditResultSink 由 creation.infrastructure
-// 实现并注入。
+// Isomorphic to the creation integration tests' buildCreationDeps, but using "words that do appear" (the default list) to
+// verify the interception path; dependency inversion: CompensationSink / AuditResultSink are implemented and injected
+// by creation.infrastructure.
 func buildRiskDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *riskDeps {
 	t.Helper()
 
@@ -469,7 +469,7 @@ func buildRiskDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *riskDeps {
 	pointsRepo := pointsinfra.NewPointsRepositoryImpl(db)
 	pointsApp := pointsapp.NewPointsApp(pointsRepo)
 
-	// risk context（本地敏感词后端）
+	// risk context (local sensitive-word backend)
 	riskRecords := riskinfra.NewAuditRecordRepositoryImpl(db)
 	auditBackend := riskinfra.NewLocalAuditBackend()
 
@@ -477,7 +477,7 @@ func buildRiskDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *riskDeps {
 	projRepo := creationinfra.NewProjectRepositoryImpl(db)
 	compRepo := creationinfra.NewCompensationRepositoryImpl(db)
 
-	// 依赖反转：creation 实现 risk 侧 AuditResultSink / CompensationSink 并注入
+	// Dependency inversion: creation implements the risk-side AuditResultSink / CompensationSink and injects them
 	compSink := creationinfra.NewCompensationSinkImpl(compRepo)
 	onAuditResult := creationinfra.NewOnAuditResultImpl(projRepo, pointsApp)
 	blacklistChecker := riskinfra.NewRedisBlacklistChecker(rdb)
@@ -497,7 +497,7 @@ func buildRiskDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *riskDeps {
 	}
 }
 
-// seedBalance 给用户造初始余额（flow_type=2 入账，等价旧 seedBalance）。
+// seedBalance gives the user an initial balance (flow_type=2 credit, equivalent to the old seedBalance).
 func seedBalance(t *testing.T, db *gorm.DB, userID int64, amount int) {
 	t.Helper()
 	now := time.Now().Unix()
@@ -507,8 +507,8 @@ func seedBalance(t *testing.T, db *gorm.DB, userID int64, amount int) {
 	).Error)
 }
 
-// seedConsumedProject 造一个已扣分的 project + 对应扣分流水（等价 create 之后的状态）。
-// PointsCost 与 PointsOrderID 必须非零：扣分流水按 points_order_id 唯一，退款靠它对账。
+// seedConsumedProject creates a project with points deducted + the matching deduction entry (equivalent to the post-create state).
+// PointsCost and PointsOrderID must be non-zero: deduction entries are unique by points_order_id, and refunds reconcile by it.
 func seedConsumedProject(t *testing.T, db *gorm.DB, projects creationdomain.ProjectRepository, ctx context.Context, p *creationdomain.Project) {
 	t.Helper()
 	now := time.Now().Unix()
@@ -519,7 +519,7 @@ func seedConsumedProject(t *testing.T, db *gorm.DB, projects creationdomain.Proj
 	testx.NoError(t, projects.Insert(ctx, p))
 }
 
-// seedAuditingRecord 插一条 auditing 的审计记录（等价 AsyncAudit 提交成功后的状态）。
+// seedAuditingRecord inserts an auditing audit record (equivalent to the post-successful-AsyncAudit state).
 func seedAuditingRecord(t *testing.T, records riskdomain.AuditRecordRepository, ctx context.Context, userID int64, projectID string) uint64 {
 	t.Helper()
 	id, err := records.Insert(ctx, &riskdomain.AuditRecord{
@@ -531,7 +531,7 @@ func seedAuditingRecord(t *testing.T, records riskdomain.AuditRecordRepository, 
 	return id
 }
 
-// mustAtoiID 把 extra 里的 string 型 callback_record_id 解析成 uint64。
+// mustAtoiID parses the string callback_record_id in extra into uint64.
 func mustAtoiID(t *testing.T, s string) uint64 {
 	t.Helper()
 	id, err := strconv.ParseUint(s, 10, 64)
@@ -539,7 +539,7 @@ func mustAtoiID(t *testing.T, s string) uint64 {
 	return id
 }
 
-// mustBalance 查用户余额（断言辅助）。
+// mustBalance queries the user balance (assertion helper).
 func mustBalance(t *testing.T, points pointsapp.PointsApp, ctx context.Context, userID int64) int {
 	t.Helper()
 	b, err := points.GetBalance(ctx, userID)

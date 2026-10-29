@@ -9,7 +9,7 @@ build:
 run:
 	CGO_ENABLED=1 go run ./cmd/api
 
-# sqlite 测试驱动（gorm.io/driver/sqlite）依赖 cgo，测试必须 CGO_ENABLED=1。
+# The sqlite test driver (gorm.io/driver/sqlite) requires cgo; tests must run with CGO_ENABLED=1.
 test:
 	CGO_ENABLED=1 go test ./... -count=1
 
@@ -25,7 +25,7 @@ lint:
 test-integration:
 	CGO_ENABLED=1 go test -tags=integration ./...
 
-# 连通性探测：验证远程 MySQL / Redis 可达且凭据正确（复用 config + secrets.json）。
-# 可用 REDIS_DB=15 之类的环境变量覆盖 Redis DB，避免污染远程 DB0 缓存。
+# Connectivity probe: verifies remote MySQL / Redis are reachable with correct credentials (reusing config + secrets.json).
+# Override the Redis DB with env vars like REDIS_DB=15 to avoid polluting the remote DB0 cache.
 ping:
 	CGO_ENABLED=1 go test -tags=integration ./internal/app/ -run TestConnectivity -v

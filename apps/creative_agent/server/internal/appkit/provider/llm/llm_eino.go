@@ -1,5 +1,5 @@
-// Package appkitllm 提供 LLM 注入实现：基于 eino ChatModel 的真实 LLM
-// （OpenAI 兼容 / Anthropic Claude）与全局注入点（DefaultRealLLM / DefaultManagerLLM）。
+// Package appkitllm provides LLM injection implementations: the real LLM based on eino ChatModel
+// (OpenAI-compatible / Anthropic Claude) and the global injection points (DefaultRealLLM / DefaultManagerLLM).
 package appkitllm
 
 import (
@@ -20,44 +20,44 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-// ToolChoice 取值。
+// ToolChoice values.
 const (
-	ToolChoiceAuto     = ""         // 默认：模型自由决定是否调工具
-	ToolChoiceRequired = "required" // 强制 Function Calling
+	ToolChoiceAuto     = ""         // default: the model freely decides whether to call tools
+	ToolChoiceRequired = "required" // forced function calling
 )
 
-// Provider 取值。
+// Provider values.
 const (
-	ProviderOpenAI = "openai" // OpenAI 兼容 /chat/completions（DeepSeek 等），默认
+	ProviderOpenAI = "openai" // OpenAI-compatible /chat/completions (DeepSeek, etc.), default
 	ProviderClaude = "claude" // Anthropic Claude
 )
 
-// Config 是 eino LLM 的配置。
+// Config is the configuration of the eino LLM.
 type Config struct {
-	Provider string // "openai"（默认）| "claude"
-	BaseURL  string // OpenAI 兼容 API 地址 / Claude 代理地址
+	Provider string // "openai" (default) | "claude"
+	BaseURL  string // OpenAI-compatible API address / Claude proxy address
 	APIKey   string
-	Model    string // 模型名，如 deepseek-chat / claude-sonnet-4-5
-	// ToolChoice 强制 Function Calling 开关：""（默认 auto）| "required"
+	Model    string // model name, e.g. deepseek-chat / claude-sonnet-4-5
+	// ToolChoice forced-function-calling switch: "" (default auto) | "required"
 	ToolChoice string
 	Timeout    time.Duration
 }
 
-// EinoLLM 实现 react.LLM，底层为 eino ChatModel 组件。
-// 引擎零改动——只需在注入点替换。
+// EinoLLM implements react.LLM on top of the eino ChatModel component.
+// Zero engine changes — just swap it in at the injection point.
 type EinoLLM struct {
 	chat       model.ToolCallingChatModel
 	modelName  string
 	toolChoice string
 }
 
-// NewEinoLLM 按配置创建 eino ChatModel 并包装为 react.LLM。
+// NewEinoLLM creates an eino ChatModel from the config and wraps it as react.LLM.
 func NewEinoLLM(cfg Config) (*EinoLLM, error) {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	// OTel 出站追踪（全局 provider 由 otelx.Init 设置）。
+	// OTel outbound tracing (the global provider is set by otelx.Init).
 	httpClient := &http.Client{
 		Timeout:   timeout,
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -94,11 +94,11 @@ func NewEinoLLM(cfg Config) (*EinoLLM, error) {
 			Model:      cfg.Model,
 			HTTPClient: httpClient,
 		}
-		// thinking 模式不支持 tool_choice：强制 Function Calling 时必须禁用
-		// thinking，否则 400（ExtraFields 透传厂商扩展字段）。各厂商约定不同：
-		//   - DeepSeek：thinking.type=disabled
-		//   - Qwen（idealab / DashScope 兼容）：enable_thinking=false
-		// 两个字段同时透传，厂商各自忽略不认识的字段。
+		// thinking mode does not support tool_choice: forced function calling must disable
+		// thinking, otherwise 400 (ExtraFields passes vendor extension fields through). Vendor conventions differ:
+		//   - DeepSeek: thinking.type=disabled
+		//   - Qwen (idealab / DashScope compatible): enable_thinking=false
+		// Both fields are passed through together; each vendor ignores the fields it does not recognize.
 		if cfg.ToolChoice == ToolChoiceRequired {
 			openaiCfg.ExtraFields = map[string]any{
 				"thinking":        map[string]any{"type": "disabled"},
@@ -119,7 +119,7 @@ func NewEinoLLM(cfg Config) (*EinoLLM, error) {
 	}, nil
 }
 
-// Chat 实现 react.LLM 接口（非流式）。
+// Chat implements the react.LLM interface (non-streaming).
 func (l *EinoLLM) Chat(ctx context.Context, messages []react.Message, tools []react.FunctionDef) (*react.LLMResponse, error) {
 	out, err := l.chat.Generate(ctx, toEinoMessages(messages), l.options(tools)...)
 	if err != nil {
@@ -128,11 +128,11 @@ func (l *EinoLLM) Chat(ctx context.Context, messages []react.Message, tools []re
 	return fromEinoMessage(out), nil
 }
 
-// ChatStream 实现 react.LLM 接口的流式调用。
+// ChatStream implements the streaming call of the react.LLM interface.
 //
-// callback 非 nil 时：订阅 eino StreamReader，每个 chunk 回调一次；
-// 末尾触发 isEndingChunk=true（含 usage）。返回值与 Chat 相同（完整响应，供 ReAct 决策）。
-// callback 为 nil 时降级为同步 Chat（行为等价）。
+// When callback is non-nil: subscribes to the eino StreamReader and calls back once per chunk;
+// at the end it triggers isEndingChunk=true (including usage). The return value matches Chat (the complete response, for ReAct decisions).
+// When callback is nil it degrades to synchronous Chat (equivalent behavior).
 func (l *EinoLLM) ChatStream(ctx context.Context, messages []react.Message, tools []react.FunctionDef, callback react.StreamCallbackFunc) (*react.LLMResponse, error) {
 	if callback == nil {
 		return l.Chat(ctx, messages, tools)
@@ -171,20 +171,20 @@ func (l *EinoLLM) ChatStream(ctx context.Context, messages []react.Message, tool
 	return acc.response(), nil
 }
 
-// options 组装 eino 调用选项：工具列表 + 强制 Function Calling。
+// options assembles the eino call options: tool list + forced function calling.
 func (l *EinoLLM) options(tools []react.FunctionDef) []model.Option {
 	if len(tools) == 0 {
 		return nil
 	}
 	opts := []model.Option{model.WithTools(toEinoTools(tools))}
-	// 仅在声明了工具时才允许 tool_choice（与 OpenAI 契约一致）。
+	// tool_choice is only allowed when tools are declared (consistent with the OpenAI contract).
 	if l.toolChoice == ToolChoiceRequired {
 		opts = append(opts, model.WithToolChoice(schema.ToolChoiceForced))
 	}
 	return opts
 }
 
-// toEinoMessages 转换 react.Message → eino schema.Message。
+// toEinoMessages converts react.Message → eino schema.Message.
 func toEinoMessages(msgs []react.Message) []*schema.Message {
 	out := make([]*schema.Message, 0, len(msgs))
 	for _, m := range msgs {
@@ -209,7 +209,7 @@ func toEinoMessages(msgs []react.Message) []*schema.Message {
 	return out
 }
 
-// fromEinoMessage 转换 eino schema.Message → react.LLMResponse。
+// fromEinoMessage converts eino schema.Message → react.LLMResponse.
 func fromEinoMessage(msg *schema.Message) *react.LLMResponse {
 	result := &react.LLMResponse{}
 	if msg == nil {
@@ -226,7 +226,7 @@ func fromEinoMessage(msg *schema.Message) *react.LLMResponse {
 	return result
 }
 
-// toEinoTools 转换 react.FunctionDef → eino schema.ToolInfo。
+// toEinoTools converts react.FunctionDef → eino schema.ToolInfo.
 func toEinoTools(tools []react.FunctionDef) []*schema.ToolInfo {
 	out := make([]*schema.ToolInfo, 0, len(tools))
 	for _, t := range tools {
@@ -255,7 +255,7 @@ func toEinoTools(tools []react.FunctionDef) []*schema.ToolInfo {
 	return out
 }
 
-// usageFromChunk 提取 chunk 末包携带的 token 统计。
+// usageFromChunk extracts the token statistics carried by the final chunk.
 func usageFromChunk(msg *schema.Message) *react.StreamedChatUsage {
 	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.Usage == nil {
 		return nil
@@ -268,8 +268,8 @@ func usageFromChunk(msg *schema.Message) *react.StreamedChatUsage {
 	}
 }
 
-// chunkToPayload 转换 eino chunk → react.StreamedChatResponsePayload。
-// chunk 为 nil 时返回空载荷（供末包 isEndingChunk=true 携带 usage 用）。
+// chunkToPayload converts an eino chunk → react.StreamedChatResponsePayload.
+// A nil chunk returns an empty payload (for the final isEndingChunk=true callback carrying usage).
 func chunkToPayload(modelName string, chunk *schema.Message) *react.StreamedChatResponsePayload {
 	payload := &react.StreamedChatResponsePayload{
 		Model:  modelName,
@@ -298,11 +298,11 @@ func chunkToPayload(modelName string, chunk *schema.Message) *react.StreamedChat
 	return payload
 }
 
-// streamAccumulator 累积流式 chunks 为完整响应（content 拼接 + tool_call 按 index 归并）。
+// streamAccumulator accumulates streaming chunks into the complete response (content concatenation + tool_call merging by index).
 type streamAccumulator struct {
 	content   string
 	toolCalls []react.ToolCall
-	indexes   map[int]int // tool_call index → toolCalls 下标
+	indexes   map[int]int // tool_call index → position in toolCalls
 }
 
 func newStreamAccumulator() *streamAccumulator {
@@ -330,7 +330,7 @@ func (a *streamAccumulator) add(chunk *schema.Message) {
 			})
 			continue
 		}
-		// 后续 chunk 仅含 arguments 增量（OpenAI 流式契约），按 index 归并累积。
+		// Later chunks contain only arguments deltas (OpenAI streaming contract); merge and accumulate by index.
 		if tc.ID != "" {
 			a.toolCalls[pos].ID = tc.ID
 		}

@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-// TestParseProjectInput 覆盖 ParseProjectInput 的三种合法输入格式。
+// TestParseProjectInput covers the three valid input formats of ParseProjectInput.
 //
-// 回归背景：{"input":"纯文本"} 曾解析失败（json: cannot unmarshal string into
-// map[string]interface{}）——input 是纯文本字符串时，二次 JSON 解析失败后
-// 直接落到最后的对象解析而报错，导致 pre_create 全链路返回失败重试卡。
+// Regression background: {"input":"plain text"} once failed to parse (json: cannot unmarshal string into
+// map[string]interface{}) — when input is a plain-text string, after the double-JSON parse failed
+// it fell through to the final object parse and errored, making the whole pre_create chain return a failure retry card.
 func TestParseProjectInput(t *testing.T) {
 	cases := []struct {
 		name string
@@ -17,27 +17,27 @@ func TestParseProjectInput(t *testing.T) {
 		want map[string]any
 	}{
 		{
-			name: "纯文本 input（曾失败）",
+			name: "plain-text input (previously failing)",
 			raw:  `{"input":"夏日旅行混剪"}`,
 			want: map[string]any{"input": "夏日旅行混剪"},
 		},
 		{
-			name: "二次 JSON 字符串",
+			name: "double-encoded JSON string",
 			raw:  `{"input":"{\"input\":\"夏日旅行混剪\"}"}`,
 			want: map[string]any{"input": "夏日旅行混剪"},
 		},
 		{
-			name: "内层 JSON 对象",
+			name: "inner JSON object",
 			raw:  `{"input":{"input":"夏日旅行混剪"}}`,
 			want: map[string]any{"input": "夏日旅行混剪"},
 		},
 		{
-			name: "空 input",
+			name: "empty input",
 			raw:  `{"input":""}`,
 			want: map[string]any{},
 		},
 		{
-			name: "空字符串",
+			name: "empty string",
 			raw:  ``,
 			want: map[string]any{},
 		},

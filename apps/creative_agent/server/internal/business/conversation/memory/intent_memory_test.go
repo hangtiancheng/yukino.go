@@ -9,9 +9,9 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestFlowStage_Valid 验证 FlowStage 状态常量与合法性判断。
+// TestFlowStage_Valid verifies the FlowStage state constants and validity checks.
 func TestFlowStage_Valid(t *testing.T) {
-	// 合法值
+	// Valid values
 	for _, s := range []memory.FlowStage{
 		memory.FlowStageEmpty,
 		memory.FlowStageTopicConfirmed,
@@ -20,14 +20,14 @@ func TestFlowStage_Valid(t *testing.T) {
 		memory.FlowStagePlanConfirmed,
 		memory.FlowStageScriptConfirmed,
 	} {
-		testx.True(t, s.Valid(), "%q 应为合法 FlowStage", s)
+		testx.True(t, s.Valid(), "%q should be a valid FlowStage", s)
 	}
-	// 非法值
+	// Invalid values
 	testx.False(t, memory.FlowStage("bogus").Valid())
 }
 
-// TestFlowStage_CanFastTask 验证 CanFastTask 判断：
-// params/plan/script 已确认 → 可触发快任务；早期阶段/未推进 → 否。
+// TestFlowStage_CanFastTask verifies the CanFastTask decision:
+// params/plan/script confirmed → a fast task can trigger; early stages / not advanced → no.
 func TestFlowStage_CanFastTask(t *testing.T) {
 	testx.False(t, memory.FlowStageEmpty.CanFastTask())
 	testx.False(t, memory.FlowStageTopicConfirmed.CanFastTask())
@@ -37,16 +37,16 @@ func TestFlowStage_CanFastTask(t *testing.T) {
 	testx.True(t, memory.FlowStageScriptConfirmed.CanFastTask())
 }
 
-// TestIntentMemoryStagePipelineAgent 验证 stage/pipeline/agent 推进与 session 隔离。
+// TestIntentMemoryStagePipelineAgent verifies stage/pipeline/agent advancement and session isolation.
 func TestIntentMemoryStagePipelineAgent(t *testing.T) {
 	m := memory.NewIntentMemory()
 
-	// 初始为空
+	// Empty initially
 	testx.Equal(t, memory.FlowStageEmpty, m.GetStage("s1"))
 	testx.Empty(t, m.GetPipeline("s1"))
 	testx.Empty(t, m.GetAgent("s1"))
 
-	// 推进
+	// Advance
 	m.SetPipeline("s1", "mix_video")
 	m.SetAgent("s1", "gold_scriptwriter")
 	m.SetStage("s1", memory.FlowStageScriptConfirmed)
@@ -55,22 +55,22 @@ func TestIntentMemoryStagePipelineAgent(t *testing.T) {
 	testx.Equal(t, "mix_video", m.GetPipeline("s1"))
 	testx.Equal(t, "gold_scriptwriter", m.GetAgent("s1"))
 
-	// 不同 session 隔离
+	// Different sessions are isolated
 	testx.Equal(t, memory.FlowStageEmpty, m.GetStage("s2"))
 	testx.Empty(t, m.GetPipeline("s2"))
 	testx.Empty(t, m.GetAgent("s2"))
 }
 
-// TestIntentMemoryCheckpointAndFailedRun 验证 checkpoint 存/取/清 + 失败 task_run 记忆。
+// TestIntentMemoryCheckpointAndFailedRun verifies checkpoint save/load/clear + failed task_run memory.
 func TestIntentMemoryCheckpointAndFailedRun(t *testing.T) {
 	m := memory.NewIntentMemory()
 
-	// 失败 task_run 记忆
+	// Failed task_run memory
 	m.RecordFailedTaskRun("s1", 42)
 	testx.Equal(t, int64(42), m.GetLastFailedTaskRun("s1"))
 	testx.Equal(t, int64(0), m.GetLastFailedTaskRun("s-unknown"))
 
-	// checkpoint 存/取/清
+	// Checkpoint save/load/clear
 	cp := &react.Checkpoint{
 		Messages: []react.Message{{Role: "user", Content: "hi"}},
 		Step:     1,
@@ -83,18 +83,18 @@ func TestIntentMemoryCheckpointAndFailedRun(t *testing.T) {
 	testx.Len(t, got.Messages, 1)
 	testx.Equal(t, "original", got.Query)
 
-	// 未保存的 session → nil
+	// A session without a saved checkpoint → nil
 	testx.Nil(t, m.LoadCheckpoint("s-unknown"))
 
 	m.ClearCheckpoint("s1")
 	testx.Nil(t, m.LoadCheckpoint("s1"))
 }
 
-// TestIntentMemorySnapshotAndMarshalJSON 验证 Snapshot 快照与 MarshalJSON 序列化。
+// TestIntentMemorySnapshotAndMarshalJSON verifies the Snapshot and MarshalJSON serialization.
 func TestIntentMemorySnapshotAndMarshalJSON(t *testing.T) {
 	m := memory.NewIntentMemory()
 
-	// 未推进的 session 快照为空字段
+	// The snapshot of a non-advanced session has empty fields
 	snap := m.Snapshot("s1")
 	testx.Empty(t, snap["stage"])
 	testx.Empty(t, snap["pipeline"])
@@ -109,7 +109,7 @@ func TestIntentMemorySnapshotAndMarshalJSON(t *testing.T) {
 	testx.Equal(t, "mix_video", snap["pipeline"])
 	testx.Equal(t, "gold_scriptwriter", snap["agent"])
 
-	// MarshalJSON：仅包含有 stage 的 session
+	// MarshalJSON: only sessions with a stage are included
 	raw, err := json.Marshal(m)
 	testx.NoError(t, err)
 	var out map[string]struct {
@@ -121,25 +121,25 @@ func TestIntentMemorySnapshotAndMarshalJSON(t *testing.T) {
 	testx.Equal(t, "script_confirmed", out["s1"].Stage)
 	testx.Equal(t, "mix_video", out["s1"].Pipeline)
 	_, hasEmpty := out["s-unknown"]
-	testx.False(t, hasEmpty, "无 stage 的 session 不应出现在序列化结果")
+	testx.False(t, hasEmpty, "sessions without a stage should not appear in the serialized result")
 }
 
-// TestIntentMemoryTopicEid 验证热点卡点选的热点 eid + 选题标题的存取。
+// TestIntentMemoryTopicEid verifies storing/reading the clicked hot-topic eid + topic title.
 func TestIntentMemoryTopicEid(t *testing.T) {
 	m := memory.NewIntentMemory()
-	testx.Empty(t, m.GetTopicEid("s1"), "未点选时 eid 为空")
-	testx.Empty(t, m.GetTopicTitle("s1"), "未点选时标题为空")
+	testx.Empty(t, m.GetTopicEid("s1"), "the eid is empty before any click")
+	testx.Empty(t, m.GetTopicTitle("s1"), "the title is empty before any click")
 
 	m.SetTopicEid("s1", "eid-abc123")
 	m.SetTopicTitle("s1", "选题一")
 	testx.Equal(t, "eid-abc123", m.GetTopicEid("s1"))
 	testx.Equal(t, "选题一", m.GetTopicTitle("s1"))
 
-	// Snapshot 应暴露点选信息
+	// The snapshot should expose the click information
 	snap := m.Snapshot("s1")
 	testx.Equal(t, "eid-abc123", snap["topicEid"])
 	testx.Equal(t, "选题一", snap["topicTitle"])
 
-	// 不同 session 隔离
+	// Different sessions are isolated
 	testx.Empty(t, m.GetTopicEid("s2"))
 }

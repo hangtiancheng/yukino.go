@@ -9,27 +9,27 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/infra/fakegen"
 )
 
-// ============ 内建业务工具（子 Agent 产线工具 + 管家调度工具）============
+// ============ Built-in business tools (sub-agent pipeline tools + manager scheduling tools) ============
 //
-// 复刻场景下这些工具是"假实现"——不真正调用外部产线，而是返回模拟产物。
-// 但 Schema 与执行流程与真实系统一致：完整的 FunctionDef + ToolRunner，
-// isPipeline=true 的产线工具会触发 NeedWait 分流（见 07-tool-system.md §7.9）。
+// In the replica scenario these tools are "fake implementations" — they do not call real external pipelines but return simulated products.
+// However, the schemas and execution flow match the reference system: full FunctionDef + ToolRunner,
+// and pipeline tools with isPipeline=true trigger NeedWait branching (see 07-tool-system.md §7.9).
 //
-// 工具清单：
-//   - search            搜索知识库（管家/子 Agent 通用，同步）
-//   - generate_image    生成图片（子 Agent 执行类，同步）
-//   - create_video_task 提交视频合成任务（子 Agent 产线类，isPipeline=true）
-//   - dispatch_agent    派发子任务（管家调度类）
+// Tool list:
+//   - search            knowledge-base search (shared by manager/sub-agents, sync)
+//   - generate_image    image generation (sub-agent execution class, sync)
+//   - create_video_task submit a video synthesis task (sub-agent pipeline class, isPipeline=true)
+//   - dispatch_agent    dispatch subtasks (manager scheduling class)
 
-// Agent 常量（镜像 internal/business/subtask/pipeline.go，避免 tools 包依赖业务包造成环）。
+// Agent constants (mirroring internal/business/subtask/pipeline.go, avoiding a dependency cycle from the tools package to business packages).
 const (
-	// AgentGoldScriptwriter 金牌脚本师——写脚本（无产线工具）。
+	// AgentGoldScriptwriter is the gold scriptwriter — writes scripts (no pipeline tools).
 	AgentGoldScriptwriter = "gold_scriptwriter"
-	// AgentEditMaster 剪辑大师——剪视频（唯一可调产线工具 create_video_task 的 agent）。
+	// AgentEditMaster is the edit master — edits videos (the only agent that can call the pipeline tool create_video_task).
 	AgentEditMaster = "edit_master"
 )
 
-// ToolSearch 搜索知识库获取相关信息。
+// ToolSearch searches the knowledge base for relevant information.
 var ToolSearch = FunctionDef{
 	Name:        "search",
 	Description: "搜索知识库获取相关信息。当用户提问需要外部知识时调用。",
@@ -42,7 +42,7 @@ var ToolSearch = FunctionDef{
 	},
 }
 
-// ToolGenerateImage 生成图片（同步返回图片 URL）。
+// ToolGenerateImage generates an image (returns the image URL synchronously).
 var ToolGenerateImage = FunctionDef{
 	Name:        "generate_image",
 	Description: "根据提示词生成图片，同步返回图片URL。用于海报/插画等视觉素材产出。",
@@ -56,7 +56,7 @@ var ToolGenerateImage = FunctionDef{
 	},
 }
 
-// ToolCreateVideoTask 提交视频合成任务到产线（异步产线工具，isPipeline=true）。
+// ToolCreateVideoTask submits a video synthesis task to the pipeline (async pipeline tool, isPipeline=true).
 var ToolCreateVideoTask = FunctionDef{
 	Name:        "create_video_task",
 	Description: "提交视频合成任务到产线。产线完成后会回调通知。视频合成是异步的，提交后等待产线回调。",
@@ -70,7 +70,7 @@ var ToolCreateVideoTask = FunctionDef{
 	},
 }
 
-// ToolDispatchAgent 派发子任务（管家调度工具）。
+// ToolDispatchAgent dispatches subtasks (manager scheduling tool).
 var ToolDispatchAgent = FunctionDef{
 	Name:        "dispatch_agent",
 	Description: "派发子任务给指定智能体执行。当用户请求需要多步骤的产线协作时调用。",
@@ -84,7 +84,7 @@ var ToolDispatchAgent = FunctionDef{
 	},
 }
 
-// RunSearch 执行搜索工具。
+// RunSearch executes the search tool.
 func RunSearch(ctx context.Context, arguments string) (string, bool, error) {
 	params := ParseArgs(arguments)
 	q := ArgString(params, "query", "")
@@ -94,7 +94,7 @@ func RunSearch(ctx context.Context, arguments string) (string, bool, error) {
 	return fmt.Sprintf(`{"results":[{"title":"关于「%s」的资料","url":"https://example.com/%s"}]}`, q, q), false, nil
 }
 
-// RunGenerateImage 执行图片生成工具（假实现，返回模拟 URL）。
+// RunGenerateImage executes the image-generation tool (fake implementation, returns a simulated URL).
 func RunGenerateImage(ctx context.Context, arguments string) (string, bool, error) {
 	params := ParseArgs(arguments)
 	prompt := ArgString(params, "prompt", "")
@@ -115,7 +115,7 @@ func RunGenerateImage(ctx context.Context, arguments string) (string, bool, erro
 	return string(b), false, nil
 }
 
-// RunCreateVideoTask 执行视频合成工具（假实现，isPipeline=true 触发 NeedWait）。
+// RunCreateVideoTask executes the video-synthesis tool (fake implementation; isPipeline=true triggers NeedWait).
 func RunCreateVideoTask(ctx context.Context, arguments string) (string, bool, error) {
 	params := ParseArgs(arguments)
 	prompt := ArgString(params, "prompt", "")
@@ -134,9 +134,9 @@ func RunCreateVideoTask(ctx context.Context, arguments string) (string, bool, er
 	return string(b), true, nil // isPipeline=true
 }
 
-// RunCreateVideoTaskReal 执行 create_video_task 的真实四连：
-// pre_create → create → fakegen.submit → async_post_create。
-// 返回产线 task_id + isPipeline=true（触发 Waiting）。
+// RunCreateVideoTaskReal executes the real four-call chain of create_video_task:
+// pre_create → create → fakegen.submit → async_post_create.
+// It returns the pipeline task_id + isPipeline=true (triggering Waiting).
 func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 	return func(ctx context.Context, arguments string) (string, bool, error) {
 		params := ParseArgs(arguments)
@@ -144,14 +144,14 @@ func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 		if prompt == "" {
 			return "", false, fmt.Errorf("create_video_task: prompt 必填")
 		}
-		// 身份透传：只从 ctx 读（executor 注入的 run.UserID/SessionID）。
-		// 不读工具参数——身份必须来自可信来源，LLM 参数不可注入。
+		// Identity propagation: read only from ctx (the run.UserID/SessionID injected by the executor).
+		// Tool arguments are not read — identity must come from a trusted source; LLM arguments cannot inject it.
 		userID, sessionID := IdentityFromContext(ctx)
 
-		// ① pre_create：组装下游算子入参
+		// ① pre_create: assemble the downstream operator inputs
 		preReq := &baseapi.PreCreateReq{
 			ProjectType:  "mix_video",
-			RoleType:     5, // 剪辑大师
+			RoleType:     5, // edit master
 			ProjectInput: fmt.Sprintf(`{"input":%q}`, prompt),
 			UserID:       userID,
 			SessionID:    sessionID,
@@ -164,7 +164,7 @@ func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 			return "", false, fmt.Errorf("pre_create: empty data")
 		}
 		if preResp.Data.Status != 0 {
-			// 失败卡 / 风控拦截：不进入生成
+			// Failure card / risk-control block: do not enter generation
 			out := struct {
 				Status   int    `json:"status"`
 				TaskType string `json:"task_type"`
@@ -174,7 +174,7 @@ func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 			return string(b), false, nil
 		}
 
-		// ② create：扣积分 + 建作品
+		// ② create: deduct points + create the work
 		createReq := &baseapi.CreateReq{
 			ProjectType:  "mix_video",
 			ProjectInput: map[string]any{"input": prompt},
@@ -190,12 +190,12 @@ func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 			return `{"status":"insufficient_score"}`, false, nil
 		}
 
-		// ③ fakegen.submit：模拟生成启动，拿产线 task_id
-		// 产线 ID 由 fakegen 原子分配（TaskID 传 0 触发 nextTaskID.Add(1)），
-		// 避免 go-learn 时间戳取模在并行 agent 下碰撞；返回的 task_id 透传给 async_post_create。
+		// ③ fakegen.submit: start the simulated generation and obtain the pipeline task_id
+		// The pipeline ID is assigned atomically by fakegen (passing TaskID 0 triggers nextTaskID.Add(1)),
+		// avoiding go-learn's timestamp-modulo collisions under parallel agents; the returned task_id is passed through to async_post_create.
 		submitReq := &fakegen.SubmitReq{
 			ProjectInput: preResp.Data.ProjectInput,
-			// 回调入口在 go-learn 自身（Waiting→Finished 靠它推进），不是 base-server。
+			// The callback entry point is go-learn itself (Waiting→Finished is advanced through it), not base-server.
 			CallbackURL: deps.CallbackBaseURL + "/aigc/callback/task_detail",
 			TaskID:      0,
 			SessionID:   sessionID,
@@ -206,7 +206,7 @@ func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 			return "", false, fmt.Errorf("fakegen submit: %w", err)
 		}
 
-		// ④ async_post_create：登记产线 ID
+		// ④ async_post_create: register the pipeline ID
 		asyncReq := &baseapi.AsyncPostCreateReq{
 			SessionID:   sessionID,
 			UserID:      userID,
@@ -228,13 +228,13 @@ func RunCreateVideoTaskReal(deps RealRunnerDeps) ToolRunner {
 	}
 }
 
-// cardTypeFromArgs 从 task_arguments 里取 card_type 字符串（区分输入风控卡/积分不足卡等）。
+// cardTypeFromArgs extracts the card_type string from task_arguments (distinguishing input-risk cards / insufficient-points cards, etc.).
 func cardTypeFromArgs(args map[string]any) string {
 	v, _ := args["card_type"].(string)
 	return v
 }
 
-// RunDispatchAgent 执行派发子任务工具（假实现，返回派发确认）。
+// RunDispatchAgent executes the subtask-dispatch tool (fake implementation, returns a dispatch confirmation).
 func RunDispatchAgent(ctx context.Context, arguments string) (string, bool, error) {
 	params := ParseArgs(arguments)
 	agentID := ArgString(params, "agent_id", "")
@@ -255,22 +255,22 @@ func RunDispatchAgent(ctx context.Context, arguments string) (string, bool, erro
 	return string(b), false, nil
 }
 
-// RealRunnerDeps 持有真实产线 Runner 的依赖（base-server client + fakegen server）。
+// RealRunnerDeps holds the dependencies of the real pipeline Runner (base-server client + fakegen server).
 type RealRunnerDeps struct {
 	Base            *baseapi.Client
 	FakeGen         *fakegen.Server
-	CallbackBaseURL string // go-learn 自身地址（回调入口），如 http://localhost:8080
+	CallbackBaseURL string // go-learn's own address (the callback entry point), e.g. http://localhost:8080
 }
 
-// NewSubAgentToolRegistry 构建子 Agent 的工具注册表（执行类 + 产线类）。
-// deps 为 nil 时 create_video_task 回退假实现（demo 不依赖外部服务）。
+// NewSubAgentToolRegistry builds the sub-agent tool registry (execution class + pipeline class).
+// When deps is nil, create_video_task falls back to the fake implementation (the demo does not depend on external services).
 //
-// 按 agent 隔离工具集（对齐真实系统 GetFunctions 按 agentID 返回该 agent 工具列表）：
-//   - 全局默认（所有 agent 可见）：search + generate_image
-//   - edit_master 专属：+ create_video_task（产线工具只有剪辑大师能调）
+// Per-agent tool-set isolation (aligned with the reference system's GetFunctions returning the agent's tool list by agentID):
+//   - Global defaults (visible to all agents): search + generate_image
+//   - edit_master exclusive: + create_video_task (only the edit master can call the pipeline tool)
 //
-// 这样 gold_scriptwriter（写脚本）看不到产线工具，无法"写完脚本直接调产线跳过脚本卡"，
-// 只能输出脚本 JSON → 推脚本卡 → 用户确认 → edit_master → 调产线。链路确定性由工具集保证。
+// This way gold_scriptwriter (script writing) cannot see the pipeline tool and cannot "call the pipeline directly after writing the script, skipping the script card";
+// it can only output the script JSON → push the script card → user confirms → edit_master → call the pipeline. The chain's determinism is guaranteed by the tool set.
 func NewSubAgentToolRegistry(deps ...*RealRunnerDeps) *ToolRegistry {
 	r := NewToolRegistry()
 	r.Register(ToolEntry{Def: ToolSearch, Runner: RunSearch})
@@ -280,18 +280,18 @@ func NewSubAgentToolRegistry(deps ...*RealRunnerDeps) *ToolRegistry {
 		r.tools[ToolCreateVideoTask.Name].Runner = RunCreateVideoTaskReal(*deps[0])
 	}
 
-	// 全局默认：search + generate_image（无 agentID 上下文 / 未配置专属工具的 agent）。
+	// Global defaults: search + generate_image (no agentID context / agents without exclusive tools).
 	for _, def := range []FunctionDef{ToolSearch, ToolGenerateImage} {
 		r.RegisterDefault(def)
 	}
-	// edit_master 专属：产线工具只对剪辑大师可见。
+	// edit_master exclusive: the pipeline tool is visible only to the edit master.
 	for _, def := range []FunctionDef{ToolSearch, ToolGenerateImage, ToolCreateVideoTask} {
 		r.RegisterDefaultForAgent(AgentEditMaster, def)
 	}
 	return r
 }
 
-// hashStr 生成字符串的简单哈希（用于模拟 URL/ID，非加密用途）。
+// hashStr computes a simple hash of a string (for simulated URLs/IDs, not cryptographic).
 func hashStr(s string) uint64 {
 	var h uint64 = 1469598103934665603
 	for i := 0; i < len(s); i++ {

@@ -1,26 +1,26 @@
-# 编译产物
+# Build artifacts
 /creative-agent
 /build/
 *.exe
 
-# 本地配置（含密码）
+# Local configuration (contains passwords)
 config/secrets.json
 
-# SQLite 数据库文件
+# SQLite database files
 *.db
 
-# 本地环境变量
+# Local environment variables
 .env
 
 # IDE
 .idea/
 .vscode/
 
-# Claude Code 本地设置（机器/会话级，不入库）
+# Claude Code local settings (machine/session level, not committed)
 .claude/settings.json
 
-# 系统文件
+# System files
 .DS_Store
 
-# 本地调试产物（临时二进制 / 日志）
+# Local debug artifacts (temporary binaries / logs)
 .scratch/

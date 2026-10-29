@@ -5,30 +5,30 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/model"
 )
 
-// Pipeline / AgentID 及 pipeline → agent 集合映射定义在 subtask 根包 pipeline.go。
-// subtask 根包持有 agent 集合唯一数据源，供 manager（管家校验 LLM 填的 agent 属于产线）
-// 与 fastpath（点卡确认后 GetNextAgent 推进）共用，避免业务包之间的依赖环。
+// Pipeline / AgentID and the pipeline → agent-set mapping are defined in the subtask root package's pipeline.go.
+// The subtask root package holds the single source of truth for agent sets, shared by the manager (validating LLM-filled agents belong to the pipeline)
+// and fastpath (GetNextAgent advancement after card confirmation), avoiding dependency cycles between business packages.
 
-// BuildExecuteAgent 从当前 agent 构造下一个 task_run 的 plan_steps（单 agent）。
+// BuildExecuteAgent builds the next task_run's plan_steps (single agent) from the current agent.
 //
-// 对应真实系统 buildExecuteAgent（judge.go:172）：每次投递单个 execute_agent，
-// planSteps 里只有当前这一个 agent（执行器只吃 Agents[0]）。
+// Corresponds to the reference system's buildExecuteAgent (judge.go:172): each dispatch is a single execute_agent;
+// planSteps contains only this one agent (the executor consumes only Agents[0]).
 //
-// scriptContent 是前序脚本（可选）：点卡确认后由 fastpath 提取，拼进下一个
-// agent 的 input（对齐真实系统 BuildExecuteAgentInvokeMessage——edit_master
-// 需要拿到脚本才能调产线工具）。为空时退化为只用 query。
+// scriptContent is the preceding script (optional): extracted by fastpath after card confirmation and spliced into the next
+// agent's input (aligned with the reference system's BuildExecuteAgentInvokeMessage — edit_master
+// needs the script before it can call the pipeline tool). When empty it degrades to using only the query.
 func BuildExecuteAgent(pipeline subtask.Pipeline, current subtask.AgentID, userID int64, sessionID, agentID, query, scriptContent string) ([]model.PlanAgent, error) {
 	next, err := subtask.GetNextAgent(pipeline, current)
 	if err != nil {
 		return nil, err
 	}
 	if next == "" {
-		return nil, nil // 链结束
+		return nil, nil // chain end
 	}
 	input := query
 	if scriptContent != "" {
-		// 脚本内容置前，用户确认语置后（对齐真实系统 invoke_message 结构：
-		// "【任务指令】... 前序脚本内容：{script} 创作要求：..."）。
+		// Script content first, user confirmation text after (aligned with the reference system's invoke_message structure:
+		// "【任务指令】... 前序脚本内容：{script} 创作要求：...").
 		input = scriptContent + "\n\n" + query
 	}
 	return []model.PlanAgent{

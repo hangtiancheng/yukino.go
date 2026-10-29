@@ -9,10 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrUserNotFound 表示未找到对应用户记录。
+// ErrUserNotFound indicates no matching user record was found.
 var ErrUserNotFound = errors.New("user not found")
 
-// UserRepository 封装用户表的数据访问，供 service 依赖（便于 mock）。
+// UserRepository encapsulates data access to the users table for the service layer to depend on (easy to mock).
 type UserRepository interface {
 	Create(ctx context.Context, u *model.User) error
 	FindByUsername(ctx context.Context, username string) (*model.User, error)
@@ -23,7 +23,7 @@ type userRepository struct {
 	db *gorm.DB
 }
 
-// NewUserRepository 基于 gorm.DB 创建 repository（原生 GORM 查询）。
+// NewUserRepository creates the repository on top of gorm.DB (native GORM queries).
 func NewUserRepository(db *gorm.DB) UserRepository {
 	return &userRepository{db: db}
 }

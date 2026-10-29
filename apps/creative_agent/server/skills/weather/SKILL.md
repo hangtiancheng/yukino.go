@@ -1,19 +1,19 @@
 ---
 name: weather
-description: 查询城市天气。当用户询问天气、气温、降雨时调用。
+description: Query city weather. Call when the user asks about weather, temperature, or rain.
 apis:
   - name: query_weather
-    description: 查询指定城市的当前天气
+    description: Query the current weather of the given city
     endpoint: ${WEATHER_API_BASE_URL}/api/weather
     method: GET
     parameters:
       city:
         type: string
-        description: 城市名（中文）
+        description: City name (in Chinese, e.g. 北京)
         required: true
       unit:
         type: string
-        description: 温度单位
+        description: Temperature unit
         enum: ["celsius", "fahrenheit"]
         default: "celsius"
       user_id:
@@ -22,6 +22,6 @@ apis:
         injected: true
 ---
 
-# weather skill 使用说明
+# weather skill usage
 
-查询天气时先调用 query_weather 工具，传入城市名（如「北京」）。
+To query the weather, call the query_weather tool first, passing the city name (e.g. 北京).

@@ -5,36 +5,36 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/sse"
 )
 
-// HotCardData 是管家产出热点卡的透传数据（对齐参考 task_arguments：
-// {card_type:"热点及选题卡", hotspot_data, title_data:[{title,content,eid}]}）。
-// strategy 把外部热点服务结果组织成它，经 AgentResult.Ext["hot_card"] 透传给 runner，
-// runner 渲染成 ui-block-start/ui-block-complete 帧。
+// HotCardData is the pass-through data of the hot-topic card produced by the manager (aligned with the reference task_arguments:
+// {card_type:"热点及选题卡", hotspot_data, title_data:[{title,content,eid}]}).
+// The strategy organizes external hotspot-service results into it and passes it to the runner via AgentResult.Ext["hot_card"];
+// the runner renders it into ui-block-start/ui-block-complete frames.
 type HotCardData struct {
 	CardType    string               `json:"card_type"`
 	Label       string               `json:"label,omitempty"`
 	HotspotData string               `json:"hotspot_data,omitempty"`
 	TitleData   []ideaking.TitleItem `json:"title_data"`
-	// PromptItems 直接指定选项（可选）：创作功能卡等服务端预定义卡用，
-	// 可带 imageUrl（image-text 布局）。有值时优先于 TitleData 转换。
+	// PromptItems specifies the options directly (optional): used by server-predefined cards such as the creation-feature card;
+	// may carry imageUrl (image-text layout). When set, it takes priority over converting TitleData.
 	PromptItems []PromptItem `json:"prompt_items,omitempty"`
-	// Layout 是 PromptOptionGroup 的布局：text（纯文字，默认）/ image-text（图标+文字）。
-	// 创作功能选择卡用 image-text。
+	// Layout is the PromptOptionGroup layout: text (plain text, default) / image-text (icon + text).
+	// The creation-feature selection card uses image-text.
 	Layout string `json:"layout,omitempty"`
 }
 
-// PromptItem 是热点卡单个选项（对齐参考 PromptItem{title,text,index,eid,imageUrl}）。
+// PromptItem is a single hot-card option (aligned with the reference PromptItem{title,text,index,eid,imageUrl}).
 type PromptItem struct {
 	Title    string `json:"title"`
 	Text     string `json:"text"`
 	Index    int    `json:"index"`
 	Eid      string `json:"eid,omitempty"`
 	ImageURL string `json:"imageUrl,omitempty"`
-	// Pipeline 是选项关联的产线（创作功能卡用：AI成片→mix_video / AI笔记图→article）。
-	// 前端点卡时随 submit_clarification 回传，服务端据此进入对应产线创作。
+	// Pipeline is the pipeline associated with the option (used by the creation-feature card: AI成片→mix_video / AI笔记图→article).
+	// The frontend echoes it with submit_clarification on card click; the server enters the corresponding pipeline creation based on it.
 	Pipeline string `json:"pipeline,omitempty"`
 }
 
-// PromptOptionGroupUIData 是 PromptOptionGroup 组件的 uiData（对齐参考）。
+// PromptOptionGroupUIData is the uiData of the PromptOptionGroup component (aligned with the reference).
 type PromptOptionGroupUIData struct {
 	Label         string       `json:"label"`
 	Layout        string       `json:"layout"`
@@ -43,12 +43,12 @@ type PromptOptionGroupUIData struct {
 	PromptItems   []PromptItem `json:"promptItems"`
 }
 
-// hotCardLabel 是热点卡的固定引导文案（对齐参考 conversation1 抓包）。
+// hotCardLabel is the fixed guidance copy of the hot-topic card (aligned with the reference conversation1 capture; product content, kept in Chinese).
 const hotCardLabel = "为您找到了几个热点选题，请挑选一个试试呢～"
 
-// BuildHotIssueFrames 把热点卡数据渲染成 SSE 帧序列：ui-block-start → ui-block-complete。
-// ui-block-start 的 UIMeta 用 flex + Markdown + PromptOptionGroup 模板（对齐参考抓包）；
-// UIData 填充实际选项（promptItems 带 eid）。
+// BuildHotIssueFrames renders hot-card data into the SSE frame sequence: ui-block-start → ui-block-complete.
+// The ui-block-start UIMeta uses the flex + Markdown + PromptOptionGroup template (aligned with the reference capture);
+// UIData is filled with the actual options (promptItems carrying eid).
 func BuildHotIssueFrames(serverMsgID string, card *HotCardData) []SSEFrame {
 	label := card.Label
 	if label == "" {
@@ -57,7 +57,7 @@ func BuildHotIssueFrames(serverMsgID string, card *HotCardData) []SSEFrame {
 
 	items := make([]PromptItem, 0, len(card.TitleData))
 	if len(card.PromptItems) > 0 {
-		// 服务端预定义选项（创作功能卡等）：直接用（可带 imageUrl）
+		// Server-predefined options (creation-feature card, etc.): use directly (may carry imageUrl)
 		for i, pi := range card.PromptItems {
 			if pi.Index == 0 && i > 0 {
 				pi.Index = i
@@ -88,7 +88,7 @@ func BuildHotIssueFrames(serverMsgID string, card *HotCardData) []SSEFrame {
 		PromptItems:   items,
 	}
 
-	// 对齐参考 buildBlockUIMeta：flex 布局 + Markdown(label) + PromptOptionGroup 模板变量。
+	// Aligned with the reference buildBlockUIMeta: flex layout + Markdown(label) + PromptOptionGroup template variables.
 	uiMeta := map[string]any{
 		"component": map[string]any{
 			"type":  "flex",

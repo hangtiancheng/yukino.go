@@ -9,46 +9,46 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/risk/domain"
 )
 
-// SyncAuditTaskInput 是 SyncAuditRecorder.Finish 落库时 task_input 的内容。
+// SyncAuditTaskInput is the task_input content persisted by SyncAuditRecorder.Finish.
 type SyncAuditTaskInput struct {
 	BizIDs   []string `json:"biz_ids"`
 	SubTypes []string `json:"sub_types"`
 }
 
-// SyncAuditRecorder 把一次业务流程里的多次同步风控调用合并成一条风控审计记录。
+// SyncAuditRecorder merges multiple sync risk-control calls within one business flow into a single risk-audit record.
 //
-// 设计意图（设计精讲 §四）：一次成片 pre_create 可能要审多组文本，若每组都落一条记录
-// 会刷爆记录表；Recorder 在内存中收集本次所有 (subProduct, bizID)，Finish 时写一条
-// 汇总记录，用于审计对账。三种执行模式：
+// Design intent (design deep-dive §4): one final-video pre_create may audit several text groups; writing one record per group
+// would flood the record table. The Recorder collects all (subProduct, bizID) pairs of this round in memory and Finish writes one
+// summary record for audit reconciliation. Three execution modes:
 //
-//	Run         单条文本/图片，一次风控调用
-//	RunByTick   多条文本，ticker 限速派发（保护下游）
-//	RunParallel 多条并发，聚合语义 err > !pass > pass
+//	Run         a single text/image, one risk call
+//	RunByTick   multiple texts, ticker rate-limited dispatch (protecting downstream)
+//	RunParallel multiple concurrent, aggregating with err > !pass > pass
 //
-// 用法：
+// Usage:
 //
 //	recorder := NewSyncAuditRecorder(ctx, userID, projectID, taskStepID, "risk:5:mix_video:precreate", backend, records)
-//	passed, reason, err := recorder.Run(req, subProduct) // 调用一次或多次
-//	// ... 其它风控调用 ...
-//	recorder.Finish(passed, reason, err) // 最后统一落一条记录
+//	passed, reason, err := recorder.Run(req, subProduct) // called once or more
+//	// ... other risk-control calls ...
+//	recorder.Finish(passed, reason, err) // finally write one summary record
 //
-// 图片派发/聚合策略（限速闸门 + 一票否决）收敛在 domain.SyncAuditImages /
-// domain.AggregateImageResults，此处只负责审计元信息收集与落库。
+// Image dispatch/aggregation policies (rate-limit gate + one-vote veto) converge in domain.SyncAuditImages /
+// domain.AggregateImageResults; this struct only collects audit metadata and persists it.
 type SyncAuditRecorder struct {
 	ctx        context.Context
 	userID     int64
 	projectID  string
 	taskStepID int64
-	taskType   string   // 如 "risk:5:mix_video:precreate"
-	subTypes   []string // 本次涉及的所有 subProduct
-	bizIDs     []string // 本次涉及的所有 bizID
+	taskType   string   // e.g. "risk:5:mix_video:precreate"
+	subTypes   []string // all subProducts involved in this round
+	bizIDs     []string // all bizIDs involved in this round
 	backend    domain.AuditBackend
 	records    domain.AuditRecordRepository
 
 	mu sync.Mutex
 }
 
-// NewSyncAuditRecorder 创建 recorder。
+// NewSyncAuditRecorder creates a recorder.
 func NewSyncAuditRecorder(ctx context.Context, userID int64, projectID string, taskStepID int64, taskType string, backend domain.AuditBackend, records domain.AuditRecordRepository) *SyncAuditRecorder {
 	return &SyncAuditRecorder{
 		ctx:        ctx,
@@ -61,7 +61,7 @@ func NewSyncAuditRecorder(ctx context.Context, userID int64, projectID string, t
 	}
 }
 
-// Run 执行一次同步风控并记录审计元信息（subProduct + bizID）。
+// Run executes one sync risk-control call and records the audit metadata (subProduct + bizID).
 func (r *SyncAuditRecorder) Run(req *domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
 	r.mu.Lock()
 	r.subTypes = append(r.subTypes, subProduct)
@@ -76,7 +76,7 @@ func (r *SyncAuditRecorder) Run(req *domain.RiskSubmitRequest, subProduct string
 	return passed, reason, err
 }
 
-// RunByTick 多条文本按 ticker 限速派发（防止把风控服务打挂），聚合语义同 RunParallel。
+// RunByTick dispatches multiple texts with ticker rate limiting (protecting the risk service); aggregation semantics match RunParallel.
 func (r *SyncAuditRecorder) RunByTick(reqs []*domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
 	if len(reqs) == 0 {
 		return true, "", nil
@@ -85,7 +85,7 @@ func (r *SyncAuditRecorder) RunByTick(reqs []*domain.RiskSubmitRequest, subProdu
 	r.subTypes = append(r.subTypes, subProduct)
 	r.mu.Unlock()
 
-	// 与 domain.SyncAuditImages 同构的限速闸门：限派发速率、不限并发数
+	// A rate-limit gate isomorphic to domain.SyncAuditImages: limits dispatch rate, not concurrency
 	results := make(chan domain.ImageAuditResult, len(reqs))
 	var wg sync.WaitGroup
 	ticker := time.NewTicker(domain.DefaultImageTicker)
@@ -112,7 +112,7 @@ func (r *SyncAuditRecorder) RunByTick(reqs []*domain.RiskSubmitRequest, subProdu
 	return domain.AggregateImageResults(results)
 }
 
-// RunParallel 多条并发执行，聚合语义 err > !pass > pass。
+// RunParallel executes multiple texts concurrently, aggregating with err > !pass > pass.
 func (r *SyncAuditRecorder) RunParallel(reqs []*domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
 	if len(reqs) == 0 {
 		return true, "", nil
@@ -139,10 +139,10 @@ func (r *SyncAuditRecorder) RunParallel(reqs []*domain.RiskSubmitRequest, subPro
 	return domain.AggregateImageResults(results)
 }
 
-// Finish 在业务逻辑所有风控调用完成后调用一次，写入一条汇总的风控审计记录。
+// Finish is called once after all risk-control calls of the business logic complete, writing one summary risk-audit record.
 //
-// status：全部通过 → "done"；任一不通过或出错 → "fail"。
-// task_input 记录本次涉及的所有 bizID + subProduct（审计对账用）。
+// status: all passed → "done"; any rejection or error → "fail".
+// task_input records all bizIDs + subProducts involved in this round (for audit reconciliation).
 func (r *SyncAuditRecorder) Finish(passed bool, reason string, err error) {
 	taskInput, _ := json.Marshal(SyncAuditTaskInput{
 		BizIDs:   r.bizIDs,
@@ -163,20 +163,20 @@ func (r *SyncAuditRecorder) Finish(passed bool, reason string, err error) {
 	})
 }
 
-// syncAudit 文本/图片同步风控：阻塞等待结果，立即返回。
+// syncAudit is synchronous text/image risk control: blocks for the result and returns immediately.
 //
-// 返回：
-//   - passed=false + err=non-nil → 风控请求失败（系统错误）
-//   - passed=false + reason=non-empty → 内容不通过（命中风控）
-//   - passed=true → 通过
+// Returns:
+//   - passed=false + err=non-nil → the risk request failed (system error)
+//   - passed=false + reason=non-empty → content rejected (risk hit)
+//   - passed=true → passed
 //
-// 图片风控拆分为每次 1 张（domain.SyncAuditImages，限速派发 + 一票否决）；
-// 文本风控单次请求直连 backend.Submit。
+// Image risk control is split into one image per call (domain.SyncAuditImages, rate-limited dispatch + one-vote veto);
+// text risk control is a single request straight to backend.Submit.
 func (r *SyncAuditRecorder) syncAudit(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
-	// 图片风控：拆分为每次 1 张，限速派发 + 一票否决
+	// Image risk control: split into one image per call, rate-limited dispatch + one-vote veto
 	if len(req.Content.Image) > 0 {
 		return domain.SyncAuditImages(ctx, r.backend, req, subProduct)
 	}
-	// 文本风控：单次请求
+	// Text risk control: a single request
 	return r.backend.Submit(ctx, req, subProduct)
 }

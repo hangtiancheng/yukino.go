@@ -2,7 +2,7 @@ package service
 
 import "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/domain"
 
-// CreationApp 创作应用服务门面：聚合四个用例，供 interfaces/monitor 调用。
+// CreationApp is the creation application-service facade: it aggregates the four use cases for interfaces/monitor to call.
 type CreationApp struct {
 	PreCreate   *PreCreateApp
 	Create      *CreateApp
@@ -10,7 +10,7 @@ type CreationApp struct {
 	HandleError *HandleErrorApp
 }
 
-// NewCreationApp 创建创作门面（四个用例共享同一组仓储与跨域端口）。
+// NewCreationApp creates the creation facade (the four use cases share one set of repositories and cross-domain ports).
 func NewCreationApp(projects domain.ProjectRepository, records domain.CallbackRecordRepository, risk RiskPort, points PointsPort) *CreationApp {
 	return &CreationApp{
 		PreCreate:   NewPreCreateApp(projects, risk, points),

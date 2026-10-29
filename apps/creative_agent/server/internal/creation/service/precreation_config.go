@@ -5,29 +5,29 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/domain"
 )
 
-// PreCreationInputConfig 配置驱动：把「输入结构体 + 风控策略 + 回调方式」三个维度全部配置化。
+// PreCreationInputConfig is config-driven: all three dimensions — input struct + risk policy + callback mode — are configuration.
 //
-// 每个 (role_type, project_type) 组合在 PreCreationInputMap 里配一条。
-// 加一个新创作类型，只需在 map 里配一条，不用改业务代码。
+// Each (role_type, project_type) combination has one entry in PreCreationInputMap.
+// Adding a new creation type only needs one map entry, with no business-code changes.
 type PreCreationInputConfig struct {
-	// IsMainFlow 是否主流程（决定回调方式与是否可退积分）。
+	// IsMainFlow marks the main flow (deciding the callback mode and whether points are refundable).
 	IsMainFlow bool
-	// CallbackMode 回调方式（"only" / "multi" / "both" 等）。
+	// CallbackMode is the callback mode ("only" / "multi" / "both", etc.).
 	CallbackMode string
-	// ProjectInputSubType 下发算子的子类型。
+	// ProjectInputSubType is the sub-type passed down to operators.
 	ProjectInputSubType string
-	// PassThroughCallbackStep "only" / "multi" 单步/多步回调。
+	// PassThroughCallbackStep is "only" / "multi" single-step/multi-step callback.
 	PassThroughCallbackStep string
-	// AuditSubproduct 这个阶段用什么风控策略（阶段 3 填）。
+	// AuditSubproduct is the risk policy this stage uses (filled in stage 3).
 	AuditSubproduct string
-	// NewInput 工厂方法：这个阶段的输入结构体。
+	// NewInput is the factory method: this stage's input struct.
 	NewInput func() contracts.Input
 }
 
-// PreCreationInputMap 是 (role, type) → 输入配置的注册表。
-// 阶段 3 起在 runPreCreateAudit 中用它路由风控策略，本阶段先搭骨架。
+// PreCreationInputMap is the (role, type) → input-config registry.
+// From stage 3 runPreCreateAudit uses it to route risk policies; this stage only builds the skeleton.
 var PreCreationInputMap = map[string]PreCreationInputConfig{
-	// 混剪（主流程，成片扣积分）
+	// Mix-cut (main flow; the final video deducts points)
 	domain.TaskTypeKey(domain.RoleTypeScreenplay, domain.ProjectTypeMixVideo): {
 		IsMainFlow: false, AuditSubproduct: "dujiaapp_mixvideo_t2t_input",
 		NewInput: func() contracts.Input { return &contracts.CommonInput{} },
@@ -38,21 +38,21 @@ var PreCreationInputMap = map[string]PreCreationInputConfig{
 		AuditSubproduct:         "dujiaapp_mixvideoscript_t2t_input",
 		NewInput:                func() contracts.Input { return &contracts.CommonInput{} },
 	},
-	// 妙图（同步，成图扣积分）
+	// Instant image (synchronous; the finished image deducts points)
 	domain.TaskTypeKey(domain.RoleTypeVisualDesigner, domain.ProjectTypeMiaotuImage): {
 		IsMainFlow: true, CallbackMode: "only",
 		PassThroughCallbackStep: domain.CallbackStepOnly,
 		AuditSubproduct:         "dujiaapp_miaotu_t2i_input",
 		NewInput:                func() contracts.Input { return &contracts.CommonInput{} },
 	},
-	// 妙影（异步，成片扣积分）
+	// Instant video (asynchronous; the final video deducts points)
 	domain.TaskTypeKey(domain.RoleTypeEditor, domain.ProjectTypeMiaoyingVideo): {
 		IsMainFlow: true, CallbackMode: "both",
 		PassThroughCallbackStep: domain.CallbackStepMulti,
 		AuditSubproduct:         "dujiaapp_miaoying5s_t2v_input",
 		NewInput:                func() contracts.Input { return &contracts.CommonInput{} },
 	},
-	// 图文笔记（编剧阶段无积分 / 成图阶段扣积分）
+	// Image-text article (no points at the scriptwriter stage / the finished image stage deducts points)
 	domain.TaskTypeKey(domain.RoleTypeScreenplay, domain.ProjectTypeGraphicNotes): {
 		IsMainFlow: false, AuditSubproduct: "dujiaapp_graphicnotes_t2i_input",
 		NewInput: func() contracts.Input { return &contracts.CommonInput{} },
@@ -63,20 +63,20 @@ var PreCreationInputMap = map[string]PreCreationInputConfig{
 		AuditSubproduct:         "dujiaapp_graphicnotesscript_t2i_input",
 		NewInput:                func() contracts.Input { return &contracts.CommonInput{} },
 	},
-	// 脑洞（点子王，不扣积分）
+	// Brainstorm (idea king; no points deduction)
 	domain.TaskTypeKey(domain.RoleTypePointOfView, ""): {
 		IsMainFlow: false, AuditSubproduct: "dujiaapp_brainstormplan_t2t_input",
 		NewInput: func() contracts.Input { return &contracts.CommonInput{} },
 	},
 }
 
-// GetConfig 查配置；未配置时返回 nil 并带 ok 标记，便于调用方区分"配置缺失"。
+// GetConfig looks up the config; returns nil with an ok flag when unconfigured, letting callers distinguish "missing config".
 func GetConfig(roleType int, projectType string) (PreCreationInputConfig, bool) {
 	cfg, ok := PreCreationInputMap[domain.TaskTypeKey(roleType, projectType)]
 	return cfg, ok
 }
 
-// inputAuditSubproduct 查 (role, type) 对应的输入风控策略；未配置时返回空串（跳过风控）。
+// inputAuditSubproduct looks up the input risk policy of (role, type); returns an empty string when unconfigured (skip risk control).
 func inputAuditSubproduct(roleType int, projectType string) string {
 	cfg, ok := GetConfig(roleType, projectType)
 	if !ok {

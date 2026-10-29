@@ -11,24 +11,24 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 )
 
-// ============ §7.2 FunctionDef 类型（定义在 internal/core/types.go）============
-// FunctionDef / ParameterSpec / PropertyDef 定义在 core 包，保证 ReAct 引擎与
-// 工具系统共用同一份定义。此处通过类型别名保持 provider 包内引用简洁。
+// ============ §7.2 FunctionDef types (defined in internal/core/types.go) ============
+// FunctionDef / ParameterSpec / PropertyDef are defined in the core package so the ReAct engine and
+// the tool system share the same definitions. Type aliases keep references inside the provider package concise.
 
-// FunctionDef 是 react.FunctionDef 的别名（工具 Schema）。
+// FunctionDef is an alias of react.FunctionDef (the tool schema).
 type FunctionDef = react.FunctionDef
 
-// ParameterSpec 是 react.ParameterSpec 的别名。
+// ParameterSpec is an alias of react.ParameterSpec.
 type ParameterSpec = react.ParameterSpec
 
-// PropertyDef 是 react.PropertyDef 的别名。
+// PropertyDef is an alias of react.PropertyDef.
 type PropertyDef = react.PropertyDef
 
-// ToolsProvider 工具提供者接口（§7.4）。
-// ToolRegistry 是一种实现（Go 代码 Register）；动态 skill 源（SkillProvider）见 appkit/provider/skill 包。
+// ToolsProvider is the tool-provider interface (§7.4).
+// ToolRegistry is one implementation (Register in Go code); for dynamic skill sources (SkillProvider) see the appkit/provider/skill package.
 //
-// 每次 LLM 调用前通过 GetFunctionDefs 取工具列表，支持动态增减；
-// Execute 按名称执行工具，handled=false 表示该名称未注册，isPipeline=true 表示异步产线工具。
+// The tool list is fetched via GetFunctionDefs before every LLM call, supporting dynamic add/remove;
+// Execute runs a tool by name; handled=false means the name is unregistered, isPipeline=true marks an async pipeline tool.
 type ToolsProvider interface {
 	GetFunctionDefs(ctx context.Context) ([]react.FunctionDef, error)
 	Execute(ctx context.Context, name, arguments string) (
@@ -36,35 +36,35 @@ type ToolsProvider interface {
 	)
 }
 
-// ============ §7.3 ToolRegistry — 内建工具注册表 ============
+// ============ §7.3 ToolRegistry — built-in tool registry ============
 
-// ToolRunner 单个工具的执行函数。
-// 入参: ctx, arguments (LLM 传的 JSON 字符串)
-// 返回: (结果字符串, 是否为异步产线工具, error)
+// ToolRunner is the execution function of a single tool.
+// Inputs: ctx, arguments (the JSON string passed by the LLM)
+// Returns: (result string, whether it is an async pipeline tool, error)
 type ToolRunner func(ctx context.Context, arguments string) (result string, isPipeline bool, err error)
 
-// ToolEntry 注册表中的一条工具。
+// ToolEntry is one tool in the registry.
 type ToolEntry struct {
 	Def    FunctionDef
 	Runner ToolRunner
 }
 
-// ToolRegistry 以硬编码 Register(entry) 方式注册工具的具体实现。
-// 适用于内建工具（工具名编译期确定）；业务 API 用 appkit/provider/skill 的 SkillProvider（§7.7）。
+// ToolRegistry is the concrete implementation that registers tools via hard-coded Register(entry).
+// Suitable for built-in tools (tool names fixed at compile time); business APIs use the SkillProvider from appkit/provider/skill (§7.7).
 //
-// 支持按 agent 隔离工具集：RegisterDefault 注册全局默认工具（无 agentID 时返回），
-// RegisterDefaultForAgent 注册某 agent 专属默认工具（GetFunctionDefs 从 ctx 读 agentID，
-// 命中专属配置时只返回该 agent 的工具，否则回退全局默认）。对齐真实系统
-// GetFunctions 按 agentID 查 DB 返回该 agent 可调用 function 列表的做法。
+// Supports per-agent tool-set isolation: RegisterDefault registers global default tools (returned when there is no agentID),
+// RegisterDefaultForAgent registers default tools exclusive to one agent (GetFunctionDefs reads agentID from ctx;
+// when the exclusive config matches, only that agent's tools are returned, otherwise it falls back to the global defaults). Aligned with the reference system's
+// GetFunctions, which queries the DB by agentID and returns the callable function list of that agent.
 type ToolRegistry struct {
 	mu       sync.RWMutex
 	tools    map[string]*ToolEntry
 	defaults []react.FunctionDef
-	// agentDefaults 按 agentID 隔离的默认工具集（agentID → 该 agent 专属工具）。
+	// agentDefaults is the per-agentID isolated default tool set (agentID → tools exclusive to that agent).
 	agentDefaults map[string][]react.FunctionDef
 }
 
-// NewToolRegistry 创建空注册表。
+// NewToolRegistry creates an empty registry.
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools:         map[string]*ToolEntry{},
@@ -72,24 +72,24 @@ func NewToolRegistry() *ToolRegistry {
 	}
 }
 
-// Register 注册单个工具。
+// Register registers a single tool.
 func (r *ToolRegistry) Register(entry ToolEntry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tools[entry.Def.Name] = &entry
 }
 
-// RegisterDefault 标记一个工具为默认工具（GetFunctionDefs 时返回给 LLM）。
-// 无 agentID 上下文时使用（全局默认，所有 agent 可见）。
+// RegisterDefault marks a tool as a default tool (returned to the LLM by GetFunctionDefs).
+// Used when there is no agentID context (global default, visible to all agents).
 func (r *ToolRegistry) RegisterDefault(def react.FunctionDef) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.defaults = append(r.defaults, def)
 }
 
-// RegisterDefaultForAgent 注册某 agent 专属的默认工具。
-// 该 agent 执行时 GetFunctionDefs 只返回这里登记的工具（不再混入全局默认）。
-// agentID 为空等价 RegisterDefault。
+// RegisterDefaultForAgent registers default tools exclusive to one agent.
+// When that agent runs, GetFunctionDefs returns only the tools registered here (global defaults are not mixed in).
+// An empty agentID is equivalent to RegisterDefault.
 func (r *ToolRegistry) RegisterDefaultForAgent(agentID string, def react.FunctionDef) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -100,9 +100,9 @@ func (r *ToolRegistry) RegisterDefaultForAgent(agentID string, def react.Functio
 	r.agentDefaults[agentID] = append(r.agentDefaults[agentID], def)
 }
 
-// GetFunctionDefs 返回工具列表（供 LLM）。
-// 从 ctx 读 agentID：命中该 agent 的专属工具集则只返回专属工具（对齐真实系统
-// 按 agent 隔离工具）；否则返回全局默认工具。
+// GetFunctionDefs returns the tool list (for the LLM).
+// It reads agentID from ctx: when the agent's exclusive tool set matches, only those tools are returned (aligned with the
+// reference system's per-agent tool isolation); otherwise the global default tools are returned.
 func (r *ToolRegistry) GetFunctionDefs(ctx context.Context) ([]react.FunctionDef, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -118,7 +118,7 @@ func (r *ToolRegistry) GetFunctionDefs(ctx context.Context) ([]react.FunctionDef
 	return result, nil
 }
 
-// Execute 按名称执行工具。handled=false 表示工具名未注册。
+// Execute runs a tool by name. handled=false means the tool name is unregistered.
 func (r *ToolRegistry) Execute(ctx context.Context, name, arguments string) (
 	result string, handled bool, isPipeline bool, err error) {
 	r.mu.RLock()
@@ -133,53 +133,53 @@ func (r *ToolRegistry) Execute(ctx context.Context, name, arguments string) (
 	return result, true, isPipeline, err
 }
 
-// legacyExecute 是 react.Tools 接口适配层（Phase 1 引擎无 ctx 版）。
-// 丢弃 isPipeline，用 context.Background() 兜底。
+// legacyExecute is the adapter layer for the react.Tools interface (the Phase 1 engine has no ctx version).
+// It drops isPipeline and falls back to context.Background().
 func (r *ToolRegistry) legacyExecute(name, args string) (string, bool, error) {
 	out, handled, _, err := r.Execute(context.Background(), name, args)
 	return out, handled, err
 }
 
-// RegisterCoreAdapter 让 *ToolRegistry 同时实现 react.Tools（Phase 1 引擎用）。
-// 返回包装类型，避免破坏 ToolsProvider 接口签名。
+// RegisterCoreAdapter makes *ToolRegistry also implement react.Tools (for the Phase 1 engine).
+// It returns a wrapper type to avoid breaking the ToolsProvider interface signature.
 func (r *ToolRegistry) AsCoreTools() react.Tools {
 	return coreToolsAdapter{r}
 }
 
-// coreToolsAdapter 把 *ToolRegistry 适配为 react.Tools（引擎旧接口）。
+// coreToolsAdapter adapts *ToolRegistry to react.Tools (the engine's legacy interface).
 type coreToolsAdapter struct {
 	reg *ToolRegistry
 }
 
-// Execute 实现 react.Tools.Execute（丢弃 ctx 与 isPipeline）。
+// Execute implements react.Tools.Execute (dropping ctx and isPipeline).
 func (a coreToolsAdapter) Execute(name, args string) (string, bool, error) {
 	return a.reg.legacyExecute(name, args)
 }
 
-// ============ §7.8 单次工具调用的完整流程 ============
+// ============ §7.8 Full flow of a single tool call ============
 
-// ToolCallResult 单次工具调用的完整结果。
+// ToolCallResult is the complete result of a single tool call.
 type ToolCallResult struct {
-	ToolCallID string // LLM 分配的调用 ID
+	ToolCallID string // call ID assigned by the LLM
 	Name       string
 	Arguments  string
-	Result     string // observation 文本
-	IsError    bool   // true=执行失败，把错误字符串当 observation 塞回
-	IsPipeline bool   // true=异步产线工具，需要 NeedWait 分流
+	Result     string // observation text
+	IsError    bool   // true = execution failed; the error string is fed back as an observation
+	IsPipeline bool   // true = async pipeline tool; requires NeedWait branching
 }
 
-// ToolCallHooks 工具调用前后的生命周期钩子。
-// 管家场景：建/更新 thought 记录；子 Agent 场景：建/更新 cg_task_step。
+// ToolCallHooks are lifecycle hooks around a tool call.
+// Manager scenario: create/update thought records; sub-agent scenario: create/update cg_task_step.
 type ToolCallHooks interface {
 	OnBefore(ctx context.Context, toolCallID, name, arguments string)
 	OnAfter(ctx context.Context, result *ToolCallResult)
 }
 
-// ExecuteToolCall ReAct 循环中处理单次工具调用的完整流程（§7.8）。
-// 由引擎的 Continue 分支调用。返回的 observation 直接 append 到 messages。
+// ExecuteToolCall handles the full flow of a single tool call inside the ReAct loop (§7.8).
+// Called by the engine's Continue branch. The returned observation is appended directly to messages.
 //
-// 流程：调用前钩子 → 执行（接口解耦）→ 失败当 observation → 调用后钩子。
-// 精髓：工具失败不中断循环，错误字符串当 observation 塞回让 LLM 自己决策。
+// Flow: before-hook → execute (decoupled via interface) → failure becomes an observation → after-hook.
+// The essence: tool failures do not break the loop; the error string is fed back as an observation so the LLM decides what to do.
 func ExecuteToolCall(
 	ctx context.Context,
 	provider ToolsProvider,
@@ -192,12 +192,12 @@ func ExecuteToolCall(
 		Arguments:  arguments,
 	}
 
-	// 调用前钩子
+	// Before-hook
 	if hooks != nil {
 		hooks.OnBefore(ctx, toolCallID, name, arguments)
 	}
 
-	// 执行（通过接口解耦：超时 → 执行 → 失败当 observation）
+	// Execute (decoupled via interface: timeout → execute → failure becomes an observation)
 	output, _, isPipeline, err := provider.Execute(ctx, name, arguments)
 	if err != nil {
 		result.Result = fmt.Sprintf("工具执行失败: %v", err)
@@ -207,7 +207,7 @@ func ExecuteToolCall(
 		result.IsPipeline = isPipeline
 	}
 
-	// 调用后钩子
+	// After-hook
 	if hooks != nil {
 		hooks.OnAfter(ctx, result)
 	}
@@ -215,9 +215,9 @@ func ExecuteToolCall(
 	return result
 }
 
-// ============ §7.3 MergeFunctions — 两种工具源合并 ============
+// ============ §7.3 MergeFunctions — merging two tool sources ============
 
-// MergeFunctions 合并两个 FunctionDef 列表，同名时 strategy 优先。
+// MergeFunctions merges two FunctionDef lists; on name collisions, strategy wins.
 func MergeFunctions(strategyTools, providerTools []react.FunctionDef) []react.FunctionDef {
 	seen := map[string]bool{}
 	result := make([]react.FunctionDef, 0, len(strategyTools)+len(providerTools))
@@ -233,58 +233,58 @@ func MergeFunctions(strategyTools, providerTools []react.FunctionDef) []react.Fu
 	return result
 }
 
-// ============ ctx 身份透传 key ============
+// ============ ctx identity propagation keys ============
 
-// ctxIdentityKey 是 ctx 身份 key 类型（避免 string 直接作 key 冲突）。
+// ctxIdentityKey is the ctx identity key type (avoiding collisions from using plain strings as keys).
 type ctxIdentityKey int
 
 const (
-	// CtxUserID 是注入到工具执行 ctx 的用户 ID（来自 executor 的 run.UserID）。
+	// CtxUserID is the user ID injected into the tool-execution ctx (from the executor's run.UserID).
 	CtxUserID ctxIdentityKey = iota
-	// CtxSessionID 是注入到工具执行 ctx 的会话 ID（来自 executor 的 run.SessionID）。
+	// CtxSessionID is the session ID injected into the tool-execution ctx (from the executor's run.SessionID).
 	CtxSessionID
 )
 
-// WithIdentity 把 userID/sessionID 注入 ctx，供工具 Runner 读取（跨服务透传身份）。
+// WithIdentity injects userID/sessionID into ctx for tool Runners to read (cross-service identity propagation).
 func WithIdentity(ctx context.Context, userID int64, sessionID string) context.Context {
 	ctx = context.WithValue(ctx, CtxUserID, userID)
 	ctx = context.WithValue(ctx, CtxSessionID, sessionID)
 	return ctx
 }
 
-// IdentityFromContext 从 ctx 读身份，缺省返回 (0, "")。
+// IdentityFromContext reads the identity from ctx; returns (0, "") by default.
 func IdentityFromContext(ctx context.Context) (int64, string) {
 	uid, _ := ctx.Value(CtxUserID).(int64)
 	sid, _ := ctx.Value(CtxSessionID).(string)
 	return uid, sid
 }
 
-// ============ ctx 按 agent 取工具 key ============
+// ============ ctx key for per-agent tool lookup ============
 
-// ctxAgentKey 是 ctx 中 agentID 的 key 类型。
+// ctxAgentKey is the key type of the agentID in ctx.
 type ctxAgentKey int
 
 const (
-	// CtxAgentID 是注入到 GetFunctionDefs ctx 的 agentID（来自 executor 的 run.Agents[0].AgentID）。
-	// ToolRegistry 据此返回该 agent 专属工具集（对齐真实系统按 agent 隔离工具）。
+	// CtxAgentID is the agentID injected into the GetFunctionDefs ctx (from the executor's run.Agents[0].AgentID).
+	// ToolRegistry uses it to return the agent's exclusive tool set (aligned with the reference system's per-agent tool isolation).
 	CtxAgentID ctxAgentKey = iota
 )
 
-// WithAgentID 把 agentID 注入 ctx，供 ToolRegistry.GetFunctionDefs 按 agent 过滤工具。
+// WithAgentID injects agentID into ctx so ToolRegistry.GetFunctionDefs can filter tools per agent.
 func WithAgentID(ctx context.Context, agentID string) context.Context {
 	return context.WithValue(ctx, CtxAgentID, agentID)
 }
 
-// AgentIDFromContext 从 ctx 读 agentID，缺省返回 ""。
+// AgentIDFromContext reads agentID from ctx; returns "" by default.
 func AgentIDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(CtxAgentID).(string)
 	return id
 }
 
-// ============ 参数解析辅助 ============
+// ============ Argument parsing helpers ============
 
-// ParseArgs 将 LLM 传来的 JSON arguments 解析为 map。
-// 解析失败时返回空 map（不中断执行）。
+// ParseArgs parses the JSON arguments from the LLM into a map.
+// It returns an empty map on parse failure (execution is not interrupted).
 func ParseArgs(arguments string) map[string]any {
 	params := map[string]any{}
 	if strings.TrimSpace(arguments) == "" {
@@ -294,7 +294,7 @@ func ParseArgs(arguments string) map[string]any {
 	return params
 }
 
-// ArgString 从参数 map 中取字符串参数，缺省返回 fallback。
+// ArgString fetches a string argument from the params map; returns fallback by default.
 func ArgString(params map[string]any, key, fallback string) string {
 	if v, ok := params[key].(string); ok && v != "" {
 		return v
@@ -302,9 +302,9 @@ func ArgString(params map[string]any, key, fallback string) string {
 	return fallback
 }
 
-// ============ FakeTools（Phase 1 测试用，保留兼容）============
+// ============ FakeTools (for Phase 1 tests, kept for compatibility) ============
 
-// FakeTools 是 Phase 1 测试用的 map 查表工具执行器。
+// FakeTools is the map-lookup tool executor for Phase 1 tests.
 type FakeTools struct{}
 
 func (FakeTools) Execute(name, args string) (string, bool, error) {

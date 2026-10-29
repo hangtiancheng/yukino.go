@@ -1,11 +1,11 @@
-// Package config 加载服务配置：JSON 文件 + Go struct tag 驱动。
+// Package config loads the service configuration: JSON files driven by Go struct tags.
 //
-// 加载顺序（后者覆盖前者）：
-//  1. 代码内默认值（Defaults）
-//  2. config/config.json（公开配置）
-//  3. config/secrets.json（密码等，Git 忽略）
-//  4. 环境变量（键名由 json tag 路径派生，如 mysql.host → MYSQL_HOST；
-//     可用 `env` tag 显式指定，如 ideaking.base_url → IDEA_KING_BASE_URL）
+// Loading order (later sources override earlier ones):
+//  1. In-code defaults (Defaults)
+//  2. config/config.json (public config)
+//  3. config/secrets.json (passwords etc., git-ignored)
+//  4. Env vars (names derived from json tag paths, e.g. mysql.host → MYSQL_HOST;
+//     the `env` tag can specify one explicitly, e.g. ideaking.base_url → IDEA_KING_BASE_URL)
 package config
 
 import (
@@ -18,13 +18,13 @@ import (
 	"time"
 )
 
-// Duration 是 time.Duration 的 JSON 友好包装：序列化为 "30s" 之类的字符串。
+// Duration is a JSON-friendly wrapper around time.Duration: serialized as a string like "30s".
 type Duration time.Duration
 
-// Std 返回标准库 time.Duration。
+// Std returns the standard-library time.Duration.
 func (d Duration) Std() time.Duration { return time.Duration(d) }
 
-// UnmarshalJSON 接受字符串（"30s"）或数字（纳秒）。
+// UnmarshalJSON accepts a string ("30s") or a number (nanoseconds).
 func (d *Duration) UnmarshalJSON(b []byte) error {
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
@@ -46,27 +46,27 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	}
 }
 
-// MarshalJSON 输出 time.Duration 字符串形式。
+// MarshalJSON outputs the time.Duration string form.
 func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
-// ServerConfig 保存 HTTP 服务监听参数。
+// ServerConfig holds the HTTP server listen parameters.
 type ServerConfig struct {
 	Port string `json:"port"`
 }
 
-// JWTConfig 保存 JWT 签名参数。
+// JWTConfig holds the JWT signing parameters.
 type JWTConfig struct {
 	Secret string `json:"secret"`
 }
 
-// LogConfig 保存日志参数。
+// LogConfig holds the logging parameters.
 type LogConfig struct {
 	Level string `json:"level"`
 }
 
-// MySQLConfig 保存 MySQL 连接参数。
+// MySQLConfig holds the MySQL connection parameters.
 type MySQLConfig struct {
 	Host     string `json:"host"`
 	Port     string `json:"port"`
@@ -75,13 +75,13 @@ type MySQLConfig struct {
 	Database string `json:"database"`
 }
 
-// DSN 生成 MySQL 连接字符串。
+// DSN builds the MySQL connection string.
 func (m MySQLConfig) DSN() string {
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		m.User, m.Password, m.Host, m.Port, m.Database)
 }
 
-// RedisConfig 保存 Redis 连接参数。
+// RedisConfig holds the Redis connection parameters.
 type RedisConfig struct {
 	Host     string `json:"host"`
 	Port     string `json:"port"`
@@ -89,17 +89,17 @@ type RedisConfig struct {
 	DB       int    `json:"db"`
 }
 
-// Addr 返回 host:port 形式的连接地址。
+// Addr returns the connection address in host:port form.
 func (r RedisConfig) Addr() string { return r.Host + ":" + r.Port }
 
-// AsyncConfig 保存异步管道相关配置。
+// AsyncConfig holds the async pipeline configuration.
 type AsyncConfig struct {
 	Enabled  bool   `json:"enabled"`
 	WorkerID string `json:"worker_id"`
 }
 
-// LLMConfig 保存真实 LLM 接入参数。
-// Provider 取值 "openai"（OpenAI 兼容 /chat/completions，默认）或 "claude"（Anthropic）。
+// LLMConfig holds the real-LLM access parameters.
+// Provider is "openai" (OpenAI-compatible /chat/completions, default) or "claude" (Anthropic).
 type LLMConfig struct {
 	Provider string `json:"provider"`
 	BaseURL  string `json:"base_url"`
@@ -107,12 +107,12 @@ type LLMConfig struct {
 	Model    string `json:"model"`
 }
 
-// CronConfig 保存 Cron Poller 相关配置。
+// CronConfig holds the cron poller configuration.
 type CronConfig struct {
 	PollInterval Duration `json:"poll_interval"`
 }
 
-// OTelConfig 保存 OpenTelemetry 相关配置。
+// OTelConfig holds the OpenTelemetry configuration.
 type OTelConfig struct {
 	Enabled          bool    `json:"enabled"`
 	ExporterEndpoint string  `json:"exporter_endpoint"`
@@ -120,33 +120,33 @@ type OTelConfig struct {
 	SampleRate       float64 `json:"sample_rate"`
 }
 
-// BaseServerConfig 保存下游记账服务（base-server 域，现已同进程）地址。
+// BaseServerConfig holds the address of the downstream accounting service (base-server domain, now in-process).
 type BaseServerConfig struct {
 	BaseURL string `json:"base_url"`
 }
 
-// IdeaKingConfig 保存热点/选题检索服务地址。
+// IdeaKingConfig holds the address of the hot-topic retrieval service.
 type IdeaKingConfig struct {
 	BaseURL string `json:"base_url" env:"IDEA_KING_BASE_URL"`
 }
 
-// FakeGenConfig 保存模拟生成服务参数（本地联调用）。
+// FakeGenConfig holds the simulated generation service parameters (for local integration).
 type FakeGenConfig struct {
 	Enabled bool   `json:"enabled"`
 	Port    string `json:"port"`
 }
 
-// SentryConfig 保存 Sentry 错误上报参数（DSN 为空时不启用）。
+// SentryConfig holds the Sentry error-reporting parameters (disabled when the DSN is empty).
 type SentryConfig struct {
 	DSN string `json:"dsn"`
 }
 
-// MetricsConfig 保存 Prometheus 指标暴露参数。
+// MetricsConfig holds the Prometheus metrics exposure parameters.
 type MetricsConfig struct {
 	Enabled bool `json:"enabled"`
 }
 
-// Config 保存服务运行所需的全部配置。
+// Config holds all configuration required to run the service.
 type Config struct {
 	Server     ServerConfig     `json:"server"`
 	JWT        JWTConfig        `json:"jwt"`
@@ -164,7 +164,7 @@ type Config struct {
 	Metrics    MetricsConfig    `json:"metrics"`
 }
 
-// Defaults 返回带默认值的配置。
+// Defaults returns the configuration with default values.
 func Defaults() *Config {
 	return &Config{
 		Server: ServerConfig{Port: "8080"},
@@ -194,9 +194,9 @@ func Defaults() *Config {
 	}
 }
 
-// Load 从配置文件与环境变量加载配置，缺失时回退到默认值。
-// 加载顺序：默认值 → configPath（公开配置）→ config/secrets.json → 环境变量。
-// 文件不存在时静默跳过（与旧 viper 行为一致）。
+// Load loads the configuration from config files and env vars, falling back to defaults when missing.
+// Loading order: defaults → configPath (public config) → config/secrets.json → env vars.
+// Missing files are silently skipped (same behavior as the old viper setup).
 func Load(configPath string) *Config {
 	cfg := Defaults()
 	if configPath != "" {
@@ -207,7 +207,7 @@ func Load(configPath string) *Config {
 	return cfg
 }
 
-// MergeFile 将 JSON 配置文件合并进 cfg：文件中出现的键覆盖现有值，未出现的保持不变。
+// MergeFile merges a JSON config file into cfg: keys present in the file override existing values; keys absent from it stay unchanged.
 func MergeFile(cfg *Config, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -222,8 +222,8 @@ func MergeFile(cfg *Config, path string) error {
 	return nil
 }
 
-// ApplyEnv 按 json tag 路径派生环境变量名并覆盖对应字段。
-// lookup 通常传 os.LookupEnv；测试可注入自定义实现。
+// ApplyEnv derives env-var names from json tag paths and overrides the corresponding fields.
+// lookup is usually os.LookupEnv; tests can inject a custom implementation.
 func ApplyEnv(cfg *Config, lookup func(string) (string, bool)) {
 	applyEnvStruct(reflect.ValueOf(cfg).Elem(), "", lookup)
 }

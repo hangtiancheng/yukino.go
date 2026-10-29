@@ -2,43 +2,43 @@ package subtask
 
 import "fmt"
 
-// Pipeline 是 multi-agent 产线链路的 ID（如 "mix_video"）。
+// Pipeline is the ID of a multi-agent pipeline chain (e.g. "mix_video").
 //
-// 第 8 章 §8.4.4：LLM 决定链怎么装配，服务端只翻译。产线在本包定义「合法 agent 集合」
-// （见下方 categoryToAgentMapping），供两处使用：manager（校验 LLM 填的每个 agent
-// 属于所选产线）与 executor（点卡确认后 GetNextAgent 推进复用同一份映射），避免两套定义漂移。
+// Chapter 8 §8.4.4: the LLM decides how to assemble the chain; the server only translates. Pipelines define the "valid agent set" in this package
+// (see categoryToAgentMapping below), used in two places: the manager (validating that every LLM-filled agent
+// belongs to the selected pipeline) and the executor (GetNextAgent advancement after card confirmation reuses the same mapping), avoiding two drifting definitions.
 type Pipeline string
 
-// 预定义的 pipeline（对应真实系统 fasttask/agent_mapping.go 的 categoryToAgentMapping）。
+// Predefined pipelines (corresponding to the reference system's fasttask/agent_mapping.go categoryToAgentMapping).
 const (
-	PipelineMixVideo Pipeline = "mix_video" // 混剪视频产线
-	PipelineArticle  Pipeline = "article"   // 图文产线
+	PipelineMixVideo Pipeline = "mix_video" // mix-cut video pipeline
+	PipelineArticle  Pipeline = "article"   // image-text article pipeline
 )
 
-// AgentID 是智能体 ID。
+// AgentID is the agent ID.
 type AgentID string
 
-// 预定义的 agent（对应真实系统 fasttask 的 pipeline agents）。
+// Predefined agents (corresponding to the reference system's fasttask pipeline agents).
 const (
-	// AgentIdeaKing 点子王——产线链首，产出选题（走 idea_king_api 工具，不进 plan）。
+	// AgentIdeaKing is the idea king — head of the pipeline chain, producing topics (via the idea_king_api tool; does not enter the plan).
 	AgentIdeaKing AgentID = "idea_king"
-	// AgentGoldScriptwriter 金牌脚本师——产出脚本。
+	// AgentGoldScriptwriter is the gold scriptwriter — producing scripts.
 	AgentGoldScriptwriter AgentID = "gold_scriptwriter"
-	// AgentEditMaster 剪辑大师——产出成片。
+	// AgentEditMaster is the edit master — producing the final video.
 	AgentEditMaster AgentID = "edit_master"
 )
 
-// categoryToAgentMapping 是 pipeline → 合法 agent 集合映射（05-subagent.md §5.5）。
-// 决定 GetNextAgent 的"下一个是谁"，也决定管家校验 LLM 填的 agent 是否属于所选产线。
+// categoryToAgentMapping is the pipeline → valid agent set mapping (05-subagent.md §5.5).
+// It decides GetNextAgent's "who is next" and also the manager's validation that LLM-filled agents belong to the selected pipeline.
 var categoryToAgentMapping = map[Pipeline][]AgentID{
 	PipelineMixVideo: {AgentIdeaKing, AgentGoldScriptwriter, AgentEditMaster},
 	PipelineArticle:  {AgentIdeaKing, AgentGoldScriptwriter},
 }
 
-// GetPipelineAgents 返回 pipeline 的合法 agent 集合（含选题 agent idea_king）。
+// GetPipelineAgents returns the valid agent set of a pipeline (including the topic agent idea_king).
 //
-// 第 8 章 §8.4.4：LLM 填的每个 agent_id 必须在此集合内（防越权），链的顺序/组成由
-// LLM 决定。这里作为唯一数据源，供管家校验与 fastpath GetNextAgent 共用。
+// Chapter 8 §8.4.4: every LLM-filled agent_id must be in this set (preventing overreach); the chain's order/composition is
+// decided by the LLM. This is the single source of truth shared by manager validation and fastpath GetNextAgent.
 func GetPipelineAgents(pipeline Pipeline) ([]AgentID, error) {
 	agents, ok := categoryToAgentMapping[pipeline]
 	if !ok {
@@ -49,10 +49,10 @@ func GetPipelineAgents(pipeline Pipeline) ([]AgentID, error) {
 	return out, nil
 }
 
-// GetNextAgent 计算 pipeline 中当前 agent 的下一个。
+// GetNextAgent computes the next agent after the current one in the pipeline.
 //
-// 对应真实系统 fasttask/agent_mapping.go:46 的 GetNextAgent。
-// 当前 agent 不在 pipeline 中 → 返回第一个；已是最后一个 → 返回空（链结束）。
+// Corresponds to the reference system's fasttask/agent_mapping.go:46 GetNextAgent.
+// The current agent not in the pipeline → returns the first; already the last → returns empty (chain end).
 func GetNextAgent(pipeline Pipeline, current AgentID) (AgentID, error) {
 	agents, ok := categoryToAgentMapping[pipeline]
 	if !ok {
@@ -63,10 +63,10 @@ func GetNextAgent(pipeline Pipeline, current AgentID) (AgentID, error) {
 			if i+1 < len(agents) {
 				return agents[i+1], nil
 			}
-			return "", nil // 已是最后一个，链结束
+			return "", nil // already the last; chain end
 		}
 	}
-	// 当前 agent 不在映射里（可能是新会话首次）→ 从第一个开始
+	// The current agent is not in the mapping (possibly the first run of a new session) → start from the first
 	if len(agents) > 0 {
 		return agents[0], nil
 	}

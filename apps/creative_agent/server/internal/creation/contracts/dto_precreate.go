@@ -2,7 +2,7 @@ package contracts
 
 import "github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/domain"
 
-// PreCreateReq 是 /inner/creation/pre_create 的请求体（接口契约 §3.2）。
+// PreCreateReq is the request body of /inner/creation/pre_create (API contract §3.2).
 type PreCreateReq struct {
 	UserID       int64  `json:"user_id"`
 	SessionID    string `json:"session_id"`
@@ -10,8 +10,8 @@ type PreCreateReq struct {
 	TaskStepID   int64  `json:"task_step_id"`
 	ProjectType  string `json:"project_type"`
 	RoleType     int    `json:"role_type"`
-	ProjectInput string `json:"project_input"` // JSON 字符串，外层包一层 {"input":"<具体参数 JSON>"}
-	RetryType    int    `json:"retry_type"`    // 0 不重试 / 1 失败重试 / 2 不满意重试
+	ProjectInput string `json:"project_input"` // JSON string, wrapped as {"input":"<concrete params JSON>"}
+	RetryType    int    `json:"retry_type"`    // 0 no retry / 1 failure retry / 2 dissatisfaction retry
 	CUID         string `json:"cuid"`
 	IP           string `json:"ip"`
 	MsgID        string `json:"msg_id"`
@@ -19,28 +19,28 @@ type PreCreateReq struct {
 	LogID        string `json:"log_id"`
 }
 
-// PreCreateResp 是 /inner/creation/pre_create 的响应体（对齐接口契约 §3.2）。
+// PreCreateResp is the response body of /inner/creation/pre_create (aligned with API contract §3.2).
 //
-// status 语义：
-//   - 0 成功，project_input 里是组装好的下游算子入参
-//   - 1 失败，task_arguments.card_type 指明失败卡类型
-//   - 2 输入风控被拦截，card_type = 输入风控卡
+// status semantics:
+//   - 0 success; project_input holds the assembled downstream operator inputs
+//   - 1 failure; task_arguments.card_type indicates the failure-card type
+//   - 2 input blocked by risk control; card_type = input-risk card
 type PreCreateResp struct {
 	Errno  int            `json:"errno"`
 	Errmsg string         `json:"errmsg"`
 	Data   *PreCreateData `json:"data"`
 }
 
-// PreCreateData 是 pre_create 响应 data 部分。
+// PreCreateData is the data part of the pre_create response.
 type PreCreateData struct {
 	Status        int            `json:"status"`
 	TaskType      string         `json:"task_type"`
 	TaskArguments map[string]any `json:"task_arguments"`
-	ProjectInput  string         `json:"project_input,omitempty"` // 组装好的下游算子入参（base64）
-	NewSession    bool           `json:"new_session,omitempty"`   // 需要上游开新会话
+	ProjectInput  string         `json:"project_input,omitempty"` // assembled downstream operator inputs (base64)
+	NewSession    bool           `json:"new_session,omitempty"`   // the upstream needs to open a new session
 }
 
-// SuccessResp 构造成功响应（status=0）。
+// SuccessResp builds the success response (status=0).
 func SuccessResp(cardType string, costScore int, projectInput string) *PreCreateResp {
 	return &PreCreateResp{
 		Errno: 0,
@@ -56,7 +56,7 @@ func SuccessResp(cardType string, costScore int, projectInput string) *PreCreate
 	}
 }
 
-// FailCardResp 构造失败卡响应（status=1）。
+// FailCardResp builds the failure-card response (status=1).
 func FailCardResp(cardType string, costScore int) *PreCreateResp {
 	return &PreCreateResp{
 		Errno: 0,
@@ -71,7 +71,7 @@ func FailCardResp(cardType string, costScore int) *PreCreateResp {
 	}
 }
 
-// AuditFailResp 构造输入风控拦截响应（status=2）。
+// AuditFailResp builds the input-risk-block response (status=2).
 func AuditFailResp(cardType string) *PreCreateResp {
 	return &PreCreateResp{
 		Errno: 0,
@@ -85,7 +85,7 @@ func AuditFailResp(cardType string) *PreCreateResp {
 	}
 }
 
-// NewSessionResp 构造需要上游开新会话的响应。
+// NewSessionResp builds the response asking the upstream to open a new session.
 func NewSessionResp() *PreCreateResp {
 	return &PreCreateResp{
 		Errno: 0,
@@ -96,7 +96,7 @@ func NewSessionResp() *PreCreateResp {
 	}
 }
 
-// BuildInsufficientScoreResp 构造积分不足响应（pre_create 场景，status=1 失败卡 + 积分不足卡）。
+// BuildInsufficientScoreResp builds the insufficient-points response (pre_create scenario, status=1 failure card + insufficient-points card).
 func BuildInsufficientScoreResp(cost, balance int) *PreCreateResp {
 	return &PreCreateResp{
 		Errno: 0,

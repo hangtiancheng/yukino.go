@@ -7,39 +7,39 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/core/react"
 )
 
-// FlowStage 是对话会话的意图推进状态（多 agent 串联的状态依据）。
+// FlowStage is the intent-advancement state of a conversation session (the state basis of multi-agent chaining).
 //
-// 对应真实系统的 intent_memory.FlowStage（05-subagent.md §5.5 路径 A）：
-// 多 agent 链靠"用户确认卡片 → 下一次请求 → 快任务重新投递"闭环推进，
-// 每一步走到的阶段记录在 session 级记忆里，作为下次请求判断的依据。
+// Corresponds to the reference system's intent_memory.FlowStage (05-subagent.md §5.5 path A):
+// the multi-agent chain advances through the "user confirms a card → next request → fast-task redispatch" loop;
+// the stage reached at each step is recorded in session-level memory as the basis for the next request's decision.
 //
-// 阶段推进顺序：
+// Stage advancement order:
 //
 //	topic_confirmed → category_confirmed → params_confirmed → script_confirmed
 //
-// 关键语义（Step 3.6）：
-//   - 不是每个 agent 都会推交互卡，只有需要用户决策的环节才停下等确认
-//   - 下一次请求进来时先查 FlowStage：命中 script_confirmed 等就跳过 LLM，
-//     直接用 GetNextAgent 算出下一个 agent 并投递新 task_run
+// Key semantics (Step 3.6):
+//   - Not every agent pushes an interactive card; only steps needing a user decision stop and wait for confirmation
+//   - The next request checks FlowStage first: hitting script_confirmed etc. skips the LLM and
+//     directly computes the next agent with GetNextAgent, dispatching a new task_run
 type FlowStage string
 
-// FlowStage 状态常量。
+// FlowStage state constants.
 const (
-	// FlowStageEmpty 初始状态（尚未进入多 agent 链）。
+	// FlowStageEmpty is the initial state (not yet in a multi-agent chain).
 	FlowStageEmpty FlowStage = ""
-	// FlowStageTopicConfirmed 选题已确认（用户点了选题卡）。
+	// FlowStageTopicConfirmed: the topic is confirmed (the user clicked the topic card).
 	FlowStageTopicConfirmed FlowStage = "topic_confirmed"
-	// FlowStageCategoryConfirmed 品类已确认（用户点了品类卡）。
+	// FlowStageCategoryConfirmed: the category is confirmed (the user clicked the category card).
 	FlowStageCategoryConfirmed FlowStage = "category_confirmed"
-	// FlowStageParamsConfirmed 参数已确认（用户点了参数卡）。
+	// FlowStageParamsConfirmed: the params are confirmed (the user clicked the params card).
 	FlowStageParamsConfirmed FlowStage = "params_confirmed"
-	// FlowStagePlanConfirmed 策划方案已确认。
+	// FlowStagePlanConfirmed: the plan is confirmed.
 	FlowStagePlanConfirmed FlowStage = "plan_confirmed"
-	// FlowStageScriptConfirmed 脚本已确认（用户点了脚本卡）——此时应投递下一个 agent。
+	// FlowStageScriptConfirmed: the script is confirmed (the user clicked the script card) — the next agent should now be dispatched.
 	FlowStageScriptConfirmed FlowStage = "script_confirmed"
 )
 
-// Valid 校验是否为合法的 FlowStage 值。
+// Valid checks whether the value is a legal FlowStage.
 func (f FlowStage) Valid() bool {
 	switch f {
 	case FlowStageEmpty, FlowStageTopicConfirmed, FlowStageCategoryConfirmed,
@@ -49,9 +49,9 @@ func (f FlowStage) Valid() bool {
 	return false
 }
 
-// CanFastTask 判断当前 FlowStage 是否能触发快任务（跳过 LLM 直接投递子任务）。
-// 命中 params_confirmed / plan_confirmed / script_confirmed 时，
-// 说明用户已完成上一张卡的确认，可以自动进入下一个 agent。
+// CanFastTask decides whether the current FlowStage can trigger a fast task (skipping the LLM and dispatching subtasks directly).
+// Hitting params_confirmed / plan_confirmed / script_confirmed means
+// the user finished confirming the previous card and the next agent can start automatically.
 func (f FlowStage) CanFastTask() bool {
 	switch f {
 	case FlowStageParamsConfirmed, FlowStagePlanConfirmed, FlowStageScriptConfirmed:
@@ -60,27 +60,27 @@ func (f FlowStage) CanFastTask() bool {
 	return false
 }
 
-// IntentMemory 是 session 级意图记忆（存 FlowStage 推进状态）。
+// IntentMemory is the session-level intent memory (storing FlowStage advancement state).
 //
-// 真实系统用 Redis/DB 持久化 session 记忆；复刻版用内存 map（session_id → 状态），
-// 单进程即可满足对话链路验证。多实例部署时需换 Redis 实现。
+// The reference system persists session memory in Redis/DB; the replica uses an in-memory map (session_id → state),
+// which suffices for single-process conversation-chain validation. Multi-instance deployments need a Redis implementation.
 type IntentMemory struct {
 	mu       sync.RWMutex
 	stages   map[string]FlowStage // session_id → FlowStage
-	pipeline map[string]string    // session_id → 当前 pipeline（如 "mix_video"）
-	agent    map[string]string    // session_id → 当前 agent（如 "gold_scriptwriter"）
+	pipeline map[string]string    // session_id → current pipeline (e.g. "mix_video")
+	agent    map[string]string    // session_id → current agent (e.g. "gold_scriptwriter")
 
-	// Phase 4: Retry 快捷路径 —— session → 上次失败的 task_run_id
+	// Phase 4: Retry fast path — session → last failed task_run_id
 	lastFailedTaskRun map[string]int64
-	// Phase 4: HIL 断点 —— session → checkpoint（中断时的恢复点）
+	// Phase 4: HIL breakpoint — session → checkpoint (the recovery point at interrupt)
 	checkpoints map[string]*react.Checkpoint
 
-	// Phase 5: 热点卡 —— session → 用户点选的热点 eid / 选题标题
+	// Phase 5: hot-topic card — session → the hot-topic eid / topic title the user clicked
 	topicEid   map[string]string
 	topicTitle map[string]string
 }
 
-// NewIntentMemory 创建空意图记忆。
+// NewIntentMemory creates an empty intent memory.
 func NewIntentMemory() *IntentMemory {
 	return &IntentMemory{
 		stages:            map[string]FlowStage{},
@@ -93,112 +93,112 @@ func NewIntentMemory() *IntentMemory {
 	}
 }
 
-// GetStage 读取 session 当前的 FlowStage。
+// GetStage reads the session's current FlowStage.
 func (m *IntentMemory) GetStage(sessionID string) FlowStage {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.stages[sessionID]
 }
 
-// SetStage 推进 session 的 FlowStage。
+// SetStage advances the session's FlowStage.
 func (m *IntentMemory) SetStage(sessionID string, stage FlowStage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stages[sessionID] = stage
 }
 
-// GetPipeline 读取 session 当前所在 pipeline。
+// GetPipeline reads the session's current pipeline.
 func (m *IntentMemory) GetPipeline(sessionID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.pipeline[sessionID]
 }
 
-// SetPipeline 记录 session 当前所在 pipeline。
+// SetPipeline records the session's current pipeline.
 func (m *IntentMemory) SetPipeline(sessionID, pipeline string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pipeline[sessionID] = pipeline
 }
 
-// GetAgent 读取 session 当前已执行的 agent。
+// GetAgent reads the agent the session has currently executed.
 func (m *IntentMemory) GetAgent(sessionID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.agent[sessionID]
 }
 
-// SetAgent 记录 session 当前已执行的 agent。
+// SetAgent records the agent the session has currently executed.
 func (m *IntentMemory) SetAgent(sessionID, agent string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.agent[sessionID] = agent
 }
 
-// RecordFailedTaskRun 记录 session 上次失败的 task_run（Retry 快捷路径复用其 plan）。
+// RecordFailedTaskRun records the session's last failed task_run (the Retry fast path reuses its plan).
 func (m *IntentMemory) RecordFailedTaskRun(sessionID string, taskRunID int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastFailedTaskRun[sessionID] = taskRunID
 }
 
-// GetLastFailedTaskRun 读取 session 上次失败的 task_run_id（无则 0）。
+// GetLastFailedTaskRun reads the session's last failed task_run_id (0 when none).
 func (m *IntentMemory) GetLastFailedTaskRun(sessionID string) int64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.lastFailedTaskRun[sessionID]
 }
 
-// SaveCheckpoint 保存 session 的 HIL 断点。
+// SaveCheckpoint saves the session's HIL breakpoint.
 func (m *IntentMemory) SaveCheckpoint(sessionID string, cp *react.Checkpoint) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.checkpoints[sessionID] = cp
 }
 
-// LoadCheckpoint 读取 session 的 HIL 断点（无则 nil）。
+// LoadCheckpoint reads the session's HIL breakpoint (nil when none).
 func (m *IntentMemory) LoadCheckpoint(sessionID string) *react.Checkpoint {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.checkpoints[sessionID]
 }
 
-// ClearCheckpoint 清除 session 的 HIL 断点（resume 完成后调用）。
+// ClearCheckpoint clears the session's HIL breakpoint (called after resume completes).
 func (m *IntentMemory) ClearCheckpoint(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.checkpoints, sessionID)
 }
 
-// SetTopicEid 记录 session 用户点选的热点 eid（热点卡确认后）。
+// SetTopicEid records the hot-topic eid the user clicked for the session (after hot-card confirmation).
 func (m *IntentMemory) SetTopicEid(sessionID, eid string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.topicEid[sessionID] = eid
 }
 
-// GetTopicEid 读取 session 点选的热点 eid（无则空串）。
+// GetTopicEid reads the clicked hot-topic eid of the session (empty string when none).
 func (m *IntentMemory) GetTopicEid(sessionID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.topicEid[sessionID]
 }
 
-// SetTopicTitle 记录 session 用户点选的选题标题（热点卡确认后）。
+// SetTopicTitle records the topic title the user clicked for the session (after hot-card confirmation).
 func (m *IntentMemory) SetTopicTitle(sessionID, title string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.topicTitle[sessionID] = title
 }
 
-// GetTopicTitle 读取 session 点选的选题标题（无则空串）。
+// GetTopicTitle reads the clicked topic title of the session (empty string when none).
 func (m *IntentMemory) GetTopicTitle(sessionID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.topicTitle[sessionID]
 }
 
-// Snapshot 返回 session 的意图记忆快照（JSON 序列化用）。
+// Snapshot returns the session's intent-memory snapshot (for JSON serialization).
 func (m *IntentMemory) Snapshot(sessionID string) map[string]string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -211,7 +211,7 @@ func (m *IntentMemory) Snapshot(sessionID string) map[string]string {
 	}
 }
 
-// MarshalJSON 实现 json.Marshaler（方便日志/调试输出）。
+// MarshalJSON implements json.Marshaler (convenient for logging/debug output).
 func (m *IntentMemory) MarshalJSON() ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

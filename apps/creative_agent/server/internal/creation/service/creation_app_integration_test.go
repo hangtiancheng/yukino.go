@@ -1,23 +1,23 @@
 //go:build integration
 
-// Package application_test creation 应用服务集成测试：走真实 MySQL + Redis。
+// Package application_test creation application-service integration tests: against real MySQL + Redis.
 //
-// 运行方式（需 MySQL/Redis 可用）：
+// How to run (requires MySQL/Redis):
 //
 //	cd base-server && go test -tags=integration ./internal/creation/... -count=1 -v
 //
-// 覆盖 Task 6.1 的 5 条核心链路（从旧 phase4/phase5 集成测试行为迁移，
-// 改用新 DDD 架构组件装配）：
-//   - 妙图同步链路：pre_create → create → sync_post_create → done，积分只扣一次
-//   - 混剪完整链路：编剧 pre_create → async_post_create → 编剧回调 → 成片 pre_create →
-//     create → async_post_create → 成片回调 → audit 中间态 → 风控回调 passed → done，积分只扣一次没退
-//   - 终态短路：done/fail 后重复回调不处理、终态不被覆盖
-//   - 幂等：重复 create 不重复扣分；重复风控回调不重复退积分
-//   - 超时兜底：running 超时 → 退积分 + fail（RefundAndFailTimeout）
+// Covers the 5 core chains of Task 6.1 (migrated from the old phase4/phase5 integration-test behavior,
+// reassembled with the new DDD architecture components):
+//   - Instant-image sync chain: pre_create → create → sync_post_create → done; points deducted exactly once
+//   - Mix-cut full chain: scriptwriter pre_create → async_post_create → scriptwriter callback → final-video pre_create →
+//     create → async_post_create → final-video callback → audit intermediate state → risk callback passed → done; points deducted once, never refunded
+//   - Terminal short-circuit: duplicate callbacks after done/fail are not processed; terminal states are never overwritten
+//   - Idempotency: repeated create never deducts twice; repeated risk callbacks never refund twice
+//   - Timeout fallback: running timeout → refund points + fail (RefundAndFailTimeout)
 //
-// 装配（对齐 internal/app/app.go 的 New）：用本地敏感词后端（LocalAuditBackend，
-// 敏感词表替换为"不会出现的词"以放行全链路内容）+ 真实 points/risk/creation 仓储 +
-// Redis 黑名单检查器。回调分发走 CallbackDispatcher（goroutine 异步执行，测试用轮询等待终态）。
+// Assembly (aligned with internal/app/app.go's New): the local sensitive-word backend (LocalAuditBackend,
+// with the word list replaced by "words that never appear" so all chain content passes) + real points/risk/creation repositories +
+// the Redis blacklist checker. Callback dispatch goes through CallbackDispatcher (goroutine async execution; tests poll for terminal states).
 package service_test
 
 import (
@@ -52,20 +52,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// creationDeps 是测试装配好的新架构组件（等价 internal/app/app.go 的 New 产物）。
+// creationDeps holds the test-assembled new-architecture components (equivalent to internal/app/app.go's New output).
 type creationDeps struct {
 	db          *gorm.DB
 	rdb         *redis.Client
-	creationApp *creationapp.CreationApp // 四个用例门面
+	creationApp *creationapp.CreationApp // facade of the four use cases
 	dispatcher  *creationinfra.CallbackDispatcher
-	auditOutput *riskapp.AuditOutputApp // 风控回调终态落定
+	auditOutput *riskapp.AuditOutputApp // risk-callback terminal settling
 	projects    creationdomain.ProjectRepository
 	records     creationdomain.CallbackRecordRepository
 	riskAudit   riskdomain.AuditRecordRepository
 	points      pointsapp.PointsApp
 }
 
-// CreationAppIntegrationSuite 集成测试套件。
+// CreationAppIntegrationSuite is the integration test suite.
 type CreationAppIntegrationSuite struct {
 	suite.Suite
 	deps *creationDeps
@@ -76,7 +76,7 @@ func (s *CreationAppIntegrationSuite) SetupSuite() {
 	db := mustOpenMySQL(t)
 	rdb := mustOpenRedis(t)
 
-	// 各 bounded context 表结构 AutoMigrate（幂等，缺列才补）
+	// AutoMigrate each bounded context's schema (idempotent; missing columns are added)
 	testx.NoError(t, authinfra.Migrate(db))
 	testx.NoError(t, creationinfra.Migrate(db))
 	testx.NoError(t, pointsinfra.Migrate(db))
@@ -95,14 +95,14 @@ func (s *CreationAppIntegrationSuite) SetupTest() {
 	testx.NoError(t, s.deps.rdb.FlushDB(context.Background()).Err())
 }
 
-// TestMiaotuSyncChain 妙图同步链路：pre_create → create → sync_post_create → done，积分只扣一次。
+// TestMiaotuSyncChain is the instant-image sync chain: pre_create → create → sync_post_create → done; points deducted exactly once.
 func (s *CreationAppIntegrationSuite) TestMiaotuSyncChain() {
 	ctx := context.Background()
 	userID := int64(810001)
 	sessionID := "session-integration-miaotu-sync"
 	seedBalance(s.T(), s.deps.db, userID, 100)
 
-	// 1. pre_create（role=4 视觉设计师 / 妙图）——输入风控通过
+	// 1. pre_create (role=4 visual designer / instant image) — input risk control passes
 	pre, err := s.deps.creationApp.PreCreate.HandlePreCreate(ctx, &creationcontracts.PreCreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -113,9 +113,9 @@ func (s *CreationAppIntegrationSuite) TestMiaotuSyncChain() {
 	})
 	testx.NoError(s.T(), err)
 	testx.NotNil(s.T(), pre.Data)
-	testx.Equal(s.T(), 0, pre.Data.Status, "妙图输入风控通过")
+	testx.Equal(s.T(), 0, pre.Data.Status, "instant-image input risk control passes")
 
-	// 2. create 扣积分（妙图单价 5）
+	// 2. create deducts points (instant-image unit price 5)
 	create, err := s.deps.creationApp.Create.HandleCreate(ctx, &creationcontracts.CreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -132,7 +132,7 @@ func (s *CreationAppIntegrationSuite) TestMiaotuSyncChain() {
 	testx.Equal(s.T(), creationdomain.ProjectStatusRunning, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusUsed, project.PointsStatus)
 
-	// 3. sync_post_create：一步到终态 done（图片风控 → 文本风控 → 全部通过）
+	// 3. sync_post_create: one step to terminal done (image risk control → text risk control → all pass)
 	specialInfo := base64.StdEncoding.EncodeToString([]byte(`{"images":["http://img/a.png","http://img/b.png"],"title":"一只猫"}`))
 	sync, err := s.deps.creationApp.PostCreate.HandleSyncPostCreate(ctx, &creationcontracts.SyncPostCreateReq{
 		SessionID:  sessionID,
@@ -148,26 +148,26 @@ func (s *CreationAppIntegrationSuite) TestMiaotuSyncChain() {
 	projects, err = s.deps.projects.GetBySessionID(ctx, sessionID, userID)
 	testx.NoError(s.T(), err)
 	testx.Len(s.T(), projects, 1)
-	testx.Equal(s.T(), creationdomain.ProjectStatusDone, projects[0].Status, "妙图同步一步到终态")
-	testx.Equal(s.T(), project.ID, projects[0].ID, "全程只有一个 project")
+	testx.Equal(s.T(), creationdomain.ProjectStatusDone, projects[0].Status, "instant image reaches terminal in one sync step")
+	testx.Equal(s.T(), project.ID, projects[0].ID, "there is exactly one project throughout")
 
-	// 积分只扣一次（100 - 5 = 95），未退
-	testx.Equal(s.T(), 95, s.mustBalance(ctx, userID), "妙图扣 5 分")
+	// Points deducted once (100 - 5 = 95), never refunded
+	testx.Equal(s.T(), 95, s.mustBalance(ctx, userID), "instant image deducts 5 points")
 	flows, err := s.deps.points.ListByProject(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Len(s.T(), flows, 1, "只有一条积分流水")
-	testx.Equal(s.T(), pointsdomain.FlowTypeConsume, flows[0].FlowType, "是扣分流水")
+	testx.Len(s.T(), flows, 1, "there is exactly one points-ledger entry")
+	testx.Equal(s.T(), pointsdomain.FlowTypeConsume, flows[0].FlowType, "it is a deduction entry")
 }
 
-// TestMixVideoFullChain 混剪完整链路：编剧 → 成片 → audit 中间态 → 风控回调通过 → done，
-// 积分只扣一次没退；含幂等与短路断言。
+// TestMixVideoFullChain is the mix-cut full chain: scriptwriter → final video → audit intermediate state → risk callback passes → done;
+// points deducted once, never refunded; includes idempotency and short-circuit assertions.
 func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 	ctx := context.Background()
 	userID := int64(810002)
 	sessionID := "session-integration-mixvideo-full"
 	seedBalance(s.T(), s.deps.db, userID, 100)
 
-	// 1. 编剧 pre_create（role=3，输入风控通过）
+	// 1. Scriptwriter pre_create (role=3, input risk control passes)
 	screenplayPre, err := s.deps.creationApp.PreCreate.HandlePreCreate(ctx, &creationcontracts.PreCreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -179,9 +179,9 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 	})
 	testx.NoError(s.T(), err)
 	testx.NotNil(s.T(), screenplayPre.Data)
-	testx.Equal(s.T(), 0, screenplayPre.Data.Status, "编剧输入风控通过")
+	testx.Equal(s.T(), 0, screenplayPre.Data.Status, "scriptwriter input risk control passes")
 
-	// 2. 编剧 async_post_create：登记产线 ID 到 callback_record（不写 project 表）
+	// 2. Scriptwriter async_post_create: register the pipeline ID into callback_record (no project-table write)
 	_, err = s.deps.creationApp.PostCreate.HandleAsyncPostCreate(ctx, &creationcontracts.AsyncPostCreateReq{
 		SessionID:   sessionID,
 		UserID:      userID,
@@ -194,13 +194,13 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 
 	projects, err := s.deps.projects.GetBySessionID(ctx, sessionID, userID)
 	testx.NoError(s.T(), err)
-	testx.Len(s.T(), projects, 0, "编剧阶段不写 project 表")
+	testx.Len(s.T(), projects, 0, "the scriptwriter stage writes no project row")
 
 	scriptRecord, err := s.deps.records.GetByProjectAndType(ctx, sessionID, "3:mix_video")
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusRunning, scriptRecord.Status)
 
-	// 3. 编剧回调（task_detail，task_type=3:mix_video）→ 段落风控通过 → record=done
+	// 3. Scriptwriter callback (task_detail, task_type=3:mix_video) → segment risk control passes → record=done
 	s.deps.dispatcher.Dispatch(ctx, &creationcontracts.CallbackReq{
 		TaskID:       99001,
 		ProjectID:    sessionID,
@@ -211,7 +211,7 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 	})
 	s.awaitRecordStatus(ctx, scriptRecord.ID, creationdomain.ProjectStatusDone)
 
-	// 4. 成片 pre_create（role=5，输入风控通过）
+	// 4. Final-video pre_create (role=5, input risk control passes)
 	editorPre, err := s.deps.creationApp.PreCreate.HandlePreCreate(ctx, &creationcontracts.PreCreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -223,9 +223,9 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 	})
 	testx.NoError(s.T(), err)
 	testx.NotNil(s.T(), editorPre.Data)
-	testx.Equal(s.T(), 0, editorPre.Data.Status, "成片输入风控通过")
+	testx.Equal(s.T(), 0, editorPre.Data.Status, "final-video input risk control passes")
 
-	// 5. 成片 create（扣积分 10 + 建 project）
+	// 5. Final-video create (deduct 10 points + create the project)
 	create, err := s.deps.creationApp.Create.HandleCreate(ctx, &creationcontracts.CreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -238,14 +238,14 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 
 	projects, err = s.deps.projects.GetBySessionID(ctx, sessionID, userID)
 	testx.NoError(s.T(), err)
-	testx.Len(s.T(), projects, 1, "全程只有一个 project")
+	testx.Len(s.T(), projects, 1, "there is exactly one project throughout")
 	project := projects[0]
 	pointsOrderID := project.PointsOrderID
 	testx.Equal(s.T(), creationdomain.ProjectStatusRunning, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusUsed, project.PointsStatus)
-	testx.Equal(s.T(), 10, project.PointsCost, "混剪单价 10")
+	testx.Equal(s.T(), 10, project.PointsCost, "the mix-cut unit price is 10")
 
-	// 6. 成片 async_post_create：登记产线 ID 到 project
+	// 6. Final-video async_post_create: register the pipeline ID into the project
 	_, err = s.deps.creationApp.PostCreate.HandleAsyncPostCreate(ctx, &creationcontracts.AsyncPostCreateReq{
 		SessionID:   sessionID,
 		UserID:      userID,
@@ -257,9 +257,9 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 	testx.NoError(s.T(), err)
 	projects, err = s.deps.projects.GetBySessionID(ctx, sessionID, userID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), "99002", projects[0].ProductionLineID, "产线 ID 已登记")
+	testx.Equal(s.T(), "99002", projects[0].ProductionLineID, "the pipeline ID is registered")
 
-	// 7. 成片回调（task_detail，task_type=5:mix_video）→ 先置 audit（不是 done！）
+	// 7. Final-video callback (task_detail, task_type=5:mix_video) → set audit first (not done!)
 	s.deps.dispatcher.Dispatch(ctx, &creationcontracts.CallbackReq{
 		TaskID:       99002,
 		ProjectID:    sessionID,
@@ -268,17 +268,17 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 		SpecialInfo:  json.RawMessage(`{"script":"夏天的故事剧本","description":"一段成片视频"}`),
 		ExtendParams: creationcontracts.BuildExtendParamsJSON("5:mix_video", 0, "multi", 5001, 4001),
 	})
-	// ⚠️ 回调 handler 在 goroutine 异步执行：等 audit 状态还不够——
-	// 必须先等到 ext.async_audit_record_id 写入（handler 的最后一个动作），
-	// 否则后续风控回调会与 goroutine 的收尾 Update 竞争、覆盖 done 终态。
+	// ⚠️ The callback handler runs asynchronously in a goroutine: waiting for the audit status is not enough —
+	// you must first wait for ext.async_audit_record_id to be written (the handler's last action),
+	// otherwise the subsequent risk callback races with the goroutine's closing Update and overwrites the done terminal state.
 	asyncRecordID := s.awaitAsyncAuditRecordID(ctx, sessionID)
 
 	p, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), creationdomain.ProjectStatusAudit, p.Status, "成片产出成功先置 audit 而非 done")
-	testx.Greater(s.T(), asyncRecordID, int64(0), "异步风控 recordID 已透传")
+	testx.Equal(s.T(), creationdomain.ProjectStatusAudit, p.Status, "a successful final-video output sets audit first, not done")
+	testx.Greater(s.T(), asyncRecordID, int64(0), "the async risk-control recordID is passed through")
 
-	// 8. 风控回调（passed=true）→ audit 记录落 done + project 置 done，不退积分
+	// 8. Risk callback (passed=true) → the audit record settles done + the project is set done, no refund
 	riskCb := &riskcontracts.RiskCallbackReq{
 		BizID:     "dujiaapp_mixvideo60s_t2v_output-99002",
 		ThirdID:   sessionID,
@@ -291,11 +291,11 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 
 	p, err = s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), creationdomain.ProjectStatusDone, p.Status, "风控通过 → done")
-	testx.Equal(s.T(), creationdomain.PointStatusUsed, p.PointsStatus, "未退款")
+	testx.Equal(s.T(), creationdomain.ProjectStatusDone, p.Status, "risk passed → done")
+	testx.Equal(s.T(), creationdomain.PointStatusUsed, p.PointsStatus, "no refund")
 
-	// 积分只扣一次（100 - 10 = 90），全程无退款
-	testx.Equal(s.T(), 90, s.mustBalance(ctx, userID), "全程只扣一次 10 分，没退")
+	// Points deducted once (100 - 10 = 90), no refunds throughout
+	testx.Equal(s.T(), 90, s.mustBalance(ctx, userID), "10 points deducted exactly once overall, no refund")
 	flows, err := s.deps.points.ListByProject(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	var consumeN, refundN int
@@ -307,10 +307,10 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 			refundN++
 		}
 	}
-	testx.Equal(s.T(), 1, consumeN, "只扣一次积分")
-	testx.Equal(s.T(), 0, refundN, "未退积分")
+	testx.Equal(s.T(), 1, consumeN, "points deducted exactly once")
+	testx.Equal(s.T(), 0, refundN, "no points refunded")
 
-	// 9. 重复 create（幂等）：session 已有 project → 返回 success，不重复扣分
+	// 9. Repeated create (idempotent): the session already has a project → returns success, no double deduction
 	create2, err := s.deps.creationApp.Create.HandleCreate(ctx, &creationcontracts.CreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -318,23 +318,23 @@ func (s *CreationAppIntegrationSuite) TestMixVideoFullChain() {
 		ProjectInput: map[string]any{"query": "把剧本做成视频"},
 	})
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), "success", create2.Data.Status, "重复 create 幂等返回成功")
-	testx.Equal(s.T(), 90, s.mustBalance(ctx, userID), "重复 create 不重复扣分")
+	testx.Equal(s.T(), "success", create2.Data.Status, "a repeated create idempotently returns success")
+	testx.Equal(s.T(), 90, s.mustBalance(ctx, userID), "a repeated create does not deduct again")
 	projects, err = s.deps.projects.GetBySessionID(ctx, sessionID, userID)
 	testx.NoError(s.T(), err)
-	testx.Len(s.T(), projects, 1, "重复 create 不新建 project")
+	testx.Len(s.T(), projects, 1, "a repeated create creates no new project")
 
-	// 10. 重复风控回调（同一 audit record）：终态短路 → 不退款、终态不被覆盖
+	// 10. Repeated risk callback (same audit record): terminal short-circuit → no refund, terminal state not overwritten
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, riskCb))
 	p, err = s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), creationdomain.ProjectStatusDone, p.Status, "终态不被覆盖")
-	testx.Equal(s.T(), creationdomain.PointStatusUsed, p.PointsStatus, "重复风控回调不重复退积分")
-	testx.Equal(s.T(), 90, s.mustBalance(ctx, userID), "重复风控回调不退款")
-	testx.Equal(s.T(), pointsOrderID, p.PointsOrderID, "points_order_id 不变")
+	testx.Equal(s.T(), creationdomain.ProjectStatusDone, p.Status, "the terminal state is not overwritten")
+	testx.Equal(s.T(), creationdomain.PointStatusUsed, p.PointsStatus, "a repeated risk callback does not refund again")
+	testx.Equal(s.T(), 90, s.mustBalance(ctx, userID), "a repeated risk callback does not refund")
+	testx.Equal(s.T(), pointsOrderID, p.PointsOrderID, "points_order_id is unchanged")
 }
 
-// TestCreateIdempotentNoDoubleDeduct 幂等：重复 create 同一 session 不重复扣分。
+// TestCreateIdempotentNoDoubleDeduct idempotency: repeated create on the same session never deducts twice.
 func (s *CreationAppIntegrationSuite) TestCreateIdempotentNoDoubleDeduct() {
 	ctx := context.Background()
 	userID := int64(810003)
@@ -350,27 +350,27 @@ func (s *CreationAppIntegrationSuite) TestCreateIdempotentNoDoubleDeduct() {
 	first, err := s.deps.creationApp.Create.HandleCreate(ctx, req)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), "success", first.Data.Status)
-	testx.Equal(s.T(), 95, s.mustBalance(ctx, userID), "首扣 5 分")
+	testx.Equal(s.T(), 95, s.mustBalance(ctx, userID), "the first deduction is 5 points")
 
-	// 重复 create：session 下已有 project → 幂等返回 success，不再扣分
+	// Repeated create: the session already has a project → idempotently returns success, no further deduction
 	second, err := s.deps.creationApp.Create.HandleCreate(ctx, req)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), "success", second.Data.Status)
-	testx.Equal(s.T(), 95, s.mustBalance(ctx, userID), "重复 create 不重复扣分")
+	testx.Equal(s.T(), 95, s.mustBalance(ctx, userID), "a repeated create does not deduct again")
 
 	projects, err := s.deps.projects.GetBySessionID(ctx, sessionID, userID)
 	testx.NoError(s.T(), err)
-	testx.Len(s.T(), projects, 1, "重复 create 不新建 project")
+	testx.Len(s.T(), projects, 1, "a repeated create creates no new project")
 }
 
-// TestRepeatedRiskCallbackNoDoubleRefund 幂等：同一审计记录重复风控回调只退一次积分。
+// TestRepeatedRiskCallbackNoDoubleRefund idempotency: repeated risk callbacks on the same audit record refund only once.
 func (s *CreationAppIntegrationSuite) TestRepeatedRiskCallbackNoDoubleRefund() {
 	ctx := context.Background()
 	userID := int64(810004)
 	sessionID := "session-integration-risk-repeat"
 	seedBalance(s.T(), s.deps.db, userID, 100)
 
-	// 建已扣分的 project（create 扣 10 分，余额 90），模拟成片回调已置 audit
+	// Create a project with points deducted (create deducted 10, balance 90), simulating the final-video callback having set audit
 	_, err := s.deps.creationApp.Create.HandleCreate(ctx, &creationcontracts.CreateReq{
 		UserID:       userID,
 		SessionID:    sessionID,
@@ -383,7 +383,7 @@ func (s *CreationAppIntegrationSuite) TestRepeatedRiskCallbackNoDoubleRefund() {
 	testx.True(s.T(), project.MarkAudit())
 	testx.NoError(s.T(), s.deps.projects.Update(ctx, project))
 
-	// 插一条 auditing 的审计记录（AsyncAudit 的产物）
+	// Insert one auditing audit record (the artifact of AsyncAudit)
 	recordID, err := s.deps.riskAudit.Insert(ctx, &riskdomain.AuditRecord{
 		UserID:    userID,
 		ProjectID: sessionID,
@@ -401,27 +401,27 @@ func (s *CreationAppIntegrationSuite) TestRepeatedRiskCallbackNoDoubleRefund() {
 		Extra:   map[string]string{"callback_record_id": fmt.Sprintf("%d", recordID)},
 	}
 
-	// 第一次：退积分 + fail
+	// First time: refund points + fail
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, riskCb))
 	project, err = s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusFail, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus)
-	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "退回混剪 10 分（种子 100 + 退款 10）")
+	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "the mix-cut 10 points are refunded (seed 100 + refund 10)")
 
-	// 第二次：审计记录终态短路 + project 终态短路 → 不再退款
+	// Second time: audit-record terminal short-circuit + project terminal short-circuit → no further refund
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, riskCb))
-	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "重复风控回调不重复退积分")
+	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "a repeated risk callback does not refund again")
 }
 
-// TestCallbackAfterTerminalNoOp 终态短路：done/fail 后重复回调不处理、终态不被覆盖。
+// TestCallbackAfterTerminalNoOp terminal short-circuit: duplicate callbacks after done/fail are not processed; terminal states are not overwritten.
 func (s *CreationAppIntegrationSuite) TestCallbackAfterTerminalNoOp() {
 	ctx := context.Background()
 	userID := int64(810005)
 	sessionID := "session-integration-cb-terminal"
 	seedBalance(s.T(), s.deps.db, userID, 100)
 
-	// 建已 done 的 project（积分已扣未退）
+	// Create a done project (points deducted, not refunded)
 	testx.NoError(s.T(), s.deps.projects.Insert(ctx, &creationdomain.Project{
 		UserID: userID, SessionID: sessionID, ProjectID: sessionID,
 		ProjectType: creationdomain.ProjectTypeMixVideo, Status: creationdomain.ProjectStatusDone,
@@ -429,7 +429,7 @@ func (s *CreationAppIntegrationSuite) TestCallbackAfterTerminalNoOp() {
 		PointsOrderID: sessionID + "_1", RetryNum: 1,
 	}))
 
-	// done 后重复成片回调（success）→ handler 终态短路，状态不变
+	// Repeated final-video callback (success) after done → the handler short-circuits on terminal; the status is unchanged
 	s.deps.dispatcher.Dispatch(ctx, &creationcontracts.CallbackReq{
 		TaskID:       99001,
 		ProjectID:    sessionID,
@@ -438,15 +438,15 @@ func (s *CreationAppIntegrationSuite) TestCallbackAfterTerminalNoOp() {
 		SpecialInfo:  json.RawMessage(`{"script":"剧本","description":"视频"}`),
 		ExtendParams: creationcontracts.BuildExtendParamsJSON("5:mix_video", 0, "multi", 5001, 4001),
 	})
-	// 回调在 goroutine 异步执行，短等让 handler 跑完（无状态变更，轮询即可）
+	// Callbacks run asynchronously in goroutines; wait briefly for the handler to finish (no state change; polling suffices)
 	s.awaitProjectStatus(ctx, sessionID, creationdomain.ProjectStatusDone)
 
 	project, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), creationdomain.ProjectStatusDone, project.Status, "终态不被回调覆盖")
-	testx.Equal(s.T(), creationdomain.PointStatusUsed, project.PointsStatus, "终态后不重复退积分")
+	testx.Equal(s.T(), creationdomain.ProjectStatusDone, project.Status, "the terminal state is not overwritten by callbacks")
+	testx.Equal(s.T(), creationdomain.PointStatusUsed, project.PointsStatus, "no repeated refunds after terminal")
 
-	// done 后风控回调 !passed → 终态短路，不退款、不覆盖
+	// Risk callback !passed after done → terminal short-circuit; no refund, no overwrite
 	testx.NoError(s.T(), s.deps.auditOutput.Handle(ctx, &riskcontracts.RiskCallbackReq{
 		BizID: "x", ThirdID: sessionID, UserID: userID, Passed: false, Reason: "违规",
 	}))
@@ -454,10 +454,10 @@ func (s *CreationAppIntegrationSuite) TestCallbackAfterTerminalNoOp() {
 	testx.NoError(s.T(), err)
 	testx.Equal(s.T(), creationdomain.ProjectStatusDone, project.Status)
 	testx.Equal(s.T(), creationdomain.PointStatusUsed, project.PointsStatus)
-	testx.Equal(s.T(), 100, s.mustBalance(ctx, userID), "种子 100 一直没动（未扣未退）")
+	testx.Equal(s.T(), 100, s.mustBalance(ctx, userID), "the seed 100 is untouched (never deducted, never refunded)")
 }
 
-// TestRefundAndFailTimeout 超时兜底：running 超时 → 退积分 + fail；已 fail 再次兜底 no-op。
+// TestRefundAndFailTimeout timeout fallback: running timeout → refund points + fail; a second fallback on an already-failed project is a no-op.
 func (s *CreationAppIntegrationSuite) TestRefundAndFailTimeout() {
 	ctx := context.Background()
 	userID := int64(810006)
@@ -465,13 +465,13 @@ func (s *CreationAppIntegrationSuite) TestRefundAndFailTimeout() {
 	seedBalance(s.T(), s.deps.db, userID, 100)
 	now := time.Now().Unix()
 
-	// 造扣分流水（模拟 create 已扣 10 分）
+	// Create the deduction ledger entry (simulating create having deducted 10 points)
 	testx.NoError(s.T(), s.deps.db.Exec(
 		"INSERT INTO cg_points_flow (user_id, project_id, order_id, flow_type, amount, scene_desc, status, create_time) VALUES (?, ?, ?, 1, 10, 'consume', 1, ?)",
 		userID, sessionID, sessionID+"_1", now,
 	).Error)
 
-	// 造一个超时窗口前创建、仍 running 且已扣分的 project
+	// Create a project created before the timeout window, still running with points deducted
 	stuckTime := time.Now().Add(-25 * time.Hour).Unix()
 	testx.NoError(s.T(), s.deps.projects.Insert(ctx, &creationdomain.Project{
 		UserID: userID, SessionID: sessionID, ProjectID: sessionID,
@@ -481,25 +481,25 @@ func (s *CreationAppIntegrationSuite) TestRefundAndFailTimeout() {
 		CreateTime: stuckTime, UpdateTime: stuckTime,
 	}))
 
-	// 超时兜底：退积分 + fail
+	// Timeout fallback: refund points + fail
 	project, err := s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
 	testx.NoError(s.T(), s.deps.creationApp.PostCreate.RefundAndFailTimeout(ctx, project))
 
 	project, err = s.deps.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(s.T(), err)
-	testx.Equal(s.T(), creationdomain.ProjectStatusFail, project.Status, "超时置 fail")
-	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus, "超时退积分")
-	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "种子 100 + 退回 10 = 110")
+	testx.Equal(s.T(), creationdomain.ProjectStatusFail, project.Status, "timeout sets fail")
+	testx.Equal(s.T(), creationdomain.PointStatusRefund, project.PointsStatus, "timeout refunds points")
+	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "seed 100 + refund 10 = 110")
 
-	// 幂等：已 fail 的项目再次超时兜底 → no-op，不重复退款
+	// Idempotent: another timeout fallback on an already-failed project → no-op, no repeated refund
 	testx.NoError(s.T(), s.deps.creationApp.PostCreate.RefundAndFailTimeout(ctx, project))
-	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "重复超时兜底不重复退款")
+	testx.Equal(s.T(), 110, s.mustBalance(ctx, userID), "a repeated timeout fallback does not refund again")
 }
 
-// --- 工具函数 ---
+// --- Helpers ---
 
-// mustBalance 查用户余额（断言辅助）。
+// mustBalance queries the user balance (assertion helper).
 func (s *CreationAppIntegrationSuite) mustBalance(ctx context.Context, userID int64) int {
 	s.T().Helper()
 	b, err := s.deps.points.GetBalance(ctx, userID)
@@ -507,7 +507,7 @@ func (s *CreationAppIntegrationSuite) mustBalance(ctx context.Context, userID in
 	return b
 }
 
-// awaitRecordStatus 轮询回调记录状态直到 target（回调 handler 在 goroutine 异步执行）。
+// awaitRecordStatus polls the callback record status until target (the callback handler runs asynchronously in a goroutine).
 func (s *CreationAppIntegrationSuite) awaitRecordStatus(ctx context.Context, id uint64, target string) {
 	s.T().Helper()
 	for i := 0; i < 50; i++ {
@@ -518,10 +518,10 @@ func (s *CreationAppIntegrationSuite) awaitRecordStatus(ctx context.Context, id 
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	s.T().Fatalf("record %d 未在超时内达到状态 %s", id, target)
+	s.T().Fatalf("record %d did not reach status %s within the timeout", id, target)
 }
 
-// awaitProjectStatus 轮询作品状态直到 target。
+// awaitProjectStatus polls the work status until target.
 func (s *CreationAppIntegrationSuite) awaitProjectStatus(ctx context.Context, projectID string, target string) {
 	s.T().Helper()
 	for i := 0; i < 50; i++ {
@@ -532,14 +532,14 @@ func (s *CreationAppIntegrationSuite) awaitProjectStatus(ctx context.Context, pr
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	s.T().Fatalf("project %s 未在超时内达到状态 %s", projectID, target)
+	s.T().Fatalf("project %s did not reach status %s within the timeout", projectID, target)
 }
 
-// awaitAsyncAuditRecordID 轮询 project.ext 里的异步风控 recordID 写入。
+// awaitAsyncAuditRecordID polls for the async risk-control recordID write in project.ext.
 //
-// ⚠️ 成片回调 handler 在 goroutine 异步执行，置 audit 后还要发起异步视频风控并
-// 把 recordID 透传到 ext——recordID 写入是 handler 的最后一个动作。只有等它完成，
-// 才能安全地模拟风控回调（否则 goroutine 收尾 Update 会与风控回调的落定 Update 竞争）。
+// ⚠️ The final-video callback handler runs asynchronously in a goroutine; after setting audit it also starts async video risk control
+// and passes the recordID into ext — the recordID write is the handler's last action. Only after it completes
+// can the risk callback be safely simulated (otherwise the goroutine's closing Update races with the risk callback's settling Update).
 func (s *CreationAppIntegrationSuite) awaitAsyncAuditRecordID(ctx context.Context, projectID string) int64 {
 	s.T().Helper()
 	for i := 0; i < 50; i++ {
@@ -552,11 +552,11 @@ func (s *CreationAppIntegrationSuite) awaitAsyncAuditRecordID(ctx context.Contex
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	s.T().Fatalf("project %s 的异步风控 recordID 未在超时内写入", projectID)
+	s.T().Fatalf("the async risk-control recordID of project %s was not written within the timeout", projectID)
 	return 0
 }
 
-// mustOpenMySQL 切到仓库根目录读 config，打开 testdb MySQL 连接。
+// mustOpenMySQL switches to the repository root to read config and opens the testdb MySQL connection.
 func mustOpenMySQL(t *testing.T) *gorm.DB {
 	t.Helper()
 	_, filename, _, _ := runtime.Caller(0)
@@ -572,7 +572,7 @@ func mustOpenMySQL(t *testing.T) *gorm.DB {
 	return db
 }
 
-// mustOpenRedis 打开 testdb Redis（独立 DB，避免污染开发缓存）。
+// mustOpenRedis opens the testdb Redis (separate DB, avoiding pollution of the development cache).
 func mustOpenRedis(t *testing.T) *redis.Client {
 	t.Helper()
 	cfg := config.Load("config/config.json")
@@ -581,10 +581,10 @@ func mustOpenRedis(t *testing.T) *redis.Client {
 	return rdb
 }
 
-// buildCreationDeps 装配新架构组件（对齐 internal/app/app.go 的 New，但用本地敏感词后端）。
+// buildCreationDeps assembles the new-architecture components (aligned with internal/app/app.go's New, but with the local sensitive-word backend).
 //
-// ⚠️ 关键：LocalAuditBackend.Submit 在敏感词表为空时会回退到默认敏感词表
-// （DefaultSensitiveWords），所以这里用"不会出现的词"而非空表，让全链路内容通过。
+// ⚠️ Key point: LocalAuditBackend.Submit falls back to the default sensitive-word list (DefaultSensitiveWords)
+// when the word list is empty, so "words that never appear" are used instead of an empty list, letting all chain content pass.
 func buildCreationDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *creationDeps {
 	t.Helper()
 
@@ -592,7 +592,7 @@ func buildCreationDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *creationDe
 	pointsRepo := pointsinfra.NewPointsRepositoryImpl(db)
 	pointsApp := pointsapp.NewPointsApp(pointsRepo)
 
-	// risk context（本地敏感词后端，放行内容）
+	// risk context (local sensitive-word backend, content passes)
 	riskRecords := riskinfra.NewAuditRecordRepositoryImpl(db)
 	auditBackend := riskinfra.NewLocalAuditBackend()
 	auditBackend.SetSensitiveWords([]string{"__no_such_sensitive_word__"})
@@ -602,14 +602,14 @@ func buildCreationDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *creationDe
 	cbRepo := creationinfra.NewCallbackRecordRepositoryImpl(db)
 	compRepo := creationinfra.NewCompensationRepositoryImpl(db)
 
-	// 依赖反转：creation 实现 risk 侧 AuditResultSink / CompensationSink 并注入
+	// Dependency inversion: creation implements the risk-side AuditResultSink / CompensationSink and injects them
 	compSink := creationinfra.NewCompensationSinkImpl(compRepo)
 	onAuditResult := creationinfra.NewOnAuditResultImpl(projRepo, pointsApp)
 	blacklistChecker := riskinfra.NewRedisBlacklistChecker(rdb)
 	riskAuditApp := riskapp.NewRiskAuditApp(auditBackend, riskRecords, compSink, blacklistChecker)
 	auditOutputApp := riskapp.NewAuditOutputApp(riskRecords, onAuditResult)
 
-	// creation 应用门面 + 回调分发器
+	// creation application facade + callback dispatcher
 	creationApp := creationapp.NewCreationApp(projRepo, cbRepo, riskAuditApp, pointsApp)
 	dispatcher := creationinfra.NewCallbackDispatcher(
 		creationinfra.NewCallbackDeps(projRepo, cbRepo, compRepo, riskAuditApp, pointsApp),
@@ -628,7 +628,7 @@ func buildCreationDeps(t *testing.T, db *gorm.DB, rdb *redis.Client) *creationDe
 	}
 }
 
-// seedBalance 给用户造初始余额（flow_type=2 入账，等价旧 seedBalance）。
+// seedBalance gives the user an initial balance (flow_type=2 credit, equivalent to the old seedBalance).
 func seedBalance(t *testing.T, db *gorm.DB, userID int64, amount int) {
 	t.Helper()
 	now := time.Now().Unix()
@@ -638,7 +638,7 @@ func seedBalance(t *testing.T, db *gorm.DB, userID int64, amount int) {
 	).Error)
 }
 
-// buildSkillTaskOutput 构造算子返回的 task_output JSON。
+// buildSkillTaskOutput builds the task_output JSON returned by operators.
 func buildSkillTaskOutput(errno int, status string, taskID int64, specialInfo string) string {
 	b, _ := json.Marshal(map[string]any{
 		"errno": errno,

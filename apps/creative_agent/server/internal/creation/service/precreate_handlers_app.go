@@ -9,33 +9,33 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/internal/creation/domain"
 )
 
-// handleCommonPreCreate 是视觉设计师(4)/剪辑大师(5)的完整路径（最核心）。
+// handleCommonPreCreate is the full path of the visual designer(4) / edit master(5) (the core).
 //
-// 核心模式是 needReturnMember + defer 集中回滚：任何错误分支只需设标志位，
-// 函数返回时 defer 统一执行"退积分 + 置 fail + 同步 feed"，避免近十个错误出口各写一遍回滚代码。
+// The core pattern is needReturnMember + centralized defer rollback: any error branch only sets the flag;
+// on return the defer uniformly performs "refund points + set fail + sync feed", avoiding writing rollback code at nearly ten error exits.
 func (a *PreCreateApp) handleCommonPreCreate(ctx context.Context, req *contracts.PreCreateReq) (*contracts.PreCreateResp, error) {
-	// ⚠️ 关键模式：defer 集中回滚
+	// ⚠️ Key pattern: centralized defer rollback
 	needReturnMember := false
 	failReason := ""
 	var project *domain.Project
 
 	defer func() {
 		if needReturnMember && project != nil && project.PointsOrderID != "" {
-			// 集中回滚：退积分（幂等，仅 used 才退）+ 置 fail + 同步 feed。
-			// MarkFail 内部处理"仅 used 才退积分"不变量，并忽略退积分错误
-			// （与旧实现语义一致：退积分失败不阻断置 fail，数据层幂等链兜底）。
+			// Centralized rollback: refund points (idempotent, only used refunds) + set fail + sync feed.
+			// MarkFail internally handles the "refund only when used" invariant and ignores refund errors
+			// (same semantics as the legacy implementation: a refund failure does not block setting fail; the data-layer idempotency chain covers it).
 			changed, _ := project.MarkFail(failReason, func() error {
 				return a.points.Refund(ctx, project.PointsOrderID, project.UserID, project.ProjectType)
 			})
 			if changed {
 				_ = a.projects.Update(ctx, project)
 			}
-			// 同步 feed 表（可选，展示用冗余）
+			// Sync the feed table (optional display redundancy)
 			syncFeed(ctx, project.ProjectID, domain.ProjectStatusFail)
 		}
 	}()
 
-	// 1. 查询已有 project（幂等判断 + 状态判断的前提）
+	// 1. Query the existing project (the premise of idempotency + state checks)
 	projects, err := a.projects.GetBySessionID(ctx, req.SessionID, req.UserID)
 	if err != nil {
 		return nil, err
@@ -46,41 +46,41 @@ func (a *PreCreateApp) handleCommonPreCreate(ctx context.Context, req *contracts
 		project = projects[0]
 	}
 
-	// 2. 如果已完成 → 直接返回 new_session 让上游开新会话
+	// 2. Already done → return new_session directly so the upstream opens a new session
 	if project != nil && project.Status == domain.ProjectStatusDone {
 		return contracts.NewSessionResp(), nil
 	}
 
-	// 2b. 如果 project 处于终态之外的异常态（fail 且已退积分）—— 视为需新会话
+	// 2b. If the project is in an abnormal state beyond terminal (fail with points already refunded) — treat it as needing a new session
 	if project != nil && project.Status == domain.ProjectStatusFail &&
 		project.PointsStatus == domain.PointStatusRefund {
 		return contracts.NewSessionResp(), nil
 	}
 
-	// 2c. 重试路径：retry_type=1（失败重试）或积分未扣（异常态）→ 再扣一次积分
+	// 2c. Retry path: retry_type=1 (failure retry) or points not deducted (abnormal state) → deduct once more
 	if project != nil &&
 		(req.RetryType == domain.RetryTypeFail || project.PointsStatus != domain.PointStatusUsed) {
 		return a.handleRetry(ctx, req, project)
 	}
 
-	// 2d. 已处于 audit/running 且积分已扣的 project 重进 pre_create —— 直接继续组装入参。
+	// 2d. A project already in audit/running with points deducted re-entering pre_create — continue assembling inputs directly.
 
-	// 3. 反序列化用户输入（"翻译器"）
+	// 3. Deserialize the user input (the "translator")
 	projectInput, err := contracts.ParseInput(req.ProjectInput)
 	if err != nil {
-		// 解析失败 → defer 回滚（阶段 1 先验证 flag 置位）
+		// Parse failure → defer rollback (stage 1 verifies the flag is set first)
 		needReturnMember = true
 		failReason = "解析用户输入失败: " + err.Error()
 		return contracts.FailCardResp(domain.CardTypeFailedRetry, costScore(req.ProjectType, inputParams(projectInput))), nil
 	}
 
-	// 4. 提取待审核文本（阶段 3：runPreCreateAudit 已接通）
+	// 4. Extract the texts to audit (stage 3: runPreCreateAudit is wired)
 	textGroups := projectInput.AuditTexts()
 
-	// 5. 输入风控（同步）：按 (role, type) 配置的风控策略路由送审
-	//    决策 4 关键：风控请求失败（系统错误）与内容不通过（命中风控）走不同分支——
-	//    前者 ErrTaskFail（退积分），后者 ErrInputRisk（输入风控卡）。首次 pre_create
-	//    尚未扣积分（project==nil），defer 回滚自然跳过；重试路径已扣分则真正退积分。
+	// 5. Input risk control (synchronous): route to audit by the risk policy configured per (role, type)
+	//    Decision 4 key point: a failed risk request (system error) and rejected content (risk hit) take different branches —
+	//    the former ErrTaskFail (points refund), the latter ErrInputRisk (input risk card). The first pre_create
+	//    has not deducted points yet (project==nil), so the defer rollback naturally skips; the retry path already deducted and really refunds.
 	if len(textGroups) > 0 {
 		subProduct := inputAuditSubproduct(req.RoleType, req.ProjectType)
 		if subProduct != "" {
@@ -88,10 +88,10 @@ func (a *PreCreateApp) handleCommonPreCreate(ctx context.Context, req *contracts
 			if auditErr != nil || !passed {
 				needReturnMember = true
 				if auditErr != nil {
-					// 风控请求失败（系统错误）→ 退积分
+					// Risk request failed (system error) → refund points
 					failReason = contracts.BuildFailReason("风控请求失败", auditErr.Error())
 				} else {
-					// 内容不通过 → 输入风控卡（status=2），输入阶段无积分不退
+					// Content rejected → input risk card (status=2); no points at the input stage, no refund
 					failReason = contracts.BuildFailReason("输入风控拦截", auditReason)
 				}
 				return contracts.AuditFailResp(domain.CardTypeInputRisk), nil
@@ -99,7 +99,7 @@ func (a *PreCreateApp) handleCommonPreCreate(ctx context.Context, req *contracts
 		}
 	}
 
-	// 6. 组装下游算子入参 → 返回给 agent
+	// 6. Assemble the downstream operator inputs → return to the agent
 	resp, err := a.buildPreCreateSuccess(ctx, req, project, projectInput)
 	if err != nil {
 		needReturnMember = true
@@ -109,25 +109,25 @@ func (a *PreCreateApp) handleCommonPreCreate(ctx context.Context, req *contracts
 	return resp, nil
 }
 
-// buildPreCreateSuccess 组装下游算子入参并返回成功响应。
+// buildPreCreateSuccess assembles the downstream operator inputs and returns the success response.
 //
-// 被 handleCommonPreCreate 和 handleRetry 共用（重试成功后同样组装入参返回）。
-// 组装失败时返回 error，由调用方决定回滚策略。
+// Shared by handleCommonPreCreate and handleRetry (after a successful retry the inputs are assembled the same way).
+// Assembly failures return an error; callers decide the rollback strategy.
 func (a *PreCreateApp) buildPreCreateSuccess(ctx context.Context, req *contracts.PreCreateReq,
 	project *domain.Project, projectInput contracts.Input) (*contracts.PreCreateResp, error) {
 
 	assembled, err := projectInput.InputFill(project, req, req.LogID)
 	if err != nil {
-		return nil, fmt.Errorf("组装算子入参失败: %w", err)
+		return nil, fmt.Errorf("assemble operator inputs: %w", err)
 	}
 
 	projectInputJSON, err := json.Marshal(assembled)
 	if err != nil {
-		return nil, fmt.Errorf("序列化算子入参失败: %w", err)
+		return nil, fmt.Errorf("marshal operator inputs: %w", err)
 	}
 
-	// 记录本阶段的 task_step 到 project.ext（阶段间数据透传的载体）
-	// 仅有 project 时才有意义（轻量路径的透传字段直接放 PassThroughData）
+	// Record this stage's task_step into project.ext (the carrier of cross-stage data pass-through)
+	// meaningful only when a project exists (lightweight paths put pass-through fields directly in PassThroughData)
 	if project != nil {
 		ext, _ := domain.ParseExt(project.Ext)
 		if ext.TaskStep == nil {
@@ -149,25 +149,25 @@ func (a *PreCreateApp) buildPreCreateSuccess(ctx context.Context, req *contracts
 		contracts.Base64Encode(projectInputJSON)), nil
 }
 
-// handleScreenplayPreCreate 编剧(role=3)的轻量路径。
+// handleScreenplayPreCreate is the lightweight path of the scriptwriter(role=3).
 //
-// 不查 project 表（第一次进来没有 project）、不扣积分；输入风控命中时写
-// cg_task_callback_record（status=fail）但不退积分。
+// It does not query the project table (there is no project on first entry) and deducts no points; an input risk hit writes
+// cg_task_callback_record (status=fail) but refunds nothing.
 //
-// 注意：编剧阶段没有 project，task_step_id/parent_task_step_id 这类透传字段
-// 直接放 PassThroughData，回调时从 extend_params 里取。
+// Note: the scriptwriter stage has no project; pass-through fields like task_step_id/parent_task_step_id
+// go directly into PassThroughData and are fetched from extend_params on callback.
 func (a *PreCreateApp) handleScreenplayPreCreate(ctx context.Context, req *contracts.PreCreateReq) (*contracts.PreCreateResp, error) {
-	// 1. 反序列化用户输入
+	// 1. Deserialize the user input
 	projectInput, err := contracts.ParseInput(req.ProjectInput)
 	if err != nil {
 		return contracts.FailCardResp(domain.CardTypeFailedRetry, costScore(req.ProjectType, inputParams(projectInput))), nil
 	}
 
-	// 2. 提取待审文本组（阶段 3：runPreCreateAudit 已接通）
+	// 2. Extract the text groups to audit (stage 3: runPreCreateAudit is wired)
 	textGroups := projectInput.AuditTexts()
 
-	// 3. 输入风控（同步）—— 轻量路径不扣积分，命中直接返回输入风控卡（status=2）
-	//    决策 4：内容不通过 → ErrInputRisk（无积分不退）；请求失败（系统错误）→ 失败卡。
+	// 3. Input risk control (synchronous) — the lightweight path deducts no points; a hit returns the input risk card directly (status=2)
+	//    Decision 4: content rejected → ErrInputRisk (no points, no refund); request failure (system error) → failure card.
 	if len(textGroups) > 0 {
 		subProduct := inputAuditSubproduct(req.RoleType, req.ProjectType)
 		if subProduct != "" {
@@ -181,7 +181,7 @@ func (a *PreCreateApp) handleScreenplayPreCreate(ctx context.Context, req *contr
 		}
 	}
 
-	// 4. 组装算子入参返回（透传 task_step_id 等）
+	// 4. Assemble the operator inputs to return (passing through task_step_id, etc.)
 	assembled, err := projectInput.InputFill(nil, req, req.LogID)
 	if err != nil {
 		return contracts.FailCardResp(domain.CardTypeFailedRetry, costScore(req.ProjectType, inputParams(projectInput))), nil
@@ -194,16 +194,16 @@ func (a *PreCreateApp) handleScreenplayPreCreate(ctx context.Context, req *contr
 	return contracts.SuccessResp(domain.CardTypeProjectProcessing, 0, contracts.Base64Encode(projectInputJSON)), nil
 }
 
-// handleBrainstormPreCreate 点子王(role=2)的轻量路径。
+// handleBrainstormPreCreate is the lightweight path of the idea king(role=2).
 //
-// 与编剧路径同构：不写 project 表、不扣积分，只做输入解析 + 入参组装。
+// Isomorphic to the scriptwriter path: no project-table write, no points deduction; only input parsing + input assembly.
 func (a *PreCreateApp) handleBrainstormPreCreate(ctx context.Context, req *contracts.PreCreateReq) (*contracts.PreCreateResp, error) {
 	projectInput, err := contracts.ParseInput(req.ProjectInput)
 	if err != nil {
 		return contracts.FailCardResp(domain.CardTypeFailedRetry, costScore(req.ProjectType, inputParams(projectInput))), nil
 	}
 
-	// 输入风控（阶段 3 已接通）：轻量路径不扣积分，命中返回输入风控卡（status=2）
+	// Input risk control (wired in stage 3): the lightweight path deducts no points; a hit returns the input risk card (status=2)
 	textGroups := projectInput.AuditTexts()
 	if len(textGroups) > 0 {
 		subProduct := inputAuditSubproduct(req.RoleType, req.ProjectType)

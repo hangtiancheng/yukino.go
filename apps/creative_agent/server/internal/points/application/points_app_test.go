@@ -9,7 +9,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// fakeRepo 最小实现，验证编排逻辑。
+// fakeRepo is a minimal implementation for verifying the orchestration logic.
 type fakeRepo struct {
 	balance int
 	err     error
@@ -55,7 +55,7 @@ func TestConsumeTitle(t *testing.T) {
 	testx.Equal(t, "度加AI-视频生成失败退回", domain.BackTitle("miaoying"))
 }
 
-// recordingRepo 记录 InsertConsume 收到的流水，用于验证编排参数。
+// recordingRepo records the ledger entries received by InsertConsume, for verifying orchestration parameters.
 type recordingRepo struct {
 	fakeRepo
 	flow      *domain.PointsFlow
@@ -68,7 +68,7 @@ func (r *recordingRepo) InsertConsume(ctx context.Context, flow *domain.PointsFl
 	return 1, nil
 }
 
-// TestDeductPassesSceneDesc 验证扣积分流水标题取自 ConsumeTitle。
+// TestDeductPassesSceneDesc verifies that the deduction entry title comes from ConsumeTitle.
 func TestDeductPassesSceneDesc(t *testing.T) {
 	r := &recordingRepo{}
 	app := application.NewPointsApp(r)
@@ -77,7 +77,7 @@ func TestDeductPassesSceneDesc(t *testing.T) {
 	testx.Equal(t, "度加AI-视频生成", r.sceneDesc)
 }
 
-// TestRefundCallsRepoWithBackTitle 验证退积分透传 orderID/userID 且标题取 BackTitle。
+// TestRefundCallsRepoWithBackTitle verifies that refunds pass orderID/userID through and the title comes from BackTitle.
 func TestRefundCallsRepoWithBackTitle(t *testing.T) {
 	rr := &refundRecordingRepo{}
 	app := application.NewPointsApp(rr)
@@ -88,7 +88,7 @@ func TestRefundCallsRepoWithBackTitle(t *testing.T) {
 	testx.Equal(t, "度加AI-AI成片失败退回", rr.title)
 }
 
-// refundRecordingRepo 记录 RefundByOrderID 收到的参数，用于验证退积分编排。
+// refundRecordingRepo records the parameters received by RefundByOrderID, for verifying refund orchestration.
 type refundRecordingRepo struct {
 	fakeRepo
 	orderID string
@@ -103,7 +103,7 @@ func (r *refundRecordingRepo) RefundByOrderID(ctx context.Context, orderID strin
 	return nil
 }
 
-// TestGetBalance 验证余额透传仓储结果。
+// TestGetBalance verifies that the balance passes the repository result through.
 func TestGetBalance(t *testing.T) {
 	app := application.NewPointsApp(&fakeRepo{balance: 42})
 	bal, err := app.GetBalance(context.Background(), 1)

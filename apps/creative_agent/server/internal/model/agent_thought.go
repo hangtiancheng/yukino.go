@@ -1,61 +1,61 @@
 package model
 
-// CGAgentThought 是 cg_agent_thought 表的 GORM 模型。
-// 记录管家/子智能体每一轮 LLM 调用的输入输出轨迹（对齐真实系统 cg_agent_thought），
-// 供调试与完整对话过程恢复。
+// CGAgentThought is the GORM model of the cg_agent_thought table.
+// It records the input/output trace of every manager/sub-agent LLM round (aligned with the reference system's cg_agent_thought),
+// for debugging and full conversation-process recovery.
 type CGAgentThought struct {
 	ID int64 `gorm:"column:id;primaryKey;autoIncrement"`
-	// 分片键（复刻环境固定为 0）
+	// Shard key (fixed to 0 in the replica environment)
 	ShardingKey int32 `gorm:"column:sharding_key;not null;default:0"`
-	// 智能体 ID
+	// Agent ID
 	AgentID string `gorm:"column:agent_id;size:64;not null"`
-	// 智能体类型（如管家 / 子智能体）
+	// Agent type (e.g. manager / sub-agent)
 	AgentType string `gorm:"column:agent_type;size:32;not null;default:''"`
-	// 用户 ID
+	// User ID
 	UserID int64 `gorm:"column:user_id;not null;index"`
-	// 模型名
+	// Model name
 	Model string `gorm:"column:model;size:64;not null;default:''"`
-	// 会话 ID
+	// Session ID
 	SessionID string `gorm:"column:session_id;index;size:64;not null"`
-	// 消息 ID
+	// Message ID
 	MsgID string `gorm:"column:msg_id;index;size:64;not null;default:''"`
-	// 日志 ID
+	// Log ID
 	LogID string `gorm:"column:log_id;size:64;not null;default:''"`
-	// 产品线
+	// Product line
 	Pd string `gorm:"column:pd;size:32;not null;default:''"`
-	// System prompt（不含于 model_input）
+	// System prompt (not included in model_input)
 	SystemPrompt *string `gorm:"column:system_prompt;type:text"`
-	// LLM 调用输入（messages + tools JSON，不含 system prompt）
+	// LLM call input (messages + tools JSON, excluding the system prompt)
 	ModelInput *string `gorm:"column:model_input;type:mediumtext"`
-	// LLM 调用输出（assistant Message JSON，含 tool_calls）
+	// LLM call output (assistant Message JSON, including tool_calls)
 	ModelOutput *string `gorm:"column:model_output;type:mediumtext"`
-	// 开始时间（毫秒时间戳）
+	// Start time (millisecond timestamp)
 	StartTime int64 `gorm:"column:start_time;not null;default:0"`
-	// 结束时间（毫秒时间戳）
+	// End time (millisecond timestamp)
 	EndTime int64 `gorm:"column:end_time;not null;default:0"`
-	// LLM 调用耗时（毫秒）
+	// LLM call duration (milliseconds)
 	ElapsedMs int64 `gorm:"column:elapsed_ms;not null;default:0"`
-	// 状态：0=未知 1=Running 2=Completed
+	// Status: 0=unknown 1=Running 2=Completed
 	Status int32 `gorm:"column:status;not null;default:0"`
-	// 工具调用 JSON（TEXT 列不能带 DEFAULT——MySQL 严格模式报 Error 1101）
+	// Tool-call JSON (TEXT columns cannot have a DEFAULT — MySQL strict mode raises Error 1101)
 	ToolCalls string `gorm:"column:tool_calls;type:text;not null"`
-	// token 统计 JSON（同上）
+	// Token statistics JSON (same as above)
 	TokenCount string `gorm:"column:token_count;type:text;not null"`
-	// 关联 task_run ID（投递后回填，复刻环境可选）
+	// Associated task_run ID (backfilled after dispatch; optional in the replica environment)
 	TaskRunID int64 `gorm:"column:task_run_id;not null;default:0"`
-	// 关联 task_step ID
+	// Associated task_step ID
 	TaskStepID int64 `gorm:"column:task_step_id;not null;default:0"`
-	// 创建时间（毫秒时间戳）
+	// Creation time (millisecond timestamp)
 	CreateTime int64 `gorm:"column:create_time;not null"`
-	// 更新时间（毫秒时间戳）
+	// Update time (millisecond timestamp)
 	UpdateTime int64 `gorm:"column:update_time;not null"`
 }
 
-// TableName 返回表名。
+// TableName returns the table name.
 func (CGAgentThought) TableName() string { return "cg_agent_thought" }
 
-// Thought 状态常量。
+// Thought status constants.
 const (
-	ThoughtStatusRunning   int32 = 1 // 执行中
-	ThoughtStatusCompleted int32 = 2 // 完成
+	ThoughtStatusRunning   int32 = 1 // running
+	ThoughtStatusCompleted int32 = 2 // completed
 )

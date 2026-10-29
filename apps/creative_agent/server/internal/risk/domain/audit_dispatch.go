@@ -6,25 +6,25 @@ import (
 	"time"
 )
 
-// DefaultImageTicker 图片风控派发限速间隔。
+// DefaultImageTicker is the image risk-dispatch rate-limit interval.
 //
-// 上游实际常量即 10ms（约 100 张/秒）。语义是**限派发速率、不限并发数**：
-// `<-ticker.C` 节流闸门保证相邻两次派发至少隔一个 interval，但派发后的
-// goroutine 仍并发跑——既不串行慢，也不瞬间打爆下游。
+// The upstream constant is exactly 10ms (~100 images/s). The semantics are **limit the dispatch rate, not the concurrency**:
+// the `<-ticker.C` throttle gate guarantees at least one interval between adjacent dispatches, but the dispatched
+// goroutines still run concurrently — neither serially slow nor bursting the downstream instantly.
 const DefaultImageTicker = 10 * time.Millisecond
 
-// ImageAuditResult 单次图片/文本风控的返回结果。
+// ImageAuditResult is the result of one image/text risk-control call.
 type ImageAuditResult struct {
 	Passed bool
 	Reason string
 	Err    error
 }
 
-// SyncAuditImages 对每张图片单独发起同步风控请求。
+// SyncAuditImages issues one sync risk-control request per image.
 //
-// 机制（设计精讲 §六.3）：`<-ticker.C` 是节流闸门，相邻两次派发至少隔一个 interval；
-// 派发后 goroutine 仍并发跑，所以是**限派发速率、不限并发数**——既不串行慢，也不瞬间打爆下游。
-// 聚合语义（一票否决）：err > !pass > pass（有错优先报错，其次不通过，全过才过）。
+// Mechanism (design deep-dive §6.3): `<-ticker.C` is the throttle gate; adjacent dispatches are at least one interval apart;
+// dispatched goroutines still run concurrently, so it **limits dispatch rate, not concurrency** — neither serially slow nor bursting the downstream.
+// Aggregation semantics (one-vote veto): err > !pass > pass (errors first, then rejections; only all-pass passes).
 func SyncAuditImages(ctx context.Context, backend AuditBackend, req *RiskSubmitRequest, subProduct string) (bool, string, error) {
 	ticker := time.NewTicker(DefaultImageTicker)
 	defer ticker.Stop()
@@ -34,7 +34,7 @@ func SyncAuditImages(ctx context.Context, backend AuditBackend, req *RiskSubmitR
 
 	for _, img := range req.Content.Image {
 		select {
-		case <-ticker.C: // 限速闸门：每次派发前等一个 tick
+		case <-ticker.C: // rate-limit gate: wait one tick before each dispatch
 		case <-ctx.Done():
 			return false, "", ctx.Err()
 		}
@@ -50,14 +50,14 @@ func SyncAuditImages(ctx context.Context, backend AuditBackend, req *RiskSubmitR
 	wg.Wait()
 	close(results)
 
-	// 聚合（一票否决）：先收集全部结果，再按 err > !pass > pass 优先级判定。
-	// 注意：不能遇失败就短路返回——channel 无序，短路会让"错误优先"变成"到达顺序优先"，
-	// 错误可能被不通过的 result 抢先覆盖。先收齐再判定才保证优先级确定。
+	// Aggregation (one-vote veto): collect all results first, then decide by err > !pass > pass priority.
+	// Note: do not short-circuit on failure — channels are unordered, and short-circuiting would turn "errors first" into "arrival order first";
+	// an error could be preempted by a rejected result. Collecting everything first guarantees deterministic priority.
 	return AggregateImageResults(results)
 }
 
-// AggregateImageResults 聚合多张图片/多条文本的审核结果（一票否决）。
-// 优先级：err > !pass > pass（有错优先报错，其次拦截，全过才过）。
+// AggregateImageResults aggregates the audit results of multiple images/texts (one-vote veto).
+// Priority: err > !pass > pass (errors first, then rejections; only all-pass passes).
 func AggregateImageResults(results <-chan ImageAuditResult) (bool, string, error) {
 	firstFail := ""
 	foundFail := false

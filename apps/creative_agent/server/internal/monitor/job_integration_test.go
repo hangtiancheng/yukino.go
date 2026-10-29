@@ -1,15 +1,15 @@
 //go:build integration
 
-// Package monitor 阶段 5 monitor job 集成测试：走真实 MySQL。
+// Package monitor stage-5 monitor job integration tests: against a real MySQL.
 //
-// 运行方式（需 MySQL 可用）：
+// How to run (requires MySQL):
 //
 //	cd base-server && go test -tags=integration ./internal/monitor/ -v
 //
-// 覆盖阶段 5 的验收标准（补偿重试 + 超时兜底）：
-//   - 补偿表 status=0 的记录被 RunCompensationJob 重试：async_audit 类重新提交（auditing 记录被标记已提交）
-//   - 补偿重试有上限（3 次），超限放弃时退积分 + 置 fail
-//   - 超过 24h 的 running 项目被 RunTimeoutJob 退积分 + 置 fail
+// Covers the stage-5 acceptance criteria (compensation retry + timeout fallback):
+//   - status=0 compensation records are retried by RunCompensationJob: async_audit records resubmit (the auditing record is marked submitted)
+//   - compensation retries are capped (3); abandoning beyond the cap refunds points + sets fail
+//   - running projects older than 24h are refunded + set fail by RunTimeoutJob
 package monitor
 
 import (
@@ -24,10 +24,10 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// TestCompensationJobRetriesAsyncAudit 验收：补偿表 status=0 的 async_audit 记录被重试 → 重新提交。
+// TestCompensationJobRetriesAsyncAudit acceptance: a status=0 async_audit compensation record is retried → resubmitted.
 //
-// 构造：一条 status=auditing 的 risk_audit_record + 一条对应补偿记录（payload 含 content_text）。
-// 跑 RunCompensationJob → RetryAsyncAudit 复用原始记录 submitAuditRequest → 记录 task_input 被写 → 补偿标记 done。
+// Setup: one status=auditing risk_audit_record + one matching compensation record (payload contains content_text).
+// Run RunCompensationJob → RetryAsyncAudit reuses the original record's submitAuditRequest → task_input is written → compensation marked done.
 func TestCompensationJobRetriesAsyncAudit(t *testing.T) {
 	db := openMySQLTestDB(t)
 	truncateMonitorTables(t, db)
@@ -36,14 +36,14 @@ func TestCompensationJobRetriesAsyncAudit(t *testing.T) {
 	userID := int64(82001)
 	sessionID := "session-monitor-async-audit"
 
-	// 建 auditing 记录（AsyncAudit 失败前的产物，分表后落 cg_risk_audit_record）
+	// Create the auditing record (the artifact before AsyncAudit failed; stored in cg_risk_audit_record after sharding)
 	recordID, err := m.riskAudit.Insert(ctx, &riskmodel.AuditRecord{
 		UserID: userID, ProjectID: sessionID,
 		TaskType: "risk:async:dujiaapp_mixvideo60s_t2v_output", Status: "auditing",
 	})
 	testx.NoError(t, err)
 
-	// 建补偿记录（status=0），payload 模拟 insertAuditCompensation 写入
+	// Create the compensation record (status=0); the payload simulates what insertAuditCompensation writes
 	payload, _ := json.Marshal(map[string]any{
 		"biz_id":       "pl-99001",
 		"sub_product":  riskmodel.MixVideo60sT2VOutputSubproduct,
@@ -60,26 +60,26 @@ func TestCompensationJobRetriesAsyncAudit(t *testing.T) {
 	})
 	testx.NoError(t, err)
 
-	// 跑补偿 job
+	// Run the compensation job
 	testx.NoError(t, RunCompensationJob(ctx, m.deps))
 
-	// 补偿被标记 done
+	// The compensation is marked done
 	comp, err := m.comp.GetByBizID(ctx, fmt.Sprintf("%d", recordID), creationdomain.BizTypeAsyncAudit)
 	testx.NoError(t, err)
-	testx.Equal(t, creationdomain.CompensationStatusDone, comp.Status, "重试成功 → 补偿标记 done")
+	testx.Equal(t, creationdomain.CompensationStatusDone, comp.Status, "retry success → compensation marked done")
 
-	// auditing 记录被标记已提交（task_input 写入 sub_product + callback 纽带）
+	// The auditing record is marked submitted (task_input holds sub_product + the callback bond)
 	record, err := m.riskAudit.Get(ctx, recordID)
 	testx.NoError(t, err)
-	testx.Equal(t, "auditing", record.Status, "记录保持 auditing（等风控回调）")
-	testx.Contains(t, record.TaskInput, "sub_product", "重试后 task_input 写入提交标记")
+	testx.Equal(t, "auditing", record.Status, "the record stays auditing (awaiting the risk callback)")
+	testx.Contains(t, record.TaskInput, "sub_product", "task_input holds the submission marker after retry")
 }
 
-// TestCompensationJobAbandonsOverLimit 验收：补偿重试超上限（3 次）→ 放弃 + 退积分 + 置 fail。
+// TestCompensationJobAbandonsOverLimit acceptance: compensation retries beyond the cap (3) → abandon + refund points + set fail.
 //
-// 构造：一个已扣分的 running 项目 + 一条 retry_count=2 的 async_audit 补偿记录
-// （payload 缺 content_text，重试必失败）。跑 job → 重试失败 → retry_count 到 3 →
-// 放弃 → 退积分 + 置 fail。
+// Setup: a running project with points deducted + an async_audit compensation record with retry_count=2
+// (payload missing content_text, so the retry must fail). Run the job → retry fails → retry_count reaches 3 →
+// abandon → refund points + set fail.
 func TestCompensationJobAbandonsOverLimit(t *testing.T) {
 	db := openMySQLTestDB(t)
 	truncateMonitorTables(t, db)
@@ -88,7 +88,7 @@ func TestCompensationJobAbandonsOverLimit(t *testing.T) {
 	userID := int64(82002)
 	sessionID := "session-monitor-abandon"
 
-	// 造余额 + 扣分 + 建 running 项目（已扣积分）
+	// Seed the balance + deduct points + create the running project (points already deducted)
 	seedBalance(t, db, userID, 100)
 	now := time.Now().Unix()
 	testx.NoError(t, db.Exec(
@@ -102,7 +102,7 @@ func TestCompensationJobAbandonsOverLimit(t *testing.T) {
 		PointsOrderID: sessionID + "_1", RetryNum: 1,
 	}))
 
-	// 补偿记录：retry_count=2，payload 缺 content_text（重试必失败）
+	// Compensation record: retry_count=2, payload missing content_text (the retry must fail)
 	payload, _ := json.Marshal(map[string]any{
 		"biz_id":       "pl-99002",
 		"sub_product":  riskmodel.MixVideo60sT2VOutputSubproduct,
@@ -119,24 +119,24 @@ func TestCompensationJobAbandonsOverLimit(t *testing.T) {
 	})
 	testx.NoError(t, err)
 
-	// 跑补偿 job
+	// Run the compensation job
 	testx.NoError(t, RunCompensationJob(ctx, m.deps))
 
-	// 补偿被标记 done（放弃）
+	// The compensation is marked done (abandoned)
 	comp, err := m.comp.GetByBizID(ctx, "pl-99002", creationdomain.BizTypeAsyncAudit)
 	testx.NoError(t, err)
-	testx.Equal(t, creationdomain.CompensationStatusDone, comp.Status, "超上限 → 放弃")
-	testx.Equal(t, 3, comp.RetryCount, "重试次数累加到 3")
+	testx.Equal(t, creationdomain.CompensationStatusDone, comp.Status, "beyond the cap → abandoned")
+	testx.Equal(t, 3, comp.RetryCount, "the retry count accumulates to 3")
 
-	// 兜底：项目退积分 + 置 fail
+	// Fallback: the project refunds points + sets fail
 	project, err := m.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(t, err)
-	testx.Equal(t, creationdomain.ProjectStatusFail, project.Status, "放弃时兜底置 fail")
-	testx.Equal(t, creationdomain.PointStatusRefund, project.PointsStatus, "放弃时兜底退积分")
-	testx.Contains(t, project.FailReason, "超时", "兜底走 RefundAndFailTimeout")
+	testx.Equal(t, creationdomain.ProjectStatusFail, project.Status, "abandoning sets fail as the fallback")
+	testx.Equal(t, creationdomain.PointStatusRefund, project.PointsStatus, "abandoning refunds points as the fallback")
+	testx.Contains(t, project.FailReason, "超时", "the fallback goes through RefundAndFailTimeout")
 }
 
-// TestTimeoutJobRefundsStuckProjects 验收：超过 24h 的 running 项目退积分 + 置 fail。
+// TestTimeoutJobRefundsStuckProjects acceptance: running projects older than 24h refund points + set fail.
 func TestTimeoutJobRefundsStuckProjects(t *testing.T) {
 	db := openMySQLTestDB(t)
 	truncateMonitorTables(t, db)
@@ -145,7 +145,7 @@ func TestTimeoutJobRefundsStuckProjects(t *testing.T) {
 	userID := int64(82003)
 	sessionID := "session-monitor-timeout"
 
-	// 造余额 + 扣分 + 建 25h 前创建、仍 running 的项目
+	// Seed the balance + deduct points + create a project created 25h ago, still running
 	seedBalance(t, db, userID, 100)
 	now := time.Now().Unix()
 	testx.NoError(t, db.Exec(
@@ -161,21 +161,21 @@ func TestTimeoutJobRefundsStuckProjects(t *testing.T) {
 		CreateTime: stuckTime, UpdateTime: stuckTime,
 	}))
 
-	// 跑超时 job
+	// Run the timeout job
 	testx.NoError(t, RunTimeoutJob(ctx, m.deps, 24))
 
 	project, err := m.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(t, err)
-	testx.Equal(t, creationdomain.ProjectStatusFail, project.Status, "超时项目置 fail")
-	testx.Equal(t, creationdomain.PointStatusRefund, project.PointsStatus, "超时项目退积分")
+	testx.Equal(t, creationdomain.ProjectStatusFail, project.Status, "the timed-out project is set fail")
+	testx.Equal(t, creationdomain.PointStatusRefund, project.PointsStatus, "the timed-out project refunds points")
 
-	// 余额：种子(100) + 退回(10) = 110（退款是 flow_type=2 入账，加回余额）
+	// Balance: seed(100) + refund(10) = 110 (refunds are flow_type=2 credits, added back to the balance)
 	balance, err := m.points.GetBalance(ctx, userID)
 	testx.NoError(t, err)
-	testx.Equal(t, 110, balance, "超时兜底退回积分（种子 100 + 退款 10）")
+	testx.Equal(t, 110, balance, "the timeout fallback refunds points (seed 100 + refund 10)")
 }
 
-// TestTimeoutJobSkipsFreshProjects 验收：24h 内的 running 项目不被超时 job 处理。
+// TestTimeoutJobSkipsFreshProjects acceptance: running projects within 24h are not processed by the timeout job.
 func TestTimeoutJobSkipsFreshProjects(t *testing.T) {
 	db := openMySQLTestDB(t)
 	truncateMonitorTables(t, db)
@@ -195,5 +195,5 @@ func TestTimeoutJobSkipsFreshProjects(t *testing.T) {
 
 	project, err := m.projects.GetByProjectID(ctx, sessionID)
 	testx.NoError(t, err)
-	testx.Equal(t, creationdomain.ProjectStatusRunning, project.Status, "24h 内项目不被超时处理")
+	testx.Equal(t, creationdomain.ProjectStatusRunning, project.Status, "projects within 24h are not timed out")
 }

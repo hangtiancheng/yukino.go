@@ -13,7 +13,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// 构造临时 skills 目录 + weather/SKILL.md
+// Build a temporary skills directory + weather/SKILL.md
 func writeWeatherSkill(t *testing.T) (root string, gotQuery map[string]string, gotBody map[string]any, closeFn func()) {
 	t.Helper()
 	root = t.TempDir()
@@ -35,31 +35,31 @@ func writeWeatherSkill(t *testing.T) (root string, gotQuery map[string]string, g
 
 	skill := `---
 name: weather
-description: 查询城市天气。当用户询问天气、气温、降雨时调用。
+description: Query city weather. Call when the user asks about weather, temperature, or rain.
 apis:
   - name: query_weather
-    description: 查询指定城市的当前天气
+    description: Query the current weather of the given city
     endpoint: ${WEATHER_API_BASE_URL}/api/weather
     method: GET
     parameters:
       city:
         type: string
-        description: 城市名（中文）
+        description: City name (in Chinese, e.g. 北京)
         required: true
       user_id:
         type: string
         required: true
         injected: true
 ---
-# weather 使用说明
-查询天气时调用 query_weather 工具，传入 city。
+# weather skill usage
+To query the weather, call the query_weather tool with city.
 `
 	testx.NoError(t, os.WriteFile(filepath.Join(weatherDir, "SKILL.md"), []byte(skill), 0o644))
 	t.Setenv("WEATHER_API_BASE_URL", srv.URL)
 	return root, gotQuery, gotBody, closeFn
 }
 
-// FSRepository 扫描 → Summaries 含 weather
+// FSRepository scan → Summaries contains weather
 func TestFSRepository_Summaries(t *testing.T) {
 	root, _, _, closeFn := writeWeatherSkill(t)
 	defer closeFn()
@@ -67,10 +67,10 @@ func TestFSRepository_Summaries(t *testing.T) {
 	testx.NoError(t, err)
 	testx.Len(t, repo.Summaries(), 1)
 	testx.Equal(t, "weather", repo.Summaries()[0].Name)
-	testx.Equal(t, "查询城市天气。当用户询问天气、气温、降雨时调用。", repo.Summaries()[0].Description)
+	testx.Equal(t, "Query city weather. Call when the user asks about weather, temperature, or rain.", repo.Summaries()[0].Description)
 }
 
-// skill_load 前 query_weather 不可见，skill_load 后可见
+// query_weather is invisible before skill_load and visible after
 func TestSkillProvider_LazyLoad(t *testing.T) {
 	root, _, _, closeFn := writeWeatherSkill(t)
 	defer closeFn()
@@ -85,7 +85,7 @@ func TestSkillProvider_LazyLoad(t *testing.T) {
 		names = append(names, d.Name)
 	}
 	testx.Contains(t, names, "skill_load")
-	testx.NotContains(t, names, "query_weather", "未 load 的 skill API 不可见")
+	testx.NotContains(t, names, "query_weather", "APIs of unloaded skills are invisible")
 
 	// skill_load
 	res, handled, _, err := sp.Execute(context.Background(), "skill_load", `{"skill":"weather"}`)
@@ -99,10 +99,10 @@ func TestSkillProvider_LazyLoad(t *testing.T) {
 	for _, d := range defs {
 		names = append(names, d.Name)
 	}
-	testx.Contains(t, names, "query_weather", "load 后 API 应暴露")
+	testx.Contains(t, names, "query_weather", "the API should be exposed after loading")
 }
 
-// 通用执行器：GET → query string + injected 参数注入 + ${VAR} 展开
+// Generic executor: GET → query string + injected parameter injection + ${VAR} expansion
 func TestSkillProvider_ExecuteWeather(t *testing.T) {
 	root, gotQuery, gotBody, closeFn := writeWeatherSkill(t)
 	defer closeFn()
@@ -118,11 +118,11 @@ func TestSkillProvider_ExecuteWeather(t *testing.T) {
 	testx.False(t, isPipeline)
 	testx.Contains(t, res, `"temperature":28`)
 	testx.Equal(t, "北京", gotQuery["city"])
-	testx.Contains(t, gotQuery, "user_id", "injected 参数应由服务端注入")
+	testx.Contains(t, gotQuery, "user_id", "injected parameters should be provided server-side")
 	_ = gotBody
 }
 
-// 未知工具 → handled=false
+// Unknown tool → handled=false
 func TestSkillProvider_UnknownTool(t *testing.T) {
 	root, _, _, closeFn := writeWeatherSkill(t)
 	defer closeFn()

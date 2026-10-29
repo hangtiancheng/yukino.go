@@ -11,17 +11,17 @@ import (
 	yukino_cache "github.com/hangtiancheng/yukino.go/libs/yukino_cache"
 )
 
-// chunkStoreSeq 为每个 MemoryChunkStore 实例生成唯一的 yukino_cache group 名，
-// 避免进程内多实例（测试并行）在 group 注册表中重名。
+// chunkStoreSeq generates a unique yukino_cache group name per MemoryChunkStore instance,
+// avoiding name collisions in the group registry when multiple instances exist in one process (parallel tests).
 var chunkStoreSeq atomic.Int64
 
-// MemoryChunkStore 是 ChunkStore 的进程内实现，底层用 yukino_cache Group 存储
-// 每个 msgID 的 chunk 列表（JSON 编码，带 TTL），通知走进程内 channel 广播。
+// MemoryChunkStore is the in-process implementation of ChunkStore, backed by a yukino_cache Group storing
+// the chunk list per msgID (JSON-encoded, with TTL); notifications are broadcast over in-process channels.
 //
-// 适用于单二进制部署（无 Redis）与单元测试（替代 miniredis）。
-// 键布局与 RedisChunkStore 对齐：
-//   - {msgID}          → chunk 列表 JSON
-//   - end:{msgID}      → end-of-stream 标记（"1"）
+// Suitable for single-binary deployments (no Redis) and unit tests (replacing miniredis).
+// The key layout aligns with RedisChunkStore:
+//   - {msgID}          → chunk-list JSON
+//   - end:{msgID}      → end-of-stream marker ("1")
 type MemoryChunkStore struct {
 	group *yukino_cache.Group
 	ttl   time.Duration
@@ -33,7 +33,7 @@ type MemoryChunkStore struct {
 	notify   map[string][]chan struct{}
 }
 
-// NewMemoryChunkStore 创建基于 yukino_cache 的进程内 ChunkStore。
+// NewMemoryChunkStore creates the yukino_cache-backed in-process ChunkStore.
 func NewMemoryChunkStore() *MemoryChunkStore {
 	name := fmt.Sprintf("cg:chunk:memory:%d", chunkStoreSeq.Add(1))
 	cs := &MemoryChunkStore{
@@ -41,7 +41,7 @@ func NewMemoryChunkStore() *MemoryChunkStore {
 		keyMu:  make(map[string]*sync.Mutex),
 		notify: make(map[string][]chan struct{}),
 	}
-	// getter 恒返回空：chunk 数据只经 Write 写入，无回源加载语义。
+	// The getter always returns empty: chunk data is only written via Write; there is no load-from-source semantics.
 	cs.group = yukino_cache.NewGroup(name, 16<<20,
 		yukino_cache.GetterFunc(func(_ context.Context, _ string) ([]byte, error) {
 			return nil, nil
@@ -51,7 +51,7 @@ func NewMemoryChunkStore() *MemoryChunkStore {
 	return cs
 }
 
-// Close 关闭底层缓存 group（测试清理用；进程级实例可不关闭）。
+// Close shuts down the underlying cache group (for test cleanup; process-level instances may skip it).
 func (cs *MemoryChunkStore) Close() error { return cs.group.Close() }
 
 func (cs *MemoryChunkStore) lockFor(msgID string) *sync.Mutex {
@@ -65,7 +65,7 @@ func (cs *MemoryChunkStore) lockFor(msgID string) *sync.Mutex {
 	return mu
 }
 
-// Write 追加一个 chunk 并广播变更通知；endTurn 时写入 end 标记。
+// Write appends a chunk and broadcasts a change notification; on endTurn it writes the end marker.
 func (cs *MemoryChunkStore) Write(ctx context.Context, msgID, payload string, endTurn bool) error {
 	mu := cs.lockFor(msgID)
 	mu.Lock()
@@ -117,10 +117,10 @@ func (cs *MemoryChunkStore) writeAll(ctx context.Context, msgID string, chunks [
 	return nil
 }
 
-// After 先订阅通知再读取存量 chunk（与 RedisChunkStore 相同的 race-free 顺序），
-// 返回 cursor 之后的 chunk、新游标与变更通知 channel（ctx 取消时关闭）。
+// After subscribes to notifications before reading existing chunks (the same race-free order as RedisChunkStore),
+// returning the chunks after the cursor, the new cursor, and the change-notification channel (closed when ctx is canceled).
 func (cs *MemoryChunkStore) After(ctx context.Context, msgID string, cursor int64) ([]Chunk, int64, <-chan struct{}, error) {
-	// Step 1: 先订阅，避免读到订阅之间的写入丢失。
+	// Step 1: subscribe first, so writes happening between subscription and read are not lost.
 	notify := cs.subscribe(msgID)
 	go func() {
 		<-ctx.Done()
@@ -128,7 +128,7 @@ func (cs *MemoryChunkStore) After(ctx context.Context, msgID string, cursor int6
 		close(notify)
 	}()
 
-	// Step 2: 读取存量。
+	// Step 2: read the existing data.
 	mu := cs.lockFor(msgID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -147,7 +147,7 @@ func (cs *MemoryChunkStore) After(ctx context.Context, msgID string, cursor int6
 	return chunks, cursor + int64(len(chunks)), notify, nil
 }
 
-// HasEndTurn 检查 end-of-stream 标记是否存在。
+// HasEndTurn checks whether the end-of-stream marker exists.
 func (cs *MemoryChunkStore) HasEndTurn(ctx context.Context, msgID string) (bool, error) {
 	view, err := cs.group.Get(ctx, "end:"+msgID)
 	if err != nil {

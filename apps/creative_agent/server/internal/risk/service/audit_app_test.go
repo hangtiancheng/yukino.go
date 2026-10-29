@@ -11,16 +11,16 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/creative_agent/server/pkg/testx"
 )
 
-// --- stub 实现 ---
+// --- Stub implementations ---
 
-// stubBackend 固定返回通过的 backend。
+// stubBackend is a backend that always passes.
 type stubBackend struct{}
 
 func (stubBackend) Submit(ctx context.Context, req *domain.RiskSubmitRequest, subProduct string) (bool, string, error) {
 	return true, "", nil
 }
 
-// scriptedBackend 按顺序返回预置结果的假 backend（并发场景用锁保护下标）。
+// scriptedBackend is a fake backend returning scripted outcomes in order (index guarded by a mutex for concurrency).
 type auditOutcome struct {
 	passed bool
 	reason string
@@ -44,7 +44,7 @@ func (b *scriptedBackend) Submit(ctx context.Context, req *domain.RiskSubmitRequ
 	return r.passed, r.reason, r.err
 }
 
-// stubRecords 内存仓储。
+// stubRecords is the in-memory repository.
 type stubRecords struct {
 	records []*domain.AuditRecord
 }
@@ -77,7 +77,7 @@ func (s *stubRecords) MarkTerminal(ctx context.Context, id uint64, status string
 	return true, nil
 }
 
-// stubSink 记录补偿写入调用的假 sink。
+// stubSink is a fake sink recording compensation-write calls.
 type stubSink struct {
 	mu          sync.Mutex
 	calls       int
@@ -96,7 +96,7 @@ func (s *stubSink) InsertAuditCompensation(ctx context.Context, req *domain.Risk
 	return nil
 }
 
-// stubBlacklist 固定返回命中的假黑名单检查器。
+// stubBlacklist is a fake blacklist checker that always hits.
 type stubBlacklist struct {
 	hit bool
 }
@@ -105,7 +105,7 @@ func (b stubBlacklist) IsBlacklisted(ctx context.Context, userID int64, subProdu
 	return b.hit
 }
 
-// --- 同步送审 ---
+// --- Sync submission ---
 
 func TestSyncAuditPasses(t *testing.T) {
 	app := service.NewRiskAuditApp(stubBackend{}, &stubRecords{}, nil, nil)
@@ -131,7 +131,7 @@ func TestSyncAuditBlocksOnSensitiveWord(t *testing.T) {
 }
 
 func TestSyncAuditImageOneVetoBlocksAll(t *testing.T) {
-	// 3 张图，第 2 张不通过 → 一票否决
+	// 3 images, the 2nd rejected → one-vote veto
 	backend := &scriptedBackend{results: []auditOutcome{
 		{passed: true},
 		{passed: false, reason: "含违规图"},
@@ -143,12 +143,12 @@ func TestSyncAuditImageOneVetoBlocksAll(t *testing.T) {
 	}}
 	passed, reason, err := app.SyncAudit(context.Background(), req, "img_sub")
 	testx.NoError(t, err)
-	testx.False(t, passed, "一票否决：任一图片不通过则整体失败")
+	testx.False(t, passed, "one-vote veto: any rejected image fails the whole round")
 	testx.Equal(t, "含违规图", reason)
 }
 
 func TestSyncAuditImageErrorPriorityOverFail(t *testing.T) {
-	// 聚合语义 err > !pass > pass：有图片报错优先报错
+	// Aggregation semantics err > !pass > pass: an image error takes priority
 	backend := &scriptedBackend{results: []auditOutcome{
 		{passed: false, reason: "违规"},
 		{passed: false, err: errors.New("backend down")},
@@ -158,12 +158,12 @@ func TestSyncAuditImageErrorPriorityOverFail(t *testing.T) {
 		Image: []domain.AuditImage{{URL: "a.png"}, {URL: "b.png"}},
 	}}
 	passed, reason, err := app.SyncAudit(context.Background(), req, "img_sub")
-	testx.Error(t, err, "有错优先报错")
+	testx.Error(t, err, "errors take priority")
 	testx.False(t, passed)
 	testx.Empty(t, reason)
 }
 
-// --- 异步送审 ---
+// --- Async submission ---
 
 func TestAsyncAuditInsertsAuditingRecord(t *testing.T) {
 	records := &stubRecords{}
@@ -186,7 +186,7 @@ func TestAsyncAuditInsertsAuditingRecord(t *testing.T) {
 	testx.Equal(t, "risk:async:dujiaapp_mixvideo60s_t2v_output", rec.TaskType)
 	testx.Equal(t, domain.StatusAuditing, rec.Status)
 
-	// 回调纽带已回填进请求，task_input 记录了提交入参
+	// The callback bonds are backfilled into the request; task_input records the submission inputs
 	testx.Equal(t, "http://cb/risk", req.CallbackURL)
 	testx.Equal(t, "1", req.Extra["callback_record_id"])
 	testx.Contains(t, rec.TaskInput, "dujiaapp_mixvideo60s_t2v_output")
@@ -194,7 +194,7 @@ func TestAsyncAuditInsertsAuditingRecord(t *testing.T) {
 }
 
 func TestAsyncAuditSubmitFailureWritesCompensation(t *testing.T) {
-	// 空内容 → submitAuditRequest 校验失败 → 补偿记录被写入，且复用原始 recordID
+	// Empty content → submitAuditRequest validation fails → a compensation record is written, reusing the original recordID
 	records := &stubRecords{}
 	sink := &stubSink{}
 	app := service.NewRiskAuditApp(stubBackend{}, records, sink, nil)
@@ -203,17 +203,17 @@ func TestAsyncAuditSubmitFailureWritesCompensation(t *testing.T) {
 	id, err := app.AsyncAudit(context.Background(), req, "sp", "")
 	testx.Error(t, err)
 	testx.Equal(t, int64(0), id)
-	testx.Equal(t, 1, sink.calls, "提交失败应写一条补偿记录")
+	testx.Equal(t, 1, sink.calls, "a submission failure should write one compensation record")
 	testx.Equal(t, "sp", sink.lastProduct)
-	testx.Equal(t, int64(1), sink.lastID, "补偿复用原始 recordID")
+	testx.Equal(t, int64(1), sink.lastID, "compensation reuses the original recordID")
 	testx.Equal(t, req, sink.lastReq)
-	// 原始记录仍为 auditing（供重试复用）
+	// The original record stays auditing (for retry reuse)
 	testx.Len(t, records.records, 1)
 	testx.Equal(t, domain.StatusAuditing, records.records[0].Status)
 }
 
 func TestAsyncAuditSubmitFailureWithoutSinkSkips(t *testing.T) {
-	// sink 未注入（nil）时提交失败不 panic，仅返回错误
+	// With no sink injected (nil), a submission failure does not panic; it only returns the error
 	records := &stubRecords{}
 	app := service.NewRiskAuditApp(stubBackend{}, records, nil, nil)
 
@@ -223,13 +223,13 @@ func TestAsyncAuditSubmitFailureWithoutSinkSkips(t *testing.T) {
 	testx.Equal(t, 1, len(records.records))
 }
 
-// --- 异步补偿重试 ---
+// --- Async compensation retry ---
 
 func TestRetryAsyncAuditRebuildsRequest(t *testing.T) {
 	records := &stubRecords{}
 	app := service.NewRiskAuditApp(stubBackend{}, records, nil, nil)
 
-	// 预置一条 auditing 记录（record_id=42），重试复用原始记录走 submitAuditRequest
+	// Pre-create an auditing record (record_id=42); the retry reuses the original record through submitAuditRequest
 	_, err := records.Insert(context.Background(), &domain.AuditRecord{
 		UserID:    7,
 		ProjectID: "p1",
@@ -250,7 +250,7 @@ func TestRetryAsyncAuditRebuildsRequest(t *testing.T) {
 	err = app.RetryAsyncAudit(context.Background(), payload)
 	testx.NoError(t, err)
 
-	// task_input 记录了对账纽带：sub_product + callback_record_id
+	// task_input records the reconciliation bonds: sub_product + callback_record_id
 	rec := records.records[0]
 	testx.Equal(t, uint64(1), rec.ID)
 	testx.Contains(t, rec.TaskInput, `"sub_product":"sp"`)
@@ -275,7 +275,7 @@ func TestRetryAsyncAuditMissingFields(t *testing.T) {
 	testx.Contains(t, err.Error(), "content")
 }
 
-// --- 黑名单检查 ---
+// --- Blacklist checks ---
 
 func TestIsBlacklistedHit(t *testing.T) {
 	app := service.NewRiskAuditApp(stubBackend{}, &stubRecords{}, nil, stubBlacklist{hit: true})
@@ -288,10 +288,10 @@ func TestIsBlacklistedMiss(t *testing.T) {
 }
 
 func TestIsBlacklistedNilCheckerOrEmptySubProduct(t *testing.T) {
-	// 未注入黑名单检查器 → 放行
+	// No blacklist checker injected → pass
 	app := service.NewRiskAuditApp(stubBackend{}, &stubRecords{}, nil, nil)
 	testx.False(t, app.IsBlacklisted(context.Background(), 1, "sp"))
-	// 命中检查器但 subProduct 为空 → 放行
+	// Checker present but subProduct empty → pass
 	app = service.NewRiskAuditApp(stubBackend{}, &stubRecords{}, nil, stubBlacklist{hit: true})
 	testx.False(t, app.IsBlacklisted(context.Background(), 1, ""))
 }

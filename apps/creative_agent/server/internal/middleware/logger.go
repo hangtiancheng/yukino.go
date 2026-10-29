@@ -12,8 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// Logger 返回一个基于 zap 的结构化请求日志中间件。
-// 日志级别按 HTTP 状态码自动分级：
+// Logger returns a zap-based structured request-logging middleware.
+// The log level is graded automatically by HTTP status code:
 //
 //	2xx → Info, 4xx → Warn, 5xx → Error
 func Logger(logger *zap.Logger) yukino.Middleware {
@@ -22,7 +22,7 @@ func Logger(logger *zap.Logger) yukino.Middleware {
 		path := ctx.Request.URL.Path
 		query := ctx.Request.URL.RawQuery
 
-		// 从请求 ctx（OTel 中间件已注入 span）派生带 trace_id/span_id 的 logger。
+		// Derive a logger with trace_id/span_id from the request ctx (the OTel middleware has injected the span).
 		logger := tracex.Logger(logger, ctx.Request.Context())
 
 		next()
@@ -53,7 +53,7 @@ func Logger(logger *zap.Logger) yukino.Middleware {
 	}
 }
 
-// ClientIP 从请求中提取客户端 IP：优先 X-Forwarded-For 首段，回退 RemoteAddr。
+// ClientIP extracts the client IP from the request: the first X-Forwarded-For entry takes priority, falling back to RemoteAddr.
 func ClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {

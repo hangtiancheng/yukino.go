@@ -26,7 +26,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  // 已登录直接回首页
+  // Already signed in: go straight to the home page
   if (token) {
     void navigate({ to: "/", replace: true });
   }
@@ -49,9 +49,9 @@ export function LoginPage() {
     <div className="bg-muted/40 flex min-h-svh items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">登录</CardTitle>
+          <CardTitle className="text-xl">Sign in</CardTitle>
           <CardDescription>
-            yukino-creative-agent 智能体对话系统
+            yukino-creative-agent conversational agent system
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -63,7 +63,7 @@ export function LoginPage() {
           <form onSubmit={onSubmit}>
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="username">用户名</FieldLabel>
+                <FieldLabel htmlFor="username">Username</FieldLabel>
                 <Input
                   id="username"
                   value={username}
@@ -73,7 +73,7 @@ export function LoginPage() {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="password">密码</FieldLabel>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
                 <Input
                   id="password"
                   type="password"
@@ -87,24 +87,24 @@ export function LoginPage() {
                 {pending ? (
                   <>
                     <Spinner data-icon="inline-start" />
-                    登录中...
+                    Signing in...
                   </>
                 ) : (
                   <>
                     <LogIn data-icon="inline-start" />
-                    登录
+                    Sign in
                   </>
                 )}
               </Button>
             </FieldGroup>
           </form>
           <p className="text-muted-foreground mt-4 text-center text-sm">
-            还没有账号？{" "}
+            No account yet?{" "}
             <Link
               to="/register"
               className="text-primary font-medium underline-offset-4 hover:underline"
             >
-              立即注册
+              Register now
             </Link>
           </p>
         </CardContent>

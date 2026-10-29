@@ -137,7 +137,7 @@ func (s *MiddlewareSuite) TestJWTAllowsValidToken() {
 	testx.Equal(s.T(), http.StatusOK, w.Code)
 }
 
-// TestJWTAllowsLowercaseBearer 验证 scheme 大小写不敏感（RFC 6750：bearer xxx 也应通过）。
+// TestJWTAllowsLowercaseBearer verifies that the scheme is case-insensitive (RFC 6750: bearer xxx should also pass).
 func (s *MiddlewareSuite) TestJWTAllowsLowercaseBearer() {
 	auth := service.NewAuthService("test-secret")
 	token, err := auth.GenerateToken("alice", 7)
@@ -158,7 +158,7 @@ func (s *MiddlewareSuite) TestJWTAllowsLowercaseBearer() {
 	testx.Equal(s.T(), http.StatusOK, w.Code)
 }
 
-// TestJWTAllowsQueryToken 验证无 Authorization 头时回退 query 参数 ?token= 鉴权。
+// TestJWTAllowsQueryToken verifies the fallback to the ?token= query parameter when there is no Authorization header.
 func (s *MiddlewareSuite) TestJWTAllowsQueryToken() {
 	auth := service.NewAuthService("test-secret")
 	token, err := auth.GenerateToken("alice", 7)

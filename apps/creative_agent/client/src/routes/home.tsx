@@ -34,31 +34,31 @@ export function HomePage() {
           <div className="flex items-center gap-2">
             <Button render={<Link to="/conversation" />}>
               <MessageSquare data-icon="inline-start" />
-              智能对话
+              Chat
             </Button>
             <Button variant="outline" onClick={onLogout}>
               <LogOut data-icon="inline-start" />
-              登出
+              Sign out
             </Button>
           </div>
         </header>
 
         <Card>
           <CardHeader>
-            <CardTitle>欢迎</CardTitle>
+            <CardTitle>Welcome</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
               {claims?.username
-                ? `你好，${claims.username}！欢迎回来。`
-                : "你好！欢迎回来。"}
+                ? `Hello, ${claims.username}! Welcome back.`
+                : "Hello! Welcome back."}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>受保护接口 /api/v1/example</CardTitle>
+            <CardTitle>Protected endpoint /api/v1/example</CardTitle>
           </CardHeader>
           <CardContent>
             {exampleQuery.isPending ? (
@@ -69,7 +69,7 @@ export function HomePage() {
             ) : exampleQuery.isError ? (
               <Alert variant="destructive">
                 <AlertDescription>
-                  加载失败：
+                  Failed to load:{" "}
                   {exampleQuery.error instanceof Error
                     ? exampleQuery.error.message
                     : String(exampleQuery.error)}

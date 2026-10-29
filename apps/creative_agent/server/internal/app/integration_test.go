@@ -30,14 +30,14 @@ type IntegrationSuite struct {
 }
 
 func (s *IntegrationSuite) SetupSuite() {
-	// go test 的 CWD 是 internal/app/，而 config.Load 与 secrets.json 合并使用相对路径，
-	// 因此先切到仓库根目录，确保能读到 config/config.json 与 config/secrets.json。
+	// go test's CWD is internal/app/, while config.Load merges secrets.json using relative paths,
+	// so switch to the repository root first to ensure config/config.json and config/secrets.json are readable.
 	_, filename, _, _ := runtime.Caller(0)
 	repoRoot := filepath.Join(filepath.Dir(filename), "..", "..")
 	s.Require().NoError(os.Chdir(repoRoot))
 
 	cfg := config.Load("config/config.json")
-	cfg.Redis.DB = 1 // 独立 db，避免污染开发缓存
+	cfg.Redis.DB = 1 // separate db, avoiding pollution of the development cache
 	application, err := app.New(cfg)
 	s.Require().NoError(err)
 	s.Require().NotNil(application.Redis)
@@ -132,7 +132,7 @@ func (s *IntegrationSuite) TestFiveFailuresLockAccount() {
 	for i := 0; i < 5; i++ {
 		s.do(http.MethodPost, "/api/v1/login", "", map[string]string{"username": "eve", "password": "wrong"})
 	}
-	// 第 6 次应被锁定
+	// The 6th attempt should be locked
 	w := s.do(http.MethodPost, "/api/v1/login", "", map[string]string{"username": "eve", "password": "wrong"})
 	testx.Equal(s.T(), http.StatusTooManyRequests, w.Code)
 }
@@ -181,7 +181,7 @@ func (s *IntegrationSuite) TestLogoutRevokesToken() {
 	out := s.do(http.MethodPost, "/api/v1/logout", token, nil)
 	testx.Equal(s.T(), http.StatusOK, out.Code)
 
-	// 拉黑后再访问受保护接口应 401
+	// Accessing a protected endpoint after blacklisting should 401
 	w := s.do(http.MethodGet, "/api/v1/example", token, nil)
 	testx.Equal(s.T(), http.StatusUnauthorized, w.Code)
 }

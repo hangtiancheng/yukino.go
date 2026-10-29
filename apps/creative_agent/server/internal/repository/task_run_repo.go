@@ -10,39 +10,39 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrTaskRunNotFound 表示未找到对应 task_run 记录。
+// ErrTaskRunNotFound indicates no matching task_run record was found.
 var ErrTaskRunNotFound = errors.New("task run not found")
 
-// ErrTaskRunConflict 表示 CAS 抢占冲突（已被其他 executor 抢占）。
+// ErrTaskRunConflict indicates a CAS claim conflict (already claimed by another executor).
 var ErrTaskRunConflict = errors.New("task run conflict: already taken by another executor")
 
-// TaskRunRepository 封装 cg_task_run 表的数据访问。
+// TaskRunRepository encapsulates data access to the cg_task_run table.
 //
-// 核心语义：
-//   - Insert: 可靠性第一道——Submitter 先建 task_run(Pending) 再投递
-//   - UpdateCAS: CAS 抢占（WHERE task_run_id=? AND status=expected），防多实例并发执行同一步骤
-//   - UpdateByTaskRunID: 非 CAS 更新（终态、NeedWait 分流等）
+// Core semantics:
+//   - Insert: the first reliability guard — the Submitter creates task_run(Pending) before dispatching
+//   - UpdateCAS: CAS claim (WHERE task_run_id=? AND status=expected), preventing multiple instances from executing the same step concurrently
+//   - UpdateByTaskRunID: non-CAS update (terminal states, NeedWait branching, etc.)
 type TaskRunRepository interface {
-	// Insert 插入一条 task_run 记录。
+	// Insert inserts one task_run record.
 	Insert(ctx context.Context, r *model.CGTaskRun) error
 
-	// GetByTaskRunID 按雪花业务键查询记录。
+	// GetByTaskRunID queries a record by its snowflake business key.
 	GetByTaskRunID(ctx context.Context, taskRunID int64) (*model.CGTaskRun, error)
 
-	// GetByMsgID 按管家 message_id 查询最新一条 task_run（快路径回流定位用）。
+	// GetByMsgID queries the latest task_run by manager message_id (used by the fast-path backflow for locating).
 	GetByMsgID(ctx context.Context, msgID string) (*model.CGTaskRun, error)
 
-	// GetWaitingBySession 查询指定 session + user 下最新一条 Waiting 状态的 run（回调推进定位用）。
+	// GetWaitingBySession queries the latest Waiting run for the given session + user (used by callback advancement for locating).
 	GetWaitingBySession(ctx context.Context, sessionID string, userID int64) (*model.CGTaskRun, error)
 
-	// UpdateCAS 仅当 status 等于 expectedStatus 时更新字段（CAS 语义）。
-	// RowsAffected==0 表示状态已变化（已被抢占或已终态）。
+	// UpdateCAS updates fields only when status equals expectedStatus (CAS semantics).
+	// RowsAffected==0 means the status has changed (already claimed or terminal).
 	UpdateCAS(ctx context.Context, taskRunID int64, expectedStatus int32, assigns map[string]any) (bool, error)
 
-	// UpdateByTaskRunID 无条件按业务键更新字段（不校验当前状态）。
+	// UpdateByTaskRunID updates fields by business key unconditionally (no current-status check).
 	UpdateByTaskRunID(ctx context.Context, taskRunID int64, assigns map[string]any) error
 
-	// MarkTerminal 将 task_run 标记为终态（Finished 或 Failed），并设置 end_time。
+	// MarkTerminal marks the task_run terminal (Finished or Failed) and sets end_time.
 	MarkTerminal(ctx context.Context, taskRunID int64, status int32, reason string) error
 }
 
@@ -50,7 +50,7 @@ type taskRunRepository struct {
 	db *gorm.DB
 }
 
-// NewTaskRunRepository 基于 gorm.DB 创建 TaskRunRepository。
+// NewTaskRunRepository creates a TaskRunRepository on top of gorm.DB.
 func NewTaskRunRepository(db *gorm.DB) TaskRunRepository {
 	return &taskRunRepository{db: db}
 }

@@ -20,7 +20,7 @@ export default defineConfig([
     },
   },
   {
-    // shadcn 生成的 UI 组件同时导出组件与 variants 常量，属标准模式。
+    // shadcn-generated UI components export both the component and variants constants; this is the standard pattern.
     files: ["src/components/ui/**/*.{ts,tsx}"],
     rules: {
       "react-refresh/only-export-components": "off",

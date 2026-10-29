@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	// MaxLoginFail 允许的连续登录失败次数，超过即锁定。
+	// MaxLoginFail is the number of consecutive login failures allowed before locking.
 	MaxLoginFail = 5
-	// LoginLockSecs 失败计数窗口（锁定时长）。
+	// LoginLockSecs is the failure-count window (lock duration).
 	LoginLockSecs = 900
 )
 
@@ -25,12 +25,12 @@ func loginFailKey(username string) string {
 	return fmt.Sprintf("login:fail:%s", username)
 }
 
-// JwtBlacklistKey 返回 jti 对应的黑名单键。供中间件复用。
+// JwtBlacklistKey returns the blacklist key for a jti. Reused by the middleware.
 func JwtBlacklistKey(jti string) string {
 	return fmt.Sprintf("jwt:blacklist:%s", jti)
 }
 
-// 业务错误。
+// Business errors.
 var (
 	ErrUserExists         = errors.New("user already exists")
 	ErrEmailExists        = errors.New("email already exists")
@@ -38,26 +38,26 @@ var (
 	ErrUserLocked         = errors.New("account locked due to too many failed attempts")
 )
 
-// dummyHash 用于用户不存在时执行一次等价开销的 bcrypt 比较，消除时序侧信道，
-// 避免攻击者通过响应时间差异探测用户名是否存在。
+// dummyHash is used to perform an equivalent-cost bcrypt comparison when the user does not exist, eliminating the timing side channel
+// so attackers cannot probe whether a username exists via response-time differences.
 var dummyHash = func() []byte {
 	h, _ := bcrypt.GenerateFromPassword([]byte("dummy-timing-equalizer"), bcrypt.DefaultCost)
 	return h
 }()
 
-// UserService 承载用户注册、登录、登出业务逻辑。
+// UserService carries the business logic for user registration, login, and logout.
 type UserService struct {
 	repo repository.UserRepository
 	rdb  *redis.Client
 	auth *AuthService
 }
 
-// NewUserService 创建 UserService。
+// NewUserService creates a UserService.
 func NewUserService(repo repository.UserRepository, rdb *redis.Client, auth *AuthService) *UserService {
 	return &UserService{repo: repo, rdb: rdb, auth: auth}
 }
 
-// Register 注册新用户：查重（用户名 + 邮箱）、bcrypt 哈希、入库。
+// Register creates a new user: duplicate checks (username + email), bcrypt hashing, persistence.
 func (s *UserService) Register(ctx context.Context, username, password, email string) error {
 	if _, err := s.repo.FindByUsername(ctx, username); err == nil {
 		return ErrUserExists
@@ -78,14 +78,14 @@ func (s *UserService) Register(ctx context.Context, username, password, email st
 		Password: string(hash),
 		Email:    email,
 	})
-	// 并发下查重与插入之间的竞态由唯一索引兜底。
+	// Under concurrency, the race between the duplicate check and the insert is covered by the unique index.
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return ErrUserExists
 	}
 	return err
 }
 
-// Login 校验用户名密码并签发 token，含失败计数限流。
+// Login validates the username/password and issues a token, with failure-count rate limiting.
 func (s *UserService) Login(ctx context.Context, username, password string) (string, error) {
 	if s.rdb != nil {
 		if failCount, _ := s.rdb.Get(ctx, loginFailKey(username)).Int(); failCount >= MaxLoginFail {
@@ -95,7 +95,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 
 	user, err := s.repo.FindByUsername(ctx, username)
 	if err != nil {
-		// 用户不存在时也做一次等价 bcrypt 比较，避免通过响应时序探测用户是否存在。
+		// Perform an equivalent bcrypt comparison even when the user does not exist, so user existence cannot be probed via response timing.
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		s.recordLoginFail(ctx, username)
 		return "", ErrInvalidCredentials
@@ -125,8 +125,8 @@ func (s *UserService) recordLoginFail(ctx context.Context, username string) {
 	}
 }
 
-// LogoutByJTI 将指定 jti 写入 Redis 黑名单，TTL 为 token 剩余有效期。
-// jti 与 exp 由 JWT 中间件解析后注入 gin.Context，避免在登出处重复解析 token。
+// LogoutByJTI writes the given jti into the Redis blacklist with a TTL equal to the token's remaining validity.
+// jti and exp are parsed by the JWT middleware and injected into the context, avoiding re-parsing the token at logout.
 func (s *UserService) LogoutByJTI(ctx context.Context, jti string, exp time.Time) error {
 	if s.rdb == nil || jti == "" {
 		return nil

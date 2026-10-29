@@ -2,32 +2,32 @@ package domain
 
 import "errors"
 
-// 作品状态机（status 四态）。
+// Work state machine (four status states).
 const (
-	ProjectStatusDone    = "done"    // 完成（终态，不可逆）
-	ProjectStatusFail    = "fail"    // 失败（终态，不可逆）
-	ProjectStatusRunning = "running" // 生成中
-	ProjectStatusAudit   = "audit"   // 风控中（仅成片视频异步风控用，中间态）
+	ProjectStatusDone    = "done"    // done (terminal, irreversible)
+	ProjectStatusFail    = "fail"    // failed (terminal, irreversible)
+	ProjectStatusRunning = "running" // generating
+	ProjectStatusAudit   = "audit"   // under risk control (only for final-video async risk control; intermediate state)
 )
 
-// 积分状态（points_status 三态）。
+// Points status (three points_status states).
 const (
-	PointStatusUnUsed = 0 // 未扣除
-	PointStatusUsed   = 1 // 已扣除
-	PointStatusRefund = 2 // 已退款
+	PointStatusUnUsed = 0 // not deducted
+	PointStatusUsed   = 1 // deducted
+	PointStatusRefund = 2 // refunded
 )
 
-// 角色类型（决定走哪条处理路径）。
+// Role types (decide which processing path to take).
 const (
-	RoleTypeDirector       = 1 // 艺术总监
-	RoleTypePointOfView    = 2 // 点子王（脑洞）
-	RoleTypeScreenplay     = 3 // 金牌编剧
-	RoleTypeVisualDesigner = 4 // 视觉设计师（妙图）
-	RoleTypeEditor         = 5 // 剪辑大师（混剪/妙影）
-	RoleTypeDataAnalyst    = 6 // 数据分析师
+	RoleTypeDirector       = 1 // art director
+	RoleTypePointOfView    = 2 // idea king (brainstorm)
+	RoleTypeScreenplay     = 3 // gold scriptwriter
+	RoleTypeVisualDesigner = 4 // visual designer (instant image)
+	RoleTypeEditor         = 5 // edit master (mix-cut / instant video)
+	RoleTypeDataAnalyst    = 6 // data analyst
 )
 
-// 创作类型。
+// Creation types.
 const (
 	ProjectTypeMixVideo      = "mix_video"
 	ProjectTypeMiaotuImage   = "miaotu"
@@ -37,26 +37,26 @@ const (
 	ProjectTypeStoryDialogue = "story_dialogue"
 )
 
-// 重试类型。
+// Retry types.
 const (
-	RetryTypeNone   = 0 // 不重试
-	RetryTypeFail   = 1 // 失败重试（会触发再扣一次积分）
-	RetryTypeResend = 2 // 不满意重试
+	RetryTypeNone   = 0 // no retry
+	RetryTypeFail   = 1 // failure retry (triggers another points deduction)
+	RetryTypeResend = 2 // dissatisfaction retry
 )
 
-// 回调步骤：单步 / 多步（随算子入参透传，回调时据此路由）。
+// Callback step: single / multi (passed through with the operator inputs; callbacks route by it).
 const (
 	CallbackStepOnly  = "only"
 	CallbackStepMulti = "multi"
 )
 
-// 任务类型（任务卡）：响应里 task_type 的取值。
+// Task types (task cards): the task_type values in responses.
 const (
 	TaskTypePushCard   = "push_card"
 	TaskTypeNewSession = "new_session"
 )
 
-// 卡片类型（task_arguments.card_type 取值）。
+// Card types (task_arguments.card_type values; protocol strings, kept in Chinese).
 const (
 	CardTypeInputRisk         = "输入风控卡"
 	CardTypeAuditPassed       = "审核通过卡"
@@ -72,35 +72,35 @@ const (
 	CardTypeBrainstormResult  = "脑洞结果卡"
 )
 
-// 回调任务状态（task_detail 回调的 task_status 取值）。
+// Callback task statuses (the task_status values of task_detail callbacks).
 const (
 	CallbackTaskStatusSuccess    = "success"
 	CallbackTaskStatusProcessing = "processing"
 	CallbackTaskStatusFailed     = "failed"
 )
 
-// ErrProjectNotFound 表示未找到对应作品。
+// ErrProjectNotFound indicates no matching work was found.
 var ErrProjectNotFound = errors.New("creation project not found")
 
-// Project 作品聚合根（cg_creation_project）。
+// Project is the work aggregate root (cg_creation_project).
 //
-// 承载有积分角色的状态（视觉设计师/剪辑大师/妙图妙影等最终交付作品）。
-// 一次 session 对应一个 project，全程复用、不做新会话。
-// 状态机：running → audit → done / fail；points_status: 0 未扣 → 1 已扣 → 2 已退。
+// It carries the state of points-bearing roles (final delivered works such as visual designer / edit master / instant image / instant video).
+// One session maps to one project, reused throughout; no new sessions are created.
+// State machine: running → audit → done / fail; points_status: 0 not deducted → 1 deducted → 2 refunded.
 type Project struct {
 	ID               uint64
 	UserID           int64
 	SessionID        string
 	ProjectID        string
 	ProjectType      string
-	ProjectInput     string // JSON，用户输入参数
+	ProjectInput     string // JSON, user input parameters
 	Status           string
 	PointsStatus     int
 	PointsCost       int
 	PointsOrderID    string
 	RetryNum         int
 	FailReason       string
-	Ext              string // JSON: TaskStep 映射、MsgID 等
+	Ext              string // JSON: TaskStep mapping, MsgID, etc.
 	ProductionLineID string
 	Progress         int
 	Title            string
@@ -108,12 +108,12 @@ type Project struct {
 	UpdateTime       int64
 }
 
-// IsTerminal 是否终态。
+// IsTerminal reports whether the state is terminal.
 func (p *Project) IsTerminal() bool {
 	return p.Status == ProjectStatusDone || p.Status == ProjectStatusFail
 }
 
-// MarkDone 置成功终态（幂等：终态不变）。
+// MarkDone sets the success terminal state (idempotent: terminal states never change).
 func (p *Project) MarkDone() bool {
 	if p.IsTerminal() {
 		return false
@@ -123,7 +123,7 @@ func (p *Project) MarkDone() bool {
 	return true
 }
 
-// MarkAudit 置风控中间态（仅 running → audit）。
+// MarkAudit sets the risk-control intermediate state (running → audit only).
 func (p *Project) MarkAudit() bool {
 	if p.Status != ProjectStatusRunning {
 		return false
@@ -132,9 +132,9 @@ func (p *Project) MarkAudit() bool {
 	return true
 }
 
-// MarkFail 置失败终态并尝试退积分。需外部提供退积分回调（跨 points 域）。
-// 返回是否发生状态流转。refund 由 application 层注入（保持领域不依赖 points）。
-// ⚠️ 注意: 当 PointsOrderID != "" 时调用方必须传入非 nil 的 refund，否则积分无法退还（此处仅防御性兜底）。
+// MarkFail sets the failure terminal state and attempts a points refund. An external refund callback is required (crossing the points domain).
+// Returns whether a state transition happened. refund is injected by the application layer (keeping the domain free of points dependencies).
+// ⚠️ Note: when PointsOrderID != "", callers must pass a non-nil refund, otherwise points cannot be refunded (this is only a defensive fallback).
 func (p *Project) MarkFail(reason string, refund func() error) (changed bool, err error) {
 	if p.IsTerminal() {
 		return false, nil
@@ -153,8 +153,8 @@ func (p *Project) MarkFail(reason string, refund func() error) (changed bool, er
 	return true, nil
 }
 
-// MarkTimeout 超时兜底置 fail（仅 running → fail + 退积分）。
-// ⚠️ 注意: 刻意排除 audit 态——audit 归风控回调管，超时 job 不扫风控中作品。
+// MarkTimeout sets fail as the timeout fallback (running → fail + points refund only).
+// ⚠️ Note: the audit state is deliberately excluded — audit belongs to the risk callback; the timeout job does not scan works under risk control.
 func (p *Project) MarkTimeout(reason string, refund func() error) (bool, error) {
 	if p.Status != ProjectStatusRunning {
 		return false, nil
