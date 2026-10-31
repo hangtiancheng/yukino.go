@@ -127,7 +127,7 @@ as `500`.
   components, lucide-react icons, sonner toasts.
 - **Data**: TanStack Query for server state, zod for response validation,
   TanStack Virtual for the trace event list, TanStack Store for preferences
-  (theme, sidebar), zustand for chat state, ahooks for persisted user id.
+  (theme, sidebar), zustand for chat state.
 - **Pages**: Dashboard, Chat (personal/public source toggle, quick prompts,
   per-meal feedback, trace links), Personal Meals (CRUD dialog with slot
   pickers), Public Meals (filterable grid), Traces (filter bar, virtualized
