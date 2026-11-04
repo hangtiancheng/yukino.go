@@ -1,6 +1,6 @@
 module github.com/hangtiancheng/yukino.go/apps/agent/server_proxy
 
-go 1.26.4
+go 1.26.0
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.84.0

@@ -1,6 +1,6 @@
 module github.com/hangtiancheng/yukino.go/apps/task_flow/server
 
-go 1.26.4
+go 1.26.0
 
 require (
 	github.com/getsentry/sentry-go v0.50.0

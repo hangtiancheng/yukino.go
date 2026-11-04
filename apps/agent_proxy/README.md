@@ -21,7 +21,7 @@ Responses surface. Each agent accepts the same three upstream wire protocols:
 
 ## Build
 
-Requires Go 1.26.4 or newer on macOS, Linux, or Windows. The HTTP framework is
+Requires Go 1.26.0 or newer on macOS, Linux, or Windows. The HTTP framework is
 the sibling `yukino_http` module in the Yukino Go workspace.
 
 From this directory:
@@ -165,7 +165,7 @@ Optional flags:
 | `--state-dir`  | `$HOME/.yukino/claude-proxy` or `$HOME/.yukino/codex-proxy`                       | Process state, lock, and log directory             |
 | `--listen`     | `127.0.0.1:17861` (claude), `127.0.0.1:17862` (codex)                             | Loopback IP and port; port `0` chooses a free port |
 | `--foreground` | `false`                                                                           | Run in the foreground; stop with Ctrl-C            |
-| `--transport`  | `stdio`                                                                           | MCP only: `stdio`, `http`, or legacy `sse`          |
+| `--transport`  | `stdio`                                                                           | MCP only: `stdio`, `http`, or legacy `sse`         |
 | `--mcp-listen` | `127.0.0.1:17863`                                                                 | MCP HTTP loopback IP and port                      |
 
 Flags may appear before or after a subcommand. Use the same `--agent` and
@@ -293,11 +293,11 @@ Example MCP client configuration:
 
 The official Go MCP SDK exposes:
 
-| Tool             | Input                                | Behavior                                                                                                    |
-| ---------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Tool             | Input                                | Behavior                                                                                                     |
+| ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `start_proxy`    | Optional `agent`, `protocol`, `name` | Apply the same four selection rules, check the connection, back up settings, and start or switch the service |
-| `shutdown_proxy` | Optional `agent`                    | Stop the selected agent's service and retain settings and backups                                           |
-| `proxy_status`   | Optional `agent`                    | Return agent, provider, model, PID, endpoint, and backup path                                                 |
+| `shutdown_proxy` | Optional `agent`                     | Stop the selected agent's service and retain settings and backups                                            |
+| `proxy_status`   | Optional `agent`                     | Return agent, provider, model, PID, endpoint, and backup path                                                |
 
 Each tool accepts `agent: "claude"` or `agent: "codex"`. Omitting `agent`
 uses the server's `--agent` (default `claude`); empty and unknown values are
@@ -306,7 +306,7 @@ default for later calls. One MCP session can start, inspect, and stop both
 agents independently. For example, call `start_proxy` with:
 
 ```json
-{"agent": "codex", "protocol": "openai-compat", "name": "ds-openai"}
+{ "agent": "codex", "protocol": "openai-compat", "name": "ds-openai" }
 ```
 
 Use `{"agent": "codex"}` with `proxy_status` or `shutdown_proxy` to control
