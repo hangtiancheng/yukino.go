@@ -4,7 +4,6 @@ use (
 	./apps/agent/server
 	./apps/agent_proxy
 	./apps/creative_agent/server
-	./apps/takeout_agent/server
 	./apps/task_flow/server
 	./components/consistent_cache
 	./components/consistent_hash
