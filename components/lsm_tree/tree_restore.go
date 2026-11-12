@@ -1,6 +1,7 @@
 package lsm_tree
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -57,10 +58,20 @@ func (t *Tree) getSortedSSTEntries() ([]fs.DirEntry, error) {
 }
 
 func (t *Tree) loadNode(sstEntry fs.DirEntry) error {
+	level, seq := getLevelSeqFromSSTFile(sstEntry.Name())
+	if level < 0 || level >= len(t.nodes) || seq < 0 {
+		return fmt.Errorf("invalid sst filename: %s", sstEntry.Name())
+	}
 	sstReader, err := NewSSTReader(sstEntry.Name(), t.conf)
 	if err != nil {
 		return err
 	}
+	keepReader := false
+	defer func() {
+		if !keepReader {
+			sstReader.Close()
+		}
+	}()
 
 	blockToFilter, err := sstReader.ReadFilter()
 	if err != nil {
@@ -71,14 +82,17 @@ func (t *Tree) loadNode(sstEntry fs.DirEntry) error {
 	if err != nil {
 		return err
 	}
+	if len(index) == 0 {
+		return fmt.Errorf("sst %s has no index", sstEntry.Name())
+	}
 
 	size, err := sstReader.Size()
 	if err != nil {
 		return err
 	}
 
-	level, seq := getLevelSeqFromSSTFile(sstEntry.Name())
 	t.insertNodeWithReader(sstReader, level, seq, size, blockToFilter, index)
+	keepReader = true
 	return nil
 }
 
@@ -92,12 +106,12 @@ func isSSTFile(name string) bool {
 		return false
 	}
 
-	for _, part := range parts {
-		if _, err := strconv.Atoi(part); err != nil {
-			return false
-		}
+	level, err := strconv.Atoi(parts[0])
+	if err != nil || level < 0 {
+		return false
 	}
-	return true
+	seq, err := strconv.ParseInt(parts[1], 10, 32)
+	return err == nil && seq >= 0
 }
 
 func getLevelSeqFromSSTFile(file string) (level int, seq int32) {
@@ -105,8 +119,8 @@ func getLevelSeqFromSSTFile(file string) (level int, seq int32) {
 	arr := strings.Split(file, "_")
 	level, _ = strconv.Atoi(arr[0])
 	if len(arr) > 1 {
-		_seq, _ := strconv.Atoi(arr[1])
-		seq = int32(_seq)
+		parsed, _ := strconv.ParseInt(arr[1], 10, 32)
+		seq = int32(parsed)
 	}
 	return level, seq
 }
@@ -124,6 +138,9 @@ func (t *Tree) constructMemtable() error {
 		}
 
 		if !strings.HasSuffix(entry.Name(), ".wal") {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimSuffix(entry.Name(), ".wal")); err != nil {
 			continue
 		}
 

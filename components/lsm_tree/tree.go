@@ -2,6 +2,7 @@ package lsm_tree
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,13 @@ type Tree struct {
 }
 
 func NewTree(conf *Config) (*Tree, error) {
+	if conf == nil {
+		return nil, fmt.Errorf("nil lsm tree config")
+	}
+	repair(conf)
+	if err := conf.check(); err != nil {
+		return nil, err
+	}
 	t := Tree{
 		conf:          conf,
 		memCompactC:   make(chan *memTableCompactItem),
@@ -200,11 +208,15 @@ func (t *Tree) levelBinarySearch(level int, key []byte, start, end int) (*Node, 
 }
 
 func (t *Tree) newMemTable() error {
+	memTable := t.conf.MemTableConstructor()
+	if memTable == nil {
+		return fmt.Errorf("memtable constructor returned nil")
+	}
 	walWriter, err := wal.NewWALWriter(t.walFile())
 	if err != nil {
 		return err
 	}
 	t.walWriter = walWriter
-	t.memTable = t.conf.MemTableConstructor()
+	t.memTable = memTable
 	return nil
 }

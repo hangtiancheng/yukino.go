@@ -26,7 +26,9 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	}
 
 	for _, opt := range opts {
-		opt(c.opts)
+		if opt != nil {
+			opt(c.opts)
+		}
 	}
 
 	repairClient(c.opts)
@@ -182,6 +184,9 @@ func (c *Client) Del(ctx context.Context, key string) error {
 }
 
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
+	if keyCount < 0 || keyCount > len(keysAndArgs) {
+		return nil, fmt.Errorf("redis EVAL key count %d out of range [0, %d]", keyCount, len(keysAndArgs))
+	}
 	keys := make([]string, 0, keyCount)
 	args := make([]any, 0, len(keysAndArgs)-keyCount)
 	for i, v := range keysAndArgs {
@@ -197,6 +202,9 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 func (c *Client) SetNEX(ctx context.Context, key, value string, expireSeconds int64) (int64, error) {
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
+	}
+	if expireSeconds <= 0 {
+		return -1, errors.New("redis SET NX expiration must be positive")
 	}
 
 	ok, err := c.client.SetNX(ctx, key, value, time.Duration(expireSeconds)*time.Second).Result()
@@ -225,4 +233,11 @@ func NewUniversalClient(client go_redis.UniversalClient) *Client {
 		panic("nil redis client")
 	}
 	return &Client{client: client}
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.client == nil {
+		return nil
+	}
+	return c.client.Close()
 }

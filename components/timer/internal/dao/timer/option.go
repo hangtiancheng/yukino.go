@@ -1,10 +1,6 @@
 package timer
 
-import (
-	"fmt"
-
-	"gorm.io/gorm"
-)
+import "gorm.io/gorm"
 
 type Option func(*gorm.DB) *gorm.DB
 
@@ -46,7 +42,7 @@ func WithApp(app string) Option {
 
 func WithFuzzyName(name string) Option {
 	return func(d *gorm.DB) *gorm.DB {
-		return d.Where(fmt.Sprintf("name like %q", ("%" + name + "%")))
+		return d.Where("name LIKE ?", "%"+name+"%")
 	}
 }
 

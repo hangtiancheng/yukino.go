@@ -33,7 +33,9 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	}
 
 	for _, opt := range opts {
-		opt(c.opts)
+		if opt != nil {
+			opt(c.opts)
+		}
 	}
 
 	repairClient(c.opts)
@@ -51,12 +53,15 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 }
 
 func (c *Client) Close() error {
+	if c == nil || c.client == nil {
+		return nil
+	}
 	return c.client.Close()
 }
 
 func (c *Client) XADD(ctx context.Context, topic string, maxLen int, key, val string) (string, error) {
-	if topic == "" {
-		return "", errors.New("redis XADD topic can't be empty")
+	if topic == "" || key == "" {
+		return "", errors.New("redis XADD topic and field key must not be empty")
 	}
 
 	args := &go_redis.XAddArgs{
@@ -79,7 +84,7 @@ func (c *Client) XACK(ctx context.Context, topic, groupID, msgID string) error {
 	if err != nil {
 		return err
 	}
-	if reply != 1 {
+	if reply > 1 {
 		return fmt.Errorf("invalid reply: %d", reply)
 	}
 
@@ -91,6 +96,9 @@ func (c *Client) XReadGroupPending(ctx context.Context, groupID, consumerID, top
 }
 
 func (c *Client) XReadGroup(ctx context.Context, groupID, consumerID, topic string, timeoutMilliSeconds int) ([]*MsgEntity, error) {
+	if timeoutMilliSeconds <= 0 {
+		return nil, errors.New("redis XREADGROUP timeout must be positive")
+	}
 	return c.xReadGroup(ctx, groupID, consumerID, topic, timeoutMilliSeconds, false)
 }
 
@@ -181,6 +189,9 @@ func (c *Client) SetNEX(ctx context.Context, key, value string, expireSeconds in
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
 	}
+	if expireSeconds <= 0 {
+		return -1, errors.New("redis SET NX expiration must be positive")
+	}
 
 	ok, err := c.client.SetNX(ctx, key, value, time.Duration(expireSeconds)*time.Second).Result()
 	if err != nil {
@@ -222,11 +233,8 @@ func (c *Client) Incr(ctx context.Context, key string) (int64, error) {
 }
 
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
-	if keyCount < 0 {
-		keyCount = 0
-	}
-	if keyCount > len(keysAndArgs) {
-		keyCount = len(keysAndArgs)
+	if keyCount < 0 || keyCount > len(keysAndArgs) {
+		return nil, fmt.Errorf("redis EVAL key count %d out of range [0, %d]", keyCount, len(keysAndArgs))
 	}
 
 	keys := make([]string, 0, keyCount)

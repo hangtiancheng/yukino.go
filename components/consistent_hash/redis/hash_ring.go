@@ -7,20 +7,26 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock/utils"
 	go_redis "github.com/redis/go-redis/v9"
 )
 
 type RedisHashRing struct {
 	key         string
 	redisClient *Client
+	lockMu      sync.Mutex
+	locks       map[string]*distributed_lock.RedisLock
 }
 
 func NewRedisHashRing(key string, redisClient *Client) *RedisHashRing {
 	return &RedisHashRing{
 		key:         key,
 		redisClient: redisClient,
+		locks:       make(map[string]*distributed_lock.RedisLock),
 	}
 }
 
@@ -37,17 +43,43 @@ func (r *RedisHashRing) getNodeReplicaKey() string {
 }
 
 func (r *RedisHashRing) getNodeDataKey(nodeID string) string {
-	return fmt.Sprintf("redis:consistent_hash:ring:node:data:%s", nodeID)
+	return fmt.Sprintf("redis:consistent_hash:ring:%s:node:data:%s", r.key, nodeID)
 }
 
 func (r *RedisHashRing) Lock(ctx context.Context, expireSeconds int) error {
+	if ctx == nil {
+		return errors.New("nil context")
+	}
 	lock := distributed_lock.NewRedisLock(r.getLockKey(), r.redisClient, distributed_lock.WithExpireSeconds(int64(expireSeconds)))
-	return lock.Lock(ctx)
+	if err := lock.Lock(ctx); err != nil {
+		return err
+	}
+	r.lockMu.Lock()
+	r.locks[utils.GetProcessAndGoroutineIDStr()] = lock
+	r.lockMu.Unlock()
+	return nil
 }
 
 func (r *RedisHashRing) Unlock(ctx context.Context) error {
-	lock := distributed_lock.NewRedisLock(r.getLockKey(), r.redisClient)
-	return lock.Unlock(ctx)
+	if ctx == nil {
+		return errors.New("nil context")
+	}
+	owner := utils.GetProcessAndGoroutineIDStr()
+	r.lockMu.Lock()
+	lock := r.locks[owner]
+	r.lockMu.Unlock()
+	if lock == nil {
+		return errors.New("redis hash ring lock is not owned by this caller")
+	}
+	unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	if err := lock.Unlock(unlockCtx); err != nil {
+		return err
+	}
+	r.lockMu.Lock()
+	delete(r.locks, owner)
+	r.lockMu.Unlock()
+	return nil
 }
 
 func (r *RedisHashRing) Add(ctx context.Context, score int32, nodeID string) error {
@@ -148,7 +180,7 @@ func (r *RedisHashRing) Rem(ctx context.Context, score int32, nodeID string) err
 	}
 
 	if index == -1 {
-		return nil
+		return fmt.Errorf("node %q does not exist at score %d", nodeID, score)
 	}
 
 	if err = r.redisClient.ZRem(ctx, r.getTableKey(), scoreEntities[0].Score); err != nil {
@@ -174,7 +206,10 @@ func (r *RedisHashRing) Nodes(ctx context.Context) (map[string]int, error) {
 	}
 	data := make(map[string]int, len(rawData))
 	for rawKey, rawVal := range rawData {
-		replicas, _ := strconv.Atoi(rawVal)
+		replicas, err := strconv.Atoi(rawVal)
+		if err != nil || replicas <= 0 {
+			return nil, fmt.Errorf("invalid replica count for node %q: %q", rawKey, rawVal)
+		}
 		data[rawKey] = replicas
 	}
 	return data, nil

@@ -79,6 +79,9 @@ type NotifyHTTPParam struct {
 }
 
 func NewTimer(timer *po.Timer) (*Timer, error) {
+	if timer == nil {
+		return nil, errors.New("nil timer")
+	}
 	var param NotifyHTTPParam
 	if err := json.Unmarshal([]byte(timer.NotifyHTTPParam), &param); err != nil {
 		return nil, err

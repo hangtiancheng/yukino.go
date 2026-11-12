@@ -20,7 +20,7 @@ type Node struct {
 }
 
 func NewNode(conf *Config, file string, sstReader *SSTReader, level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*Index) *Node {
-	return &Node{
+	node := &Node{
 		conf:          conf,
 		file:          file,
 		sstReader:     sstReader,
@@ -29,9 +29,12 @@ func NewNode(conf *Config, file string, sstReader *SSTReader, level int, seq int
 		size:          size,
 		blockToFilter: blockToFilter,
 		index:         index,
-		startKey:      index[0].Key,
-		endKey:        index[len(index)-1].Key,
 	}
+	if len(index) > 0 {
+		node.startKey = bytes.Clone(index[0].Key)
+		node.endKey = bytes.Clone(index[len(index)-1].Key)
+	}
+	return node
 }
 
 func (n *Node) GetAll() ([]*KV, error) {

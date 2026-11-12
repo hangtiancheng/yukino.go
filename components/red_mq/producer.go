@@ -18,7 +18,9 @@ func NewProducer(client *redis.Client, opts ...ProducerOption) *Producer {
 	}
 
 	for _, opt := range opts {
-		opt(p.opts)
+		if opt != nil {
+			opt(p.opts)
+		}
 	}
 
 	repairProducer(p.opts)

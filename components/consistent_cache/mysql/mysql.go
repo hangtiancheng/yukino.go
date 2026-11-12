@@ -1,8 +1,9 @@
 package mysql
 
 import (
-	"strings"
+	"errors"
 
+	driver "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -18,8 +19,6 @@ func getDB(dsn string) *gorm.DB {
 }
 
 func IsDuplicateEntryErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "Error 1062")
+	var mysqlErr *driver.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == DuplicateEntryErrCode
 }

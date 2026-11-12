@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -38,32 +39,57 @@ func (t *Tree) compactLevel(level int) {
 	}
 
 	pickedNodes := t.pickCompactNodes(level)
+	if len(pickedNodes) == 0 {
+		return
+	}
 
 	seq := t.levelToSeq[level+1].Load() + 1
 	sstWriter, err := NewSSTWriter(t.sstFile(level+1, seq), t.conf)
 	if err != nil {
 		return
 	}
-	defer sstWriter.Close()
+	defer func() { _ = sstWriter.Close() }()
 
 	sstLimit := t.conf.SSTSize * uint64(math.Pow10(level+1))
-	pickedKVs := t.pickedNodesToKVs(pickedNodes)
+	pickedKVs, err := t.pickedNodesToKVs(pickedNodes)
+	if err != nil || len(pickedKVs) == 0 {
+		return
+	}
 	for i := range pickedKVs {
 		if sstWriter.Size() > sstLimit {
 			size, blockToFilter, index := sstWriter.Finish()
-			t.insertNode(level+1, seq, size, blockToFilter, index)
+			if err := sstWriter.Err(); err != nil {
+				return
+			}
+			if err := sstWriter.Close(); err != nil {
+				_ = os.Remove(path.Join(t.conf.Dir, t.sstFile(level+1, seq)))
+				return
+			}
+			if err := t.insertNode(level+1, seq, size, blockToFilter, index); err != nil {
+				_ = os.Remove(path.Join(t.conf.Dir, t.sstFile(level+1, seq)))
+				return
+			}
 			seq = t.levelToSeq[level+1].Load() + 1
 			sstWriter, err = NewSSTWriter(t.sstFile(level+1, seq), t.conf)
 			if err != nil {
 				return
 			}
-			defer sstWriter.Close()
 		}
 
 		sstWriter.Append(pickedKVs[i].Key, pickedKVs[i].Value)
 		if i == len(pickedKVs)-1 {
 			size, blockToFilter, index := sstWriter.Finish()
-			t.insertNode(level+1, seq, size, blockToFilter, index)
+			if err := sstWriter.Err(); err != nil {
+				return
+			}
+			if err := sstWriter.Close(); err != nil {
+				_ = os.Remove(path.Join(t.conf.Dir, t.sstFile(level+1, seq)))
+				return
+			}
+			if err := t.insertNode(level+1, seq, size, blockToFilter, index); err != nil {
+				_ = os.Remove(path.Join(t.conf.Dir, t.sstFile(level+1, seq)))
+				return
+			}
 		}
 	}
 
@@ -99,10 +125,16 @@ func (t *Tree) pickCompactNodes(level int) []*Node {
 	return pickedNodes
 }
 
-func (t *Tree) pickedNodesToKVs(pickedNodes []*Node) []*KV {
+func (t *Tree) pickedNodesToKVs(pickedNodes []*Node) ([]*KV, error) {
 	memtable := t.conf.MemTableConstructor()
+	if memtable == nil {
+		return nil, fmt.Errorf("memtable constructor returned nil")
+	}
 	for _, node := range pickedNodes {
-		kvs, _ := node.GetAll()
+		kvs, err := node.GetAll()
+		if err != nil {
+			return nil, err
+		}
 		for _, kv := range kvs {
 			memtable.Put(kv.Key, kv.Value)
 		}
@@ -117,7 +149,7 @@ func (t *Tree) pickedNodesToKVs(pickedNodes []*Node) []*KV {
 		})
 	}
 
-	return kvs
+	return kvs, nil
 }
 
 func (t *Tree) removeNodes(level int, nodes []*Node) {
@@ -179,8 +211,18 @@ func (t *Tree) flushMemTable(memTable memtable.MemTable) error {
 	}
 
 	size, blockToFilter, index := sstWriter.Finish()
+	if err := sstWriter.Err(); err != nil {
+		return err
+	}
+	if err := sstWriter.Close(); err != nil {
+		_ = os.Remove(path.Join(t.conf.Dir, t.sstFile(0, seq)))
+		return err
+	}
 
-	t.insertNode(0, seq, size, blockToFilter, index)
+	if err := t.insertNode(0, seq, size, blockToFilter, index); err != nil {
+		_ = os.Remove(path.Join(t.conf.Dir, t.sstFile(0, seq)))
+		return err
+	}
 	t.tryTriggerCompact(0)
 	return nil
 }
@@ -219,29 +261,32 @@ func (t *Tree) insertNodeWithReader(sstReader *SSTReader, level int, seq int32, 
 		return
 	}
 
-	for i := 0; i < len(t.nodes[level])-1; i++ {
-		if bytes.Compare(newNode.End(), t.nodes[level][i+1].Start()) < 0 {
-			t.levelLocks[level].Lock()
-			t.nodes[level] = append(t.nodes[level][:i+1], t.nodes[level][i:]...)
-			t.nodes[level][i+1] = newNode
-			t.levelLocks[level].Unlock()
-			return
-		}
-	}
-
 	t.levelLocks[level].Lock()
-	t.nodes[level] = append(t.nodes[level], newNode)
+	insertAt := sort.Search(len(t.nodes[level]), func(i int) bool {
+		return bytes.Compare(t.nodes[level][i].Start(), newNode.Start()) > 0
+	})
+	t.nodes[level] = append(t.nodes[level], nil)
+	copy(t.nodes[level][insertAt+1:], t.nodes[level][insertAt:])
+	t.nodes[level][insertAt] = newNode
 	t.levelLocks[level].Unlock()
 }
 
-func (t *Tree) insertNode(level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*Index) {
+func (t *Tree) insertNode(level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*Index) error {
+	if level < 0 || level >= len(t.nodes) {
+		return fmt.Errorf("invalid sst level: %d", level)
+	}
 	file := t.sstFile(level, seq)
 	sstReader, err := NewSSTReader(file, t.conf)
 	if err != nil {
-		return
+		return err
+	}
+	if len(index) == 0 {
+		sstReader.Close()
+		return fmt.Errorf("sst %s has no index", file)
 	}
 
 	t.insertNodeWithReader(sstReader, level, seq, size, blockToFilter, index)
+	return nil
 }
 
 func (t *Tree) sstFile(level int, seq int32) string {

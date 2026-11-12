@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -30,7 +31,9 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	}
 
 	for _, opt := range opts {
-		opt(&c.ClientOptions)
+		if opt != nil {
+			opt(&c.ClientOptions)
+		}
 	}
 
 	repairClient(&c.ClientOptions)
@@ -77,6 +80,9 @@ func (c *Client) SetNEX(ctx context.Context, key, value string, expireSeconds in
 	}
 	if expireSeconds <= 0 {
 		return -1, errors.New("redis SET NX expireSeconds must be positive")
+	}
+	if expireSeconds > math.MaxInt64/int64(time.Second) {
+		return -1, errors.New("redis SET NX expiration exceeds time.Duration")
 	}
 
 	ok, err := c.client.SetNX(ctx, key, value, time.Duration(expireSeconds)*time.Second).Result()
@@ -126,7 +132,11 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	args := make([]any, 0, len(keysAndArgs)-keyCount)
 	for i, v := range keysAndArgs {
 		if i < keyCount {
-			keys = append(keys, fmt.Sprintf("%v", v))
+			key, ok := v.(string)
+			if !ok || key == "" {
+				return nil, fmt.Errorf("redis EVAL key %d must be a non-empty string", i)
+			}
+			keys = append(keys, key)
 		} else {
 			args = append(args, v)
 		}
@@ -139,4 +149,11 @@ func NewUniversalClient(client go_redis.UniversalClient) *Client {
 		panic("nil redis client")
 	}
 	return &Client{client: client}
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.client == nil {
+		return nil
+	}
+	return c.client.Close()
 }

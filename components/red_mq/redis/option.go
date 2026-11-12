@@ -43,15 +43,18 @@ func WithWaitMode() ClientOption {
 }
 
 func repairClient(c *ClientOptions) {
-	if c.maxIdle < 0 {
+	if c.maxIdle <= 0 {
 		c.maxIdle = DefaultMaxIdle
 	}
 
-	if c.idleTimeoutSeconds < 0 {
+	if c.idleTimeoutSeconds <= 0 {
 		c.idleTimeoutSeconds = DefaultIdleTimeoutSeconds
 	}
 
-	if c.maxActive < 0 {
+	if c.maxActive <= 0 {
 		c.maxActive = DefaultMaxActive
+	}
+	if c.maxIdle > c.maxActive {
+		c.maxIdle = c.maxActive
 	}
 }

@@ -31,25 +31,46 @@ func NewTXManager(txStore TXStore, opts ...Option) *TXManager {
 	}
 
 	for _, opt := range opts {
-		opt(txManager.opts)
+		if opt != nil {
+			opt(txManager.opts)
+		}
 	}
 
 	repair(txManager.opts)
 
-	go txManager.run()
+	if txStore == nil {
+		close(txManager.done)
+	} else {
+		go txManager.run()
+	}
 	return &txManager
 }
 
 func (t *TXManager) Stop() {
+	if t == nil || t.stop == nil || t.done == nil {
+		return
+	}
 	t.stop()
 	<-t.done
 }
 
 func (t *TXManager) Register(component TCCComponent) error {
+	if t == nil || t.registryCenter == nil {
+		return errors.New("transaction manager is not initialized")
+	}
 	return t.registryCenter.register(component)
 }
 
 func (t *TXManager) Transaction(ctx context.Context, reqs ...*RequestEntity) (string, bool, error) {
+	if t == nil || t.opts == nil {
+		return "", false, errors.New("transaction manager is not initialized")
+	}
+	if t.txStore == nil {
+		return "", false, errors.New("nil transaction store")
+	}
+	if ctx == nil {
+		return "", false, errors.New("nil transaction context")
+	}
 	ctx2, cancel := context.WithTimeout(ctx, t.opts.Timeout)
 	defer cancel()
 
@@ -147,6 +168,9 @@ func (t *TXManager) advanceProgressByTXID(ctx context.Context, txID string) erro
 }
 
 func (t *TXManager) advanceProgress(ctx context.Context, tx *Transaction) error {
+	if tx == nil {
+		return errors.New("nil transaction")
+	}
 	txStatus := tx.getStatus(time.Now().Add(-t.opts.Timeout))
 	if txStatus == TXHanging {
 		return nil
@@ -174,6 +198,9 @@ func (t *TXManager) advanceProgress(ctx context.Context, tx *Transaction) error 
 	}
 
 	for _, component := range tx.Components {
+		if component == nil {
+			return errors.New("nil transaction component")
+		}
 		components, err := t.registryCenter.getComponents(component.ComponentID)
 		if err != nil || len(components) == 0 {
 			return errors.New("get tcc component failed")
@@ -182,7 +209,7 @@ func (t *TXManager) advanceProgress(ctx context.Context, tx *Transaction) error 
 		if err != nil {
 			return err
 		}
-		if resp == nil || !resp.ACK {
+		if resp == nil || !resp.ACK || resp.ComponentID != component.ComponentID || resp.TXID != tx.TXID {
 			return fmt.Errorf("component: %s ack failed", component.ComponentID)
 		}
 	}
@@ -204,15 +231,21 @@ func (t *TXManager) twoPhaseCommit(ctx context.Context, txID string, componentEn
 					TXID:        txID,
 					Data:        componentEntity.Request,
 				})
-				if err != nil || resp == nil || !resp.ACK {
+				if err != nil || resp == nil || !resp.ACK ||
+					resp.ComponentID != componentEntity.Component.ID() || resp.TXID != txID {
 					log.ErrorContextf(ctx2, "tx try failed, tx id: %s, component id: %s, err: %v", txID, componentEntity.Component.ID(), err)
-					if _err := t.txStore.TXUpdate(ctx2, txID, componentEntity.Component.ID(), false); _err != nil {
+					updateCtx, updateCancel := context.WithTimeout(context.WithoutCancel(ctx2), t.opts.Timeout)
+					if _err := t.txStore.TXUpdate(updateCtx, txID, componentEntity.Component.ID(), false); _err != nil {
 						log.ErrorContextf(ctx2, "tx updated failed, tx id: %s, component id: %s, err: %v", txID, componentEntity.Component.ID(), _err)
 					}
+					updateCancel()
 					errCh <- fmt.Errorf("component: %s try failed", componentEntity.Component.ID())
 					return
 				}
-				if err = t.txStore.TXUpdate(ctx2, txID, componentEntity.Component.ID(), true); err != nil {
+				updateCtx, updateCancel := context.WithTimeout(context.WithoutCancel(ctx2), t.opts.Timeout)
+				err = t.txStore.TXUpdate(updateCtx, txID, componentEntity.Component.ID(), true)
+				updateCancel()
+				if err != nil {
 					log.ErrorContextf(ctx2, "tx updated failed, tx id: %s, component id: %s, err: %v", txID, componentEntity.Component.ID(), err)
 					errCh <- err
 				}
@@ -241,6 +274,9 @@ func (t *TXManager) twoPhaseCommit(ctx context.Context, txID string, componentEn
 }
 
 func (t *TXManager) getComponents(ctx context.Context, reqs ...*RequestEntity) (ComponentEntities, error) {
+	if ctx == nil {
+		return nil, errors.New("nil transaction context")
+	}
 	if len(reqs) == 0 {
 		return nil, errors.New("empty task")
 	}

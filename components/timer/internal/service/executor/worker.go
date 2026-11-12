@@ -37,10 +37,15 @@ func NewWorker(timerService *TimerService, taskDAO *task_dao.TaskDAO, httpClient
 }
 
 func (w *Worker) Start(ctx context.Context) {
-	w.timerService.Start(ctx)
+	if w != nil && w.timerService != nil {
+		w.timerService.Start(ctx)
+	}
 }
 
 func (w *Worker) Work(ctx context.Context, timerIDUnixKey string) error {
+	if w == nil || ctx == nil || w.bloomFilter == nil || w.taskDAO == nil || w.timerService == nil || w.httpClient == nil {
+		return fmt.Errorf("executor dependencies and context are required")
+	}
 	timerID, unix, err := utils.SplitTimerIDUnix(timerIDUnixKey)
 	if err != nil {
 		return err
@@ -75,6 +80,9 @@ func (w *Worker) executeAndPostProcess(ctx context.Context, timerID uint, unix i
 }
 
 func (w *Worker) execute(ctx context.Context, timer *vo.Timer) (map[string]any, error) {
+	if w == nil || ctx == nil || w.httpClient == nil || timer == nil || timer.NotifyHTTPParam == nil {
+		return nil, fmt.Errorf("http client, context, timer, and notification parameters are required")
+	}
 	var (
 		resp map[string]any
 		err  error
@@ -96,7 +104,12 @@ func (w *Worker) execute(ctx context.Context, timer *vo.Timer) (map[string]any, 
 }
 
 func (w *Worker) postProcess(ctx context.Context, resp map[string]any, execErr error, app string, timerID uint, unix int64, execTime time.Time) error {
-	go w.reportMonitorData(app, unix, execTime)
+	if w == nil || ctx == nil || w.bloomFilter == nil || w.taskDAO == nil {
+		return fmt.Errorf("executor post-process dependencies and context are required")
+	}
+	if w.reporter != nil {
+		go w.reportMonitorData(app, unix, execTime)
+	}
 	if err := w.bloomFilter.Set(ctx, utils.GetTaskBloomFilterKey(utils.GetDayStr(time.UnixMilli(unix))), utils.UnionTimerIDUnix(timerID, unix), consts.BloomFilterKeyExpireSeconds); err != nil {
 		log.ErrorContextf(ctx, "set bloom filter failed, key: %s, err: %v", utils.GetTaskBloomFilterKey(utils.GetDayStr(time.UnixMilli(unix))), err)
 	}
@@ -119,6 +132,9 @@ func (w *Worker) postProcess(ctx context.Context, resp map[string]any, execErr e
 }
 
 func (w *Worker) reportMonitorData(app string, expectExecTimeUnix int64, actualExecTime time.Time) {
+	if w == nil || w.reporter == nil {
+		return
+	}
 	w.reporter.ReportExecRecord(app)
 	w.reporter.ReportTimerDelayRecord(app, float64(actualExecTime.UnixMilli()-expectExecTimeUnix))
 }

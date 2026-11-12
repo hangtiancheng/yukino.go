@@ -1,6 +1,7 @@
 package consistent_cache
 
 import (
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -69,15 +70,17 @@ func WithLogger(logger Logger) Option {
 }
 
 func repair(o *Options) {
-	if o.cacheExpireSeconds <= 0 {
+	maxExpireSeconds := int64(math.MaxInt64) / int64(time.Second)
+	if o.cacheExpireSeconds <= 0 || o.cacheExpireSeconds > maxExpireSeconds ||
+		(o.cacheExpireRandomMode && o.cacheExpireSeconds > maxExpireSeconds/2) {
 		o.cacheExpireSeconds = DefaultCacheExpireSeconds
 	}
 
-	if o.disableExpireSeconds <= 0 {
+	if o.disableExpireSeconds <= 0 || o.disableExpireSeconds > maxExpireSeconds {
 		o.disableExpireSeconds = DefaultDisableExpireSeconds
 	}
 
-	if o.enableDelayMillis <= 0 {
+	if o.enableDelayMillis <= 0 || o.enableDelayMillis > int64(math.MaxInt64)/int64(time.Millisecond) {
 		o.enableDelayMillis = DefaultEnableDelayMillis
 	}
 

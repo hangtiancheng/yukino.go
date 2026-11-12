@@ -17,8 +17,8 @@ type BloomFilter struct {
 }
 
 func NewBloomFilter(m int) (*BloomFilter, error) {
-	if m <= 0 {
-		return nil, errors.New("m must be positive")
+	if m <= 0 || m > int(^uint(0)>>1)-7 {
+		return nil, errors.New("m must be positive and fit bitmap sizing")
 	}
 	return &BloomFilter{
 		m: m,
@@ -30,10 +30,19 @@ func (bf *BloomFilter) Add(key []byte) {
 }
 
 func (bf *BloomFilter) Exist(bitmap, key []byte) bool {
+	if bf == nil || bf.m <= 0 {
+		return true
+	}
 	if bitmap == nil {
 		bitmap = bf.Hash()
 	}
+	if len(bitmap) != ((bf.m+7)>>3)+1 {
+		return true
+	}
 	k := bitmap[len(bitmap)-1]
+	if k == 0 || k > 30 {
+		return true
+	}
 
 	hashedKey := hashKey(key)
 	delta := (hashedKey >> 17) | (hashedKey << 15)
@@ -78,9 +87,9 @@ func (bf *BloomFilter) bitmap(k uint8) []byte {
 }
 
 func (bf *BloomFilter) bestK() uint8 {
-	k := min(
-		max(
-
-			uint8(69*bf.m/100/len(bf.hashedKeys)), 1), 30)
-	return k
+	if len(bf.hashedKeys) == 0 {
+		return 1
+	}
+	optimal := ((bf.m/100)*69 + (bf.m%100)*69/100) / len(bf.hashedKeys)
+	return uint8(min(max(optimal, 1), 30))
 }

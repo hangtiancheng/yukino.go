@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	go_redis "github.com/redis/go-redis/v9"
@@ -57,6 +58,9 @@ func getRedisClient(config *Config) *go_redis.Client {
 }
 
 func (r *RClient) Get(ctx context.Context, key string) (string, error) {
+	if r == nil || r.client == nil || ctx == nil {
+		return "", errors.New("redis client and context are required")
+	}
 	if key == "" {
 		return "", errors.New("redis GET key can't be empty")
 	}
@@ -75,11 +79,20 @@ func (r *RClient) SetEx(ctx context.Context, key, value string, expireSeconds in
 	if key == "" {
 		return errors.New("redis SET EX key can't be empty")
 	}
+	if expireSeconds <= 0 || expireSeconds > math.MaxInt64/int64(time.Second) {
+		return errors.New("redis SET EX expiration is out of range")
+	}
+	if r == nil || r.client == nil || ctx == nil {
+		return errors.New("redis client and context are required")
+	}
 
 	return r.client.Set(ctx, key, value, time.Duration(expireSeconds)*time.Second).Err()
 }
 
 func (r *RClient) Del(ctx context.Context, key string) error {
+	if r == nil || r.client == nil || ctx == nil {
+		return errors.New("redis client and context are required")
+	}
 	if key == "" {
 		return errors.New("redis DEL key can't be empty")
 	}
@@ -88,18 +101,22 @@ func (r *RClient) Del(ctx context.Context, key string) error {
 }
 
 func (r *RClient) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
-	if keyCount < 0 {
-		keyCount = 0
+	if r == nil || r.client == nil || ctx == nil {
+		return nil, errors.New("redis client and context are required")
+	}
+	if keyCount < 0 || keyCount > len(keysAndArgs) {
+		return nil, fmt.Errorf("redis EVAL key count %d out of range [0, %d]", keyCount, len(keysAndArgs))
 	}
 	argCount := len(keysAndArgs) - keyCount
-	if argCount < 0 {
-		argCount = 0
-	}
 	keys := make([]string, 0, keyCount)
 	args := make([]any, 0, argCount)
 	for i, v := range keysAndArgs {
 		if i < keyCount {
-			keys = append(keys, fmt.Sprintf("%v", v))
+			key, ok := v.(string)
+			if !ok || key == "" {
+				return nil, fmt.Errorf("redis EVAL key %d must be a non-empty string", i)
+			}
+			keys = append(keys, key)
 		} else {
 			args = append(args, v)
 		}
@@ -110,6 +127,12 @@ func (r *RClient) Eval(ctx context.Context, src string, keyCount int, keysAndArg
 func (r *RClient) PExpire(ctx context.Context, key string, expireMillis int64) error {
 	if key == "" {
 		return errors.New("redis PEXPIRE key can't be empty")
+	}
+	if expireMillis <= 0 || expireMillis > math.MaxInt64/int64(time.Millisecond) {
+		return errors.New("redis PEXPIRE expiration is out of range")
+	}
+	if r == nil || r.client == nil || ctx == nil {
+		return errors.New("redis client and context are required")
 	}
 
 	return r.client.PExpire(ctx, key, time.Duration(expireMillis)*time.Millisecond).Err()
@@ -122,4 +145,11 @@ func NewUniversalClient(client go_redis.UniversalClient) *RClient {
 		panic("nil redis client")
 	}
 	return &RClient{client: client}
+}
+
+func (r *RClient) Close() error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	return r.client.Close()
 }

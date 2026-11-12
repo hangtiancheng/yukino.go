@@ -18,12 +18,19 @@ func newRegistryCenter() *registryCenter {
 }
 
 func (r *registryCenter) register(component TCCComponent) error {
+	if component == nil {
+		return errors.New("nil tcc component")
+	}
+	componentID := component.ID()
+	if componentID == "" {
+		return errors.New("empty component id")
+	}
 	r.mux.Lock()
 	defer r.mux.Unlock()
-	if _, ok := r.components[component.ID()]; ok {
+	if _, ok := r.components[componentID]; ok {
 		return errors.New("repeat component id")
 	}
-	r.components[component.ID()] = component
+	r.components[componentID] = component
 	return nil
 }
 

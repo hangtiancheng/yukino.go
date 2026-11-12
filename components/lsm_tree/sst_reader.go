@@ -29,6 +29,9 @@ type SSTReader struct {
 }
 
 func NewSSTReader(file string, conf *Config) (*SSTReader, error) {
+	if conf == nil || conf.SSTFooterSize < 40 {
+		return nil, errors.New("sst reader requires a valid config with a footer size of at least 40 bytes")
+	}
 	src, err := os.OpenFile(path.Join(conf.Dir, file), os.O_RDONLY, 0644)
 	if err != nil {
 		return nil, err
@@ -69,13 +72,19 @@ func (s *SSTReader) ReadFooter() error {
 }
 
 func (s *SSTReader) readFooterLocked() error {
+	stat, err := s.src.Stat()
+	if err != nil {
+		return err
+	}
+	if s.conf.SSTFooterSize <= 0 || stat.Size() < int64(s.conf.SSTFooterSize) {
+		return errors.New("invalid sst footer size")
+	}
 	if _, err := s.src.Seek(-int64(s.conf.SSTFooterSize), io.SeekEnd); err != nil {
 		return err
 	}
 
 	s.reader.Reset(s.src)
 
-	var err error
 	if s.filterOffset, err = binary.ReadUvarint(s.reader); err != nil {
 		return err
 	}
@@ -90,6 +99,12 @@ func (s *SSTReader) readFooterLocked() error {
 
 	if s.indexSize, err = binary.ReadUvarint(s.reader); err != nil {
 		return err
+	}
+	fileSize := uint64(stat.Size())
+	footerSize := uint64(s.conf.SSTFooterSize)
+	if s.filterOffset > s.indexOffset || s.filterSize != s.indexOffset-s.filterOffset ||
+		s.indexOffset > fileSize-footerSize || s.indexSize != fileSize-footerSize-s.indexOffset {
+		return errors.New("invalid sst section offsets")
 	}
 
 	return nil
@@ -157,13 +172,23 @@ func (s *SSTReader) ReadBlock(offset, size uint64) ([]byte, error) {
 }
 
 func (s *SSTReader) readBlockLocked(offset, size uint64) ([]byte, error) {
+	if offset > uint64(^uint64(0)>>1) || size > uint64(int(^uint(0)>>1)) {
+		return nil, errors.New("sst block is too large")
+	}
+	stat, err := s.src.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if offset > uint64(stat.Size()) || size > uint64(stat.Size())-offset {
+		return nil, io.ErrUnexpectedEOF
+	}
 	if _, err := s.src.Seek(int64(offset), io.SeekStart); err != nil {
 		return nil, err
 	}
 	s.reader.Reset(s.src)
 
 	buf := make([]byte, size)
-	_, err := io.ReadFull(s.reader, buf)
+	_, err = io.ReadFull(s.reader, buf)
 	return buf, err
 }
 
@@ -180,7 +205,10 @@ func (s *SSTReader) readFilter(block []byte) (map[uint64][]byte, error) {
 			return nil, err
 		}
 
-		blockOffset, _ := binary.Uvarint(key)
+		blockOffset, n := binary.Uvarint(key)
+		if n <= 0 || n != len(key) {
+			return nil, errors.New("invalid sst filter offset")
+		}
 		blockToFilter[blockOffset] = value
 		prevKey = key
 	}
@@ -205,7 +233,13 @@ func (s *SSTReader) readIndex(block []byte) ([]*Index, error) {
 		}
 
 		blockOffset, n := binary.Uvarint(value)
-		blockSize, _ := binary.Uvarint(value[n:])
+		if n <= 0 {
+			return nil, errors.New("invalid sst index offset")
+		}
+		blockSize, m := binary.Uvarint(value[n:])
+		if m <= 0 || n+m != len(value) {
+			return nil, errors.New("invalid sst index block size")
+		}
 		index = append(index, &Index{
 			Key:             key,
 			PrevBlockOffset: blockOffset,
@@ -254,6 +288,10 @@ func (s *SSTReader) ReadRecord(prevKey []byte, buf *bytes.Buffer) (key, value []
 	valLen, err := binary.ReadUvarint(buf)
 	if err != nil {
 		return nil, nil, err
+	}
+	if sharedPrefixLen > uint64(len(prevKey)) || keyLen > uint64(buf.Len()) || valLen > uint64(buf.Len())-keyLen ||
+		keyLen > uint64(int(^uint(0)>>1)) || valLen > uint64(int(^uint(0)>>1)) {
+		return nil, nil, errors.New("invalid sst record lengths")
 	}
 
 	key = make([]byte, keyLen)

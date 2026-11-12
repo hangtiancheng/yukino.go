@@ -37,10 +37,18 @@ func NewWorker(executor *executor.Worker, task *TaskService, lockService *redis.
 }
 
 func (w *Worker) Start(ctx context.Context) {
-	w.executor.Start(ctx)
+	if ctx != nil && w.executor != nil {
+		w.executor.Start(ctx)
+	}
 }
 
 func (w *Worker) Work(ctx context.Context, minuteBucketKey string, ack func()) error {
+	if ctx == nil || ack == nil {
+		return fmt.Errorf("context and ack callback are required")
+	}
+	if w.confProvider == nil || w.confProvider.Get() == nil || w.task == nil || w.executor == nil || w.pool == nil {
+		return fmt.Errorf("trigger worker dependencies are incomplete")
+	}
 
 	startTime, err := getStartMinute(minuteBucketKey)
 	if err != nil {
@@ -48,42 +56,59 @@ func (w *Worker) Work(ctx context.Context, minuteBucketKey string, ack func()) e
 	}
 
 	conf := w.confProvider.Get()
-	ticker := time.NewTicker(time.Duration(conf.ZRangeGapSeconds) * time.Second)
+	gap := time.Duration(conf.ZRangeGapSeconds) * time.Second
+	if gap <= 0 {
+		return fmt.Errorf("zrange gap must be positive")
+	}
+	ticker := time.NewTicker(gap)
 	defer ticker.Stop()
 
 	endTime := startTime.Add(time.Minute)
-
-	notifier := concurrency.NewSafeChan(int(time.Minute/(time.Duration(conf.ZRangeGapSeconds)*time.Second)) + 1)
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	notifier := concurrency.NewSafeChan(int(time.Minute/gap) + 2)
 	defer notifier.Close()
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		if err := w.handleBatch(ctx, minuteBucketKey, startTime, startTime.Add(time.Duration(conf.ZRangeGapSeconds)*time.Second)); err != nil {
+		if err := w.handleBatch(workCtx, minuteBucketKey, startTime, minTime(startTime.Add(gap), endTime)); err != nil {
 			notifier.Put(err)
 		}
 	})
-	for range ticker.C {
+
+loop:
+	for {
 		select {
+		case <-ctx.Done():
+			cancel()
+			wg.Wait()
+			return ctx.Err()
 		case e := <-notifier.GetChan():
-			err, _ = e.(error)
-			return err
-		default:
+			if batchErr, ok := e.(error); ok {
+				cancel()
+				wg.Wait()
+				return batchErr
+			}
+		case <-ticker.C:
 		}
 
-		if startTime = startTime.Add(time.Duration(conf.ZRangeGapSeconds) * time.Second); startTime.Equal(endTime) || startTime.After(endTime) {
-			break
+		if startTime = startTime.Add(gap); !startTime.Before(endTime) {
+			break loop
 		}
 
-		wg.Add(1)
-		go func(startTime time.Time) {
-			defer wg.Done()
-			if err := w.handleBatch(ctx, minuteBucketKey, startTime, startTime.Add(time.Duration(conf.ZRangeGapSeconds)*time.Second)); err != nil {
+		batchStart := startTime
+		batchEnd := minTime(batchStart.Add(gap), endTime)
+		wg.Go(func() {
+			if err := w.handleBatch(workCtx, minuteBucketKey, batchStart, batchEnd); err != nil {
 				notifier.Put(err)
 			}
-		}(startTime)
+		})
 	}
 
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case e := <-notifier.GetChan():
 		err, _ = e.(error)
@@ -94,6 +119,13 @@ func (w *Worker) Work(ctx context.Context, minuteBucketKey string, ack func()) e
 	ack()
 	log.InfoContextf(ctx, "ack success, key: %s", minuteBucketKey)
 	return nil
+}
+
+func minTime(left, right time.Time) time.Time {
+	if left.Before(right) {
+		return left
+	}
+	return right
 }
 
 func (w *Worker) handleBatch(ctx context.Context, key string, start, end time.Time) error {

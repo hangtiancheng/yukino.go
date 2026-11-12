@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/components/timer/common/conf"
@@ -22,8 +23,12 @@ type Worker struct {
 }
 
 func NewWorker(trigger *trigger.Worker, redisClient *redis.Client, appConfProvider *conf.SchedulerAppConfProvider) *Worker {
+	workers := 1
+	if appConfProvider != nil && appConfProvider.Get() != nil && appConfProvider.Get().WorkersNum > 0 {
+		workers = appConfProvider.Get().WorkersNum
+	}
 	return &Worker{
-		pool:            pool.NewGoWorkerPool(appConfProvider.Get().WorkersNum),
+		pool:            pool.NewGoWorkerPool(workers),
 		trigger:         trigger,
 		lockService:     redisClient,
 		bucketGetter:    redisClient,
@@ -33,9 +38,27 @@ func NewWorker(trigger *trigger.Worker, redisClient *redis.Client, appConfProvid
 }
 
 func (w *Worker) Start(ctx context.Context) error {
+	if w == nil {
+		return fmt.Errorf("nil scheduler worker")
+	}
+	if closer, ok := w.pool.(interface{ Close() }); ok {
+		defer closer.Close()
+	}
+	if ctx == nil || w.appConfProvider == nil || w.appConfProvider.Get() == nil || w.trigger == nil ||
+		w.lockService == nil || w.pool == nil {
+		return fmt.Errorf("scheduler requires a context, configuration, and trigger")
+	}
+	conf := w.appConfProvider.Get()
+	if conf.WorkersNum <= 0 || conf.BucketsNum <= 0 || conf.TryLockSeconds <= 0 || conf.SuccessExpireSeconds <= 0 {
+		return fmt.Errorf("scheduler worker, bucket, and lock settings must be positive")
+	}
 	w.trigger.Start(ctx)
 
-	ticker := time.NewTicker(time.Duration(w.appConfProvider.Get().TryLockGapMilliSeconds) * time.Millisecond)
+	gap := time.Duration(conf.TryLockGapMilliSeconds) * time.Millisecond
+	if gap <= 0 {
+		return fmt.Errorf("scheduler lock gap must be positive")
+	}
+	ticker := time.NewTicker(gap)
 	defer ticker.Stop()
 
 	for {

@@ -12,7 +12,6 @@ import (
 
 	time_wheel_http "github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/http"
 	"github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/redis"
-	"github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/util"
 )
 
 type RTaskElement struct {
@@ -60,18 +59,25 @@ func (r *RTimeWheel) Stop() {
 }
 
 func (r *RTimeWheel) AddTask(ctx context.Context, key string, task *RTaskElement, executeAt time.Time) error {
+	if ctx == nil || r.redisClient == nil {
+		return fmt.Errorf("context and redis client are required")
+	}
+	if key == "" {
+		return fmt.Errorf("empty task key")
+	}
 	if err := r.addTaskPreCheck(task); err != nil {
 		return err
 	}
 
-	task.Key = key
-	taskBody, err := json.Marshal(task)
+	taskCopy := *task
+	taskCopy.Key = key
+	taskBody, err := json.Marshal(&taskCopy)
 	if err != nil {
 		return fmt.Errorf("marshal task %s: %w", key, err)
 	}
 	_, err = r.redisClient.Eval(ctx, LuaAddTasks, 2, []any{
-		r.getMinuteSlice(executeAt),
-		r.getDeleteSetKey(executeAt),
+		r.getTaskQueueKey(),
+		r.getTaskIndexKey(),
 		executeAt.Unix(),
 		string(taskBody),
 		key,
@@ -80,8 +86,15 @@ func (r *RTimeWheel) AddTask(ctx context.Context, key string, task *RTaskElement
 }
 
 func (r *RTimeWheel) RemoveTask(ctx context.Context, key string, executeAt time.Time) error {
-	_, err := r.redisClient.Eval(ctx, LuaDeleteTask, 1, []any{
-		r.getDeleteSetKey(executeAt),
+	if ctx == nil || r.redisClient == nil {
+		return fmt.Errorf("context and redis client are required")
+	}
+	if key == "" {
+		return fmt.Errorf("empty task key")
+	}
+	_, err := r.redisClient.Eval(ctx, LuaDeleteTask, 2, []any{
+		r.getTaskQueueKey(),
+		r.getTaskIndexKey(),
 		key,
 	})
 	return err
@@ -105,6 +118,10 @@ func (r *RTimeWheel) executeTasks() {
 			slog.Error("execute tasks panicked", "panic", err)
 		}
 	}()
+	if r.redisClient == nil || r.httpClient == nil {
+		slog.Error("time wheel requires redis and http clients")
+		return
+	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(r.ctx, time.Second*30)
 	defer cancel()
@@ -145,6 +162,9 @@ func (r *RTimeWheel) executeTask(ctx context.Context, task *RTaskElement) (err e
 	if err := r.addTaskPreCheck(task); err != nil {
 		return err
 	}
+	if r.httpClient == nil {
+		return fmt.Errorf("nil http client")
+	}
 	return r.httpClient.JSONDo(ctx, task.Method, task.CallbackURL, task.Header, task.Req, nil)
 }
 
@@ -163,38 +183,26 @@ func (r *RTimeWheel) addTaskPreCheck(task *RTaskElement) error {
 
 func (r *RTimeWheel) getExecutableTasks(ctx context.Context) ([]*RTaskElement, error) {
 	now := time.Now()
-	minuteSlice := r.getMinuteSlice(now)
-	deleteSetKey := r.getDeleteSetKey(now)
-	nowSecond := util.GetTimeSecond(now)
-	score1 := now.Truncate(time.Minute).Unix()
-	score2 := nowSecond.Unix()
 	rawReply, err := r.redisClient.Eval(ctx, LuaZrangeTasks, 2, []any{
-		minuteSlice, deleteSetKey, score1, score2,
+		r.getTaskQueueKey(), r.getTaskIndexKey(), now.Unix(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	replies, ok := rawReply.([]any)
-	if !ok || len(replies) == 0 {
-		return nil, fmt.Errorf("invalid replies: %v", replies)
+	if !ok {
+		return nil, fmt.Errorf("invalid replies: %T", rawReply)
 	}
 
-	delArr, _ := replies[0].([]any)
-	deletedSet := make(map[string]struct{}, len(delArr))
-	for _, deleted := range delArr {
-		deletedSet[toString(deleted)] = struct{}{}
-	}
-
-	tasks := make([]*RTaskElement, 0, len(replies)-1)
-	for i := 1; i < len(replies); i++ {
+	tasks := make([]*RTaskElement, 0, len(replies))
+	for i := range replies {
 		var task RTaskElement
 		if err := json.Unmarshal([]byte(toString(replies[i])), &task); err != nil {
-			continue
+			return nil, fmt.Errorf("unmarshal claimed time wheel task: %w", err)
 		}
-
-		if _, ok := deletedSet[task.Key]; ok {
-			continue
+		if task.Key == "" {
+			return nil, fmt.Errorf("claimed time wheel task has no key")
 		}
 		tasks = append(tasks, &task)
 	}
@@ -202,12 +210,12 @@ func (r *RTimeWheel) getExecutableTasks(ctx context.Context) ([]*RTaskElement, e
 	return tasks, nil
 }
 
-func (r *RTimeWheel) getMinuteSlice(executeAt time.Time) string {
-	return fmt.Sprintf("yukino_time_wheel_task_{%s}", util.GetTimeMinuteStr(executeAt))
+func (r *RTimeWheel) getTaskQueueKey() string {
+	return "yukino_time_wheel_tasks:{wheel}"
 }
 
-func (r *RTimeWheel) getDeleteSetKey(executeAt time.Time) string {
-	return fmt.Sprintf("yukino_time_wheel_delete_set_{%s}", util.GetTimeMinuteStr(executeAt))
+func (r *RTimeWheel) getTaskIndexKey() string {
+	return "yukino_time_wheel_task_index:{wheel}"
 }
 
 func toString(v any) string {

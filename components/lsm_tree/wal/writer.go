@@ -4,11 +4,14 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"sync"
 )
 
 type WALWriter struct {
 	file         string
 	dest         *os.File
+	mu           sync.Mutex
+	closed       bool
 	assistBuffer [30]byte
 }
 
@@ -25,6 +28,11 @@ func NewWALWriter(file string) (*WALWriter, error) {
 }
 
 func (w *WALWriter) Write(key, value []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return os.ErrClosed
+	}
 	n := binary.PutUvarint(w.assistBuffer[0:], uint64(len(key)))
 	n += binary.PutUvarint(w.assistBuffer[n:], uint64(len(value)))
 
@@ -32,16 +40,25 @@ func (w *WALWriter) Write(key, value []byte) error {
 	buf = append(buf, w.assistBuffer[:n]...)
 	buf = append(buf, key...)
 	buf = append(buf, value...)
-	n, err := w.dest.Write(buf)
-	if err != nil {
-		return err
+	for len(buf) > 0 {
+		written, err := w.dest.Write(buf)
+		if err != nil {
+			return err
+		}
+		if written == 0 {
+			return io.ErrShortWrite
+		}
+		buf = buf[written:]
 	}
-	if n != len(buf) {
-		return io.ErrShortWrite
-	}
-	return nil
+	return w.dest.Sync()
 }
 
-func (w *WALWriter) Close() {
-	_ = w.dest.Close()
+func (w *WALWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+	return w.dest.Close()
 }

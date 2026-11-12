@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"math/rand"
 	"slices"
-	"time"
 )
 
 type Skiplist struct {
@@ -25,6 +24,8 @@ func NewSkiplist() MemTable {
 }
 
 func (s *Skiplist) Put(key, value []byte) {
+	key = bytes.Clone(key)
+	value = bytes.Clone(value)
 	if node := s.getNode(key); node != nil {
 		s.size += (len(value) - len(node.value))
 		node.value = value
@@ -59,7 +60,7 @@ func (s *Skiplist) Put(key, value []byte) {
 
 func (s *Skiplist) Get(key []byte) ([]byte, bool) {
 	if node := s.getNode(key); node != nil {
-		return node.value, true
+		return bytes.Clone(node.value), true
 	}
 
 	return nil, false
@@ -73,8 +74,8 @@ func (s *Skiplist) All() []*KV {
 	kvs := make([]*KV, 0, s.entriesCnt)
 	for move := s.head; move.nexts[0] != nil; move = move.nexts[0] {
 		kvs = append(kvs, &KV{
-			Key:   move.nexts[0].key,
-			Value: move.nexts[0].value,
+			Key:   bytes.Clone(move.nexts[0].key),
+			Value: bytes.Clone(move.nexts[0].value),
 		})
 	}
 
@@ -105,8 +106,7 @@ func (s *Skiplist) getNode(key []byte) *skipNode {
 
 func (s *Skiplist) roll() int {
 	var level int
-	randInst := rand.New(rand.NewSource(time.Now().Unix()))
-	for randInst.Intn(2) == 1 {
+	for level < 31 && rand.Intn(2) == 1 {
 		level++
 	}
 	return level + 1

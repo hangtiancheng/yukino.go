@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/components/timer/common/conf"
@@ -26,6 +27,13 @@ func NewTaskService(dao *dao.TaskDAO, cache *dao.TaskCache, confProvider *conf.S
 }
 
 func (t *TaskService) GetTasksByTime(ctx context.Context, key string, bucket int, start, end time.Time) ([]*vo.Task, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("nil task query context")
+	}
+	maxBucket := t.confProvider.Get().BucketsNum
+	if maxBucket <= 0 || bucket < 0 || bucket >= maxBucket {
+		return nil, fmt.Errorf("invalid bucket %d for bucket count %d", bucket, maxBucket)
+	}
 	if tasks, err := t.cache.GetTasksByTime(ctx, key, start.UnixMilli(), end.UnixMilli()); err == nil && len(tasks) > 0 {
 		return vo.NewTasks(tasks), nil
 	}
@@ -35,7 +43,6 @@ func (t *TaskService) GetTasksByTime(ctx context.Context, key string, bucket int
 		return nil, err
 	}
 
-	maxBucket := t.confProvider.Get().BucketsNum
 	var validTask []*po.Task
 	for _, task := range tasks {
 		if task.TimerID%uint(maxBucket) != uint(bucket) {

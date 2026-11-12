@@ -35,6 +35,9 @@ func stepFollower(r *raft, m Message) {
 		r.send(m)
 
 	case MsgReadIndexResp:
+		if len(m.Entries) == 0 {
+			return
+		}
 		r.readStates = append(r.readStates, ReadState{Index: m.LogIndex, RequestCtx: m.Entries[0].Data})
 	}
 }

@@ -17,14 +17,17 @@ type Client struct {
 }
 
 func GetClient(confProvider *conf.MysqlConfProvider) (*Client, error) {
+	if confProvider == nil || confProvider.Get() == nil || confProvider.Get().DSN == "" {
+		return nil, errors.New("mysql configuration and DSN are required")
+	}
 	conf := confProvider.Get()
 	db, err := gorm.Open(mysql.Open(conf.DSN), &gorm.Config{TranslateError: true})
 	if err != nil {
-		panic(fmt.Errorf("failed to connect database, err: %w", err))
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 	_db, err := db.DB()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("get database connection pool: %w", err)
 	}
 	_db.SetMaxOpenConns(conf.MaxOpenConns)
 	_db.SetMaxIdleConns(conf.MaxIdleConns)

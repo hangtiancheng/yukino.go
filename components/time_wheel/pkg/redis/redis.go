@@ -23,7 +23,9 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	}
 
 	for _, opt := range opts {
-		opt(c.opts)
+		if opt != nil {
+			opt(c.opts)
+		}
 	}
 
 	repairClient(c.opts)
@@ -47,15 +49,24 @@ func (c *Client) SAdd(ctx context.Context, key, val string) (int, error) {
 }
 
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
-	keys := make([]string, 0, keyCount)
-	argsLen := len(keysAndArgs) - keyCount
-	if argsLen < 0 {
-		argsLen = 0
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("redis client is nil")
 	}
-	args := make([]any, 0, argsLen)
+	if ctx == nil {
+		return nil, fmt.Errorf("redis context is nil")
+	}
+	if keyCount < 0 || keyCount > len(keysAndArgs) {
+		return nil, fmt.Errorf("redis EVAL key count %d out of range [0, %d]", keyCount, len(keysAndArgs))
+	}
+	keys := make([]string, 0, keyCount)
+	args := make([]any, 0, len(keysAndArgs)-keyCount)
 	for i, v := range keysAndArgs {
 		if i < keyCount {
-			keys = append(keys, fmt.Sprintf("%v", v))
+			key, ok := v.(string)
+			if !ok || key == "" {
+				return nil, fmt.Errorf("redis EVAL key %d must be a non-empty string", i)
+			}
+			keys = append(keys, key)
 		} else {
 			args = append(args, v)
 		}
@@ -68,4 +79,11 @@ func NewUniversalClient(client go_redis.UniversalClient) *Client {
 		panic("nil redis client")
 	}
 	return &Client{client: client}
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.client == nil {
+		return nil
+	}
+	return c.client.Close()
 }

@@ -72,7 +72,11 @@ func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, node
 
 	dataSet = make(map[string]struct{})
 	for dataKey := range dataKeys {
-		dataVirtualScore := c.encryptor.Encrypt(dataKey)
+		dataVirtualScore, scoreErr := c.hashScore(dataKey)
+		if scoreErr != nil {
+			_err = scoreErr
+			return
+		}
 		if patternOne && dataVirtualScore > (lastScore+math.MaxInt32) {
 			dataVirtualScore -= math.MaxInt32
 		}
@@ -88,14 +92,6 @@ func (c *ConsistentHash) migrateIn(ctx context.Context, virtualScore int32, node
 		dataSet[dataKey] = struct{}{}
 	}
 
-	if err = c.hashRing.DeleteNodeToDataKeys(ctx, c.getNodeID(nextNodes[0]), dataSet); err != nil {
-		return "", "", nil, err
-	}
-
-	if err = c.hashRing.AddNodeToDataKeys(ctx, nodeID, dataSet); err != nil {
-		return "", "", nil, err
-	}
-
 	return c.getNodeID(nextNodes[0]), nodeID, dataSet, nil
 }
 
@@ -103,21 +99,6 @@ func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nod
 	if c.migrator == nil {
 		return
 	}
-
-	defer func() {
-		if err != nil {
-			return
-		}
-		if to == "" || len(dataSet) == 0 {
-			return
-		}
-
-		if err = c.hashRing.DeleteNodeToDataKeys(ctx, nodeID, dataSet); err != nil {
-			return
-		}
-
-		err = c.hashRing.AddNodeToDataKeys(ctx, to, dataSet)
-	}()
 
 	from = nodeID
 
@@ -170,7 +151,11 @@ func (c *ConsistentHash) migrateOut(ctx context.Context, virtualScore int32, nod
 			dataSet[data] = struct{}{}
 			continue
 		}
-		dataScore := c.encryptor.Encrypt(data)
+		dataScore, scoreErr := c.hashScore(data)
+		if scoreErr != nil {
+			err = scoreErr
+			return
+		}
 		if pattern && dataScore > lastScore+math.MaxInt32 {
 			dataScore -= math.MaxInt32
 		}

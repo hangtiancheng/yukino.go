@@ -28,7 +28,9 @@ func NewConfig(dir string, opts ...ConfigOption) (*Config, error) {
 	}
 
 	for _, opt := range opts {
-		opt(&c)
+		if opt != nil {
+			opt(&c)
+		}
 	}
 
 	repair(&c)
@@ -108,6 +110,9 @@ func repair(c *Config) {
 
 	if c.SSTDataBlockSize <= 0 {
 		c.SSTDataBlockSize = 16 * 1024
+	}
+	if c.SSTFooterSize < 40 {
+		c.SSTFooterSize = 40
 	}
 
 	if c.SSTNumPerLevel <= 0 {

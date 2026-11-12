@@ -2,13 +2,13 @@ package distributed_lock
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock/utils"
 )
 
 const RedisLockKeyPrefix = "distributed_lock_PREFIX_"
@@ -24,9 +24,11 @@ func IsRetryableErr(err error) bool {
 
 type RedisLock struct {
 	LockOptions
-	key    string
-	token  string
-	client LockClient
+	key         string
+	token       string
+	client      LockClient
+	operationMu sync.Mutex
+	held        bool
 
 	runningDog atomic.Int32
 	watchDogMu sync.Mutex
@@ -36,12 +38,13 @@ type RedisLock struct {
 func NewRedisLock(key string, client LockClient, opts ...LockOption) *RedisLock {
 	r := RedisLock{
 		key:    key,
-		token:  utils.GetProcessAndGoroutineIDStr(),
 		client: client,
 	}
 
 	for _, opt := range opts {
-		opt(&r.LockOptions)
+		if opt != nil {
+			opt(&r.LockOptions)
+		}
 	}
 
 	repairLock(&r.LockOptions)
@@ -49,11 +52,38 @@ func NewRedisLock(key string, client LockClient, opts ...LockOption) *RedisLock 
 }
 
 func (r *RedisLock) Lock(ctx context.Context) (err error) {
+	return r.lockWithWatchdog(ctx, ctx)
+}
+
+func (r *RedisLock) lockWithWatchdog(ctx, watchdogCtx context.Context) (err error) {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	if r.client == nil {
+		return errors.New("redis lock client is nil")
+	}
+	if r.held {
+		return errors.New("redis lock is already held by this instance")
+	}
+	if r.key == "" {
+		return errors.New("redis lock key is empty")
+	}
+	if ctx == nil || watchdogCtx == nil {
+		return errors.New("redis lock contexts are nil")
+	}
+	tokenBytes := make([]byte, 24)
+	if _, err = rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("generate redis lock token: %w", err)
+	}
+	r.token = hex.EncodeToString(tokenBytes)
 	defer func() {
 		if err != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
+			_, _ = r.client.Eval(cleanupCtx, LuaCheckAndDeleteDistributionLock, 1, []any{r.getLockKey(), r.token})
 			return
 		}
-		r.watchDog(ctx)
+		r.held = true
+		r.watchDog(watchdogCtx)
 	}()
 
 	err = r.tryLock(ctx)
@@ -74,6 +104,9 @@ func (r *RedisLock) Lock(ctx context.Context) (err error) {
 }
 
 func (r *RedisLock) tryLock(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	reply, err := r.client.SetNEX(ctx, r.getLockKey(), r.token, r.expireSeconds)
 	if err != nil {
 		return err
@@ -130,6 +163,17 @@ func (r *RedisLock) runWatchDog(ctx context.Context) {
 }
 
 func (r *RedisLock) DelayExpire(ctx context.Context, expireSeconds int64) error {
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	if r.client == nil || ctx == nil {
+		return errors.New("redis lock client and context are required")
+	}
+	if !r.held {
+		return errLockLost
+	}
+	if expireSeconds <= 0 {
+		return errors.New("lock expiration must be positive")
+	}
 	keysAndArgs := []any{r.getLockKey(), r.token, expireSeconds}
 	reply, err := r.client.Eval(ctx, LuaCheckAndExpireDistributionLock, 1, keysAndArgs)
 	if err != nil {
@@ -171,15 +215,17 @@ func (r *RedisLock) blockingLock(ctx context.Context) error {
 }
 
 func (r *RedisLock) Unlock(ctx context.Context) error {
-	defer func() {
-		r.watchDogMu.Lock()
-		stopDog := r.stopDog
-		r.watchDogMu.Unlock()
-		if stopDog != nil {
-			stopDog()
-		}
-	}()
-
+	r.operationMu.Lock()
+	defer r.operationMu.Unlock()
+	if r.client == nil {
+		return errors.New("redis lock client is nil")
+	}
+	if r.key == "" {
+		return errors.New("redis lock key is empty")
+	}
+	if ctx == nil {
+		return errors.New("redis lock context is nil")
+	}
 	keysAndArgs := []any{r.getLockKey(), r.token}
 	reply, err := r.client.Eval(ctx, LuaCheckAndDeleteDistributionLock, 1, keysAndArgs)
 	if err != nil {
@@ -187,10 +233,24 @@ func (r *RedisLock) Unlock(ctx context.Context) error {
 	}
 
 	if ret, _ := reply.(int64); ret != 1 {
+		r.held = false
+		r.stopWatchDog()
 		return errors.New("can not unlock without ownership of lock")
 	}
 
+	r.held = false
+	r.stopWatchDog()
 	return nil
+}
+
+func (r *RedisLock) stopWatchDog() {
+	r.watchDogMu.Lock()
+	stopDog := r.stopDog
+	r.stopDog = nil
+	r.watchDogMu.Unlock()
+	if stopDog != nil {
+		stopDog()
+	}
 }
 
 func (r *RedisLock) getLockKey() string {

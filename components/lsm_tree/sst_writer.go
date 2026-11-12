@@ -3,6 +3,8 @@ package lsm_tree
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"io"
 	"os"
 	"path"
 
@@ -32,10 +34,15 @@ type SSTWriter struct {
 	prevKey         []byte
 	prevBlockOffset uint64
 	prevBlockSize   uint64
+	finishErr       error
+	finished        bool
 }
 
 func NewSSTWriter(file string, conf *Config) (*SSTWriter, error) {
-	dest, err := os.OpenFile(path.Join(conf.Dir, file), os.O_CREATE|os.O_WRONLY, 0644)
+	if conf == nil || conf.SSTFooterSize < 40 {
+		return nil, errors.New("sst writer requires a valid config with a footer size of at least 40 bytes")
+	}
+	dest, err := os.OpenFile(path.Join(conf.Dir, file), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -55,11 +62,20 @@ func NewSSTWriter(file string, conf *Config) (*SSTWriter, error) {
 }
 
 func (s *SSTWriter) Finish() (size uint64, blockToFilter map[uint64][]byte, index []*Index) {
+	if s.finished {
+		return 0, s.blockToFilter, s.index
+	}
+	s.finished = true
 	s.refreshBlock()
 	s.insertIndex(s.prevKey)
 
-	_, _ = s.filterBlock.FlushTo(s.filterBuf)
-	_, _ = s.indexBlock.FlushTo(s.indexBuf)
+	_, s.finishErr = s.filterBlock.FlushTo(s.filterBuf)
+	if s.finishErr == nil {
+		_, s.finishErr = s.indexBlock.FlushTo(s.indexBuf)
+	}
+	if s.finishErr != nil {
+		return 0, s.blockToFilter, s.index
+	}
 
 	footer := make([]byte, s.conf.SSTFooterSize)
 	size = uint64(s.dataBuf.Len())
@@ -72,14 +88,36 @@ func (s *SSTWriter) Finish() (size uint64, blockToFilter map[uint64][]byte, inde
 	binary.PutUvarint(footer[n:], indexBufLen)
 	size += indexBufLen
 
-	_, _ = s.dest.Write(s.dataBuf.Bytes())
-	_, _ = s.dest.Write(s.filterBuf.Bytes())
-	_, _ = s.dest.Write(s.indexBuf.Bytes())
-	_, _ = s.dest.Write(footer)
+	for _, section := range [][]byte{s.dataBuf.Bytes(), s.filterBuf.Bytes(), s.indexBuf.Bytes(), footer} {
+		if s.finishErr = writeFull(s.dest, section); s.finishErr != nil {
+			return 0, s.blockToFilter, s.index
+		}
+	}
+	if s.finishErr = s.dest.Sync(); s.finishErr != nil {
+		return 0, s.blockToFilter, s.index
+	}
 
 	blockToFilter = s.blockToFilter
 	index = s.index
 	return
+}
+
+func (s *SSTWriter) Err() error {
+	return s.finishErr
+}
+
+func writeFull(writer io.Writer, data []byte) error {
+	for len(data) > 0 {
+		written, err := writer.Write(data)
+		if err != nil {
+			return err
+		}
+		if written == 0 {
+			return io.ErrShortWrite
+		}
+		data = data[written:]
+	}
+	return nil
 }
 
 func (s *SSTWriter) Append(key, value []byte) {
@@ -89,7 +127,7 @@ func (s *SSTWriter) Append(key, value []byte) {
 
 	s.dataBlock.Append(key, value)
 	s.conf.Filter.Add(key)
-	s.prevKey = key
+	s.prevKey = bytes.Clone(key)
 
 	if s.dataBlock.Size() >= s.conf.SSTDataBlockSize {
 		s.refreshBlock()
@@ -100,11 +138,24 @@ func (s *SSTWriter) Size() uint64 {
 	return uint64(s.dataBuf.Len())
 }
 
-func (s *SSTWriter) Close() {
-	_ = s.dest.Close()
+func (s *SSTWriter) Close() error {
+	var errs []error
+	if s.dest != nil {
+		file := s.dest.Name()
+		if err := s.dest.Close(); err != nil {
+			errs = append(errs, err)
+		}
+		s.dest = nil
+		if !s.finished || s.finishErr != nil {
+			if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, err)
+			}
+		}
+	}
 	s.dataBuf.Reset()
 	s.indexBuf.Reset()
 	s.filterBuf.Reset()
+	return errors.Join(errs...)
 }
 
 func (s *SSTWriter) insertIndex(key []byte) {

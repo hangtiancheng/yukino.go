@@ -18,13 +18,16 @@ type taskElement struct {
 type TimeWheel struct {
 	sync.Once
 	interval     time.Duration
+	nextTick     time.Time
 	ticker       *time.Ticker
 	stopChan     chan struct{}
+	done         chan struct{}
 	addTaskCh    chan *taskElement
 	removeTaskCh chan string
 	slots        []*list.List
 	curSlot      int
 	keyToETask   map[string]*list.Element
+	taskWG       sync.WaitGroup
 }
 
 func NewTimeWheel(slotNum int, interval time.Duration) *TimeWheel {
@@ -35,10 +38,13 @@ func NewTimeWheel(slotNum int, interval time.Duration) *TimeWheel {
 		interval = time.Second
 	}
 
+	startedAt := time.Now()
 	t := TimeWheel{
 		interval:     interval,
+		nextTick:     startedAt.Add(interval),
 		ticker:       time.NewTicker(interval),
 		stopChan:     make(chan struct{}),
+		done:         make(chan struct{}),
 		keyToETask:   make(map[string]*list.Element),
 		slots:        make([]*list.List, 0, slotNum),
 		addTaskCh:    make(chan *taskElement),
@@ -56,9 +62,14 @@ func (t *TimeWheel) Stop() {
 		t.ticker.Stop()
 		close(t.stopChan)
 	})
+	<-t.done
+	t.taskWG.Wait()
 }
 
 func (t *TimeWheel) AddTask(key string, task func(), executeAt time.Time) {
+	if key == "" || task == nil {
+		return
+	}
 	select {
 	case <-t.stopChan:
 		return
@@ -79,6 +90,7 @@ func (t *TimeWheel) RemoveTask(key string) {
 }
 
 func (t *TimeWheel) run() {
+	defer close(t.done)
 	defer func() {
 		if err := recover(); err != nil {
 			slog.Error("time wheel panicked", "panic", err)
@@ -89,8 +101,8 @@ func (t *TimeWheel) run() {
 		select {
 		case <-t.stopChan:
 			return
-		case <-t.ticker.C:
-			t.tick()
+		case tickAt := <-t.ticker.C:
+			t.tick(tickAt)
 		case task := <-t.addTaskCh:
 			t.addTask(task)
 		case removeKey := <-t.removeTaskCh:
@@ -99,10 +111,11 @@ func (t *TimeWheel) run() {
 	}
 }
 
-func (t *TimeWheel) tick() {
+func (t *TimeWheel) tick(tickAt time.Time) {
 	list := t.slots[t.curSlot]
 	defer t.circularIncr()
 	t.execute(list)
+	t.nextTick = tickAt.Add(t.interval)
 }
 
 func (t *TimeWheel) execute(l *list.List) {
@@ -114,7 +127,9 @@ func (t *TimeWheel) execute(l *list.List) {
 			continue
 		}
 
+		t.taskWG.Add(1)
 		go func() {
+			defer t.taskWG.Done()
 			defer func() {
 				if err := recover(); err != nil {
 					slog.Error("task panicked", "panic", err)
@@ -131,12 +146,14 @@ func (t *TimeWheel) execute(l *list.List) {
 }
 
 func (t *TimeWheel) getPosAndCircle(executeAt time.Time) (int, int) {
-	delay := int(time.Until(executeAt))
-	if delay < 0 {
-		delay = 0
+	ticks := int64(1)
+	if delay := executeAt.Sub(t.nextTick); delay > 0 {
+		ticks += int64((delay-1)/t.interval + 1)
 	}
-	cycle := delay / (len(t.slots) * int(t.interval))
-	pos := (t.curSlot + delay/int(t.interval)) % len(t.slots)
+	advance := ticks - 1
+	slotCount := int64(len(t.slots))
+	pos := (t.curSlot + int(advance%slotCount)) % len(t.slots)
+	cycle := int(advance / slotCount)
 	return pos, cycle
 }
 

@@ -25,7 +25,9 @@ type Consumer struct {
 	groupID    string
 	consumerID string
 
-	failureCnts map[redis.MsgEntity]int
+	failureCnts   map[redis.MsgEntity]int
+	failureCounts map[string]int
+	failedMsgs    map[string]*redis.MsgEntity
 
 	opts *ConsumerOptions
 }
@@ -45,7 +47,9 @@ func NewConsumer(client *redis.Client, topic, groupID, consumerID string, callba
 
 		opts: &ConsumerOptions{},
 
-		failureCnts: make(map[redis.MsgEntity]int),
+		failureCnts:   make(map[redis.MsgEntity]int),
+		failureCounts: make(map[string]int),
+		failedMsgs:    make(map[string]*redis.MsgEntity),
 	}
 
 	if err := c.checkParam(); err != nil {
@@ -54,7 +58,9 @@ func NewConsumer(client *redis.Client, topic, groupID, consumerID string, callba
 	}
 
 	for _, opt := range opts {
-		opt(c.opts)
+		if opt != nil {
+			opt(c.opts)
+		}
 	}
 
 	repairConsumer(c.opts)
@@ -110,10 +116,16 @@ func (c *Consumer) run() {
 		default:
 		}
 
+		handledIDs := make(map[string]struct{})
 		if c.opts.claimIdle > 0 {
 			messages, next, err := c.client.XAutoClaim(c.ctx, c.topic, c.groupID, c.consumerID, claimCursor, c.opts.claimIdle)
 			if err == nil {
 				claimCursor = next
+				for _, msg := range messages {
+					if msg != nil && msg.MsgID != "" {
+						handledIDs[msg.MsgID] = struct{}{}
+					}
+				}
 				ctx, cancel := context.WithTimeout(c.ctx, c.opts.handleMsgsTimeout)
 				c.handlerMsgs(ctx, messages)
 				cancel()
@@ -129,6 +141,11 @@ func (c *Consumer) run() {
 		}
 
 		ctx, cancel := context.WithTimeout(c.ctx, c.opts.handleMsgsTimeout)
+		for _, msg := range msgs {
+			if msg != nil && msg.MsgID != "" {
+				handledIDs[msg.MsgID] = struct{}{}
+			}
+		}
 		c.handlerMsgs(ctx, msgs)
 		cancel()
 
@@ -144,6 +161,7 @@ func (c *Consumer) run() {
 			}
 			continue
 		}
+		pendingMsgs = withoutMessageIDs(pendingMsgs, handledIDs)
 
 		ctx, cancel = context.WithTimeout(c.ctx, c.opts.handleMsgsTimeout)
 		c.handlerMsgs(ctx, pendingMsgs)
@@ -171,8 +189,23 @@ func (c *Consumer) receivePending() ([]*redis.MsgEntity, error) {
 
 func (c *Consumer) handlerMsgs(ctx context.Context, msgs []*redis.MsgEntity) {
 	for _, msg := range msgs {
+		if msg == nil || msg.MsgID == "" {
+			log.ErrorContextf(ctx, "skip message with no message id")
+			continue
+		}
 		if err := c.invoke(ctx, msg); err != nil {
+			if c.failureCnts == nil {
+				c.failureCnts = make(map[redis.MsgEntity]int)
+			}
+			if c.failureCounts == nil {
+				c.failureCounts = make(map[string]int)
+			}
+			if c.failedMsgs == nil {
+				c.failedMsgs = make(map[string]*redis.MsgEntity)
+			}
 			c.failureCnts[*msg]++
+			c.failureCounts[msg.MsgID]++
+			c.failedMsgs[msg.MsgID] = msg
 			continue
 		}
 
@@ -181,17 +214,23 @@ func (c *Consumer) handlerMsgs(ctx context.Context, msgs []*redis.MsgEntity) {
 			continue
 		}
 
-		delete(c.failureCnts, *msg)
+		delete(c.failureCounts, msg.MsgID)
+		c.deleteFailureByID(msg.MsgID)
+		delete(c.failedMsgs, msg.MsgID)
 	}
 }
 
 func (c *Consumer) deliverDeadLetter(ctx context.Context) {
-	for msg, failureCnt := range c.failureCnts {
+	for msgID, failureCnt := range c.failureCounts {
 		if failureCnt < c.opts.maxRetryLimit {
 			continue
 		}
+		msg := c.failedMsgs[msgID]
+		if msg == nil {
+			continue
+		}
 
-		if err := c.opts.deadLetterMailbox.Deliver(ctx, &msg); err != nil {
+		if err := c.opts.deadLetterMailbox.Deliver(ctx, msg); err != nil {
 			log.ErrorContextf(c.ctx, "dead letter deliver failed, msg id: %s, err: %v", msg.MsgID, err)
 			continue
 		}
@@ -201,8 +240,32 @@ func (c *Consumer) deliverDeadLetter(ctx context.Context) {
 			continue
 		}
 
-		delete(c.failureCnts, msg)
+		delete(c.failureCounts, msgID)
+		c.deleteFailureByID(msgID)
+		delete(c.failedMsgs, msgID)
 	}
+}
+
+func (c *Consumer) deleteFailureByID(msgID string) {
+	for msg := range c.failureCnts {
+		if msg.MsgID == msgID {
+			delete(c.failureCnts, msg)
+		}
+	}
+}
+
+func withoutMessageIDs(messages []*redis.MsgEntity, handled map[string]struct{}) []*redis.MsgEntity {
+	filtered := make([]*redis.MsgEntity, 0, len(messages))
+	for _, message := range messages {
+		if message == nil {
+			continue
+		}
+		if _, exists := handled[message.MsgID]; exists {
+			continue
+		}
+		filtered = append(filtered, message)
+	}
+	return filtered
 }
 
 func (c *Consumer) invoke(ctx context.Context, msg *redis.MsgEntity) (err error) {

@@ -48,6 +48,9 @@ func stepLeader(r *raft, m Message) {
 		r.broadcastAppend()
 		return
 	case MsgReadIndex:
+		if len(m.Entries) == 0 {
+			return
+		}
 		if _, ok := r.prs[r.id]; !ok {
 			return
 		}

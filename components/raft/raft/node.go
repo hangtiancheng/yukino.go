@@ -27,7 +27,6 @@ func StartNode(conf *Config, peers []Peer) Node {
 	for _, peer := range peers {
 		r.addNode(peer.ID)
 	}
-	r.raftLog.commitIndex = r.raftLog.lastIndex()
 
 	n := newNode()
 	go n.run(r)
@@ -48,7 +47,10 @@ func newNode() Node {
 }
 
 func (n *Node) run(r *raft) {
-	defer close(n.done)
+	defer func() {
+		close(n.readyChan)
+		close(n.done)
+	}()
 	var (
 		readyChan   chan Ready
 		advanceChan chan struct{}
@@ -105,6 +107,14 @@ func (n *Node) run(r *raft) {
 			r.readStates = nil
 			advanceChan = n.advanceChan
 		case <-advanceChan:
+			if hasPrevLastUnstableI {
+				if err := r.raftLog.storage.Append(rd.Entries); err != nil {
+					panic(err)
+				}
+				r.raftLog.stableTo(prevLastUnstableI, prevLastUnstableT)
+				hasPrevLastUnstableI = false
+			}
+
 			if !IsEmptyHardState(prevHard) {
 				if err := r.raftLog.storage.SetHardState(prevHard); err != nil {
 					panic(err)
@@ -113,14 +123,6 @@ func (n *Node) run(r *raft) {
 
 			if prevHard.CommitIndex != 0 {
 				r.raftLog.appliedTo(prevHard.CommitIndex)
-			}
-
-			if hasPrevLastUnstableI {
-				if err := r.raftLog.storage.Append(rd.Entries); err != nil {
-					panic(err)
-				}
-				r.raftLog.stableTo(prevLastUnstableI, prevLastUnstableT)
-				hasPrevLastUnstableI = false
 			}
 
 			advanceChan = nil
@@ -153,6 +155,27 @@ func (n *Node) ReadIndex(ctx context.Context, rctx []byte) error {
 	return n.step(ctx, Message{Type: MsgReadIndex, Entries: []Entry{{Data: rctx}}})
 }
 
+func (n *Node) Step(ctx context.Context, message Message) error {
+	if message.Type < MsgApp || message.Type > MsgPreVoteResp {
+		return errors.New("invalid remote raft message type")
+	}
+	if message.From == None {
+		return errors.New("remote raft message has no sender")
+	}
+	if ctx == nil {
+		return errors.New("nil context")
+	}
+	message = cloneMessage(message)
+	select {
+	case n.recvChan <- message:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-n.stopped:
+		return ErrStopped
+	}
+}
+
 func (n *Node) ApplyConfChange(cc ConfChange) ConfState {
 	select {
 	case n.confChan <- cc:
@@ -179,10 +202,14 @@ func (n *Node) Advance() {
 }
 
 func (n *Node) step(ctx context.Context, m Message) error {
+	if ctx == nil {
+		return errors.New("nil context")
+	}
 	ch := n.recvChan
 	if m.Type == MsgProp {
 		ch = n.proc
 	}
+	m = cloneMessage(m)
 
 	select {
 	case ch <- m:
@@ -192,6 +219,19 @@ func (n *Node) step(ctx context.Context, m Message) error {
 	case <-n.stopped:
 		return ErrStopped
 	}
+}
+
+func cloneMessage(message Message) Message {
+	message.Context = append([]byte(nil), message.Context...)
+	if len(message.Entries) > 0 {
+		entries := make([]Entry, len(message.Entries))
+		for i, entry := range message.Entries {
+			entries[i] = entry
+			entries[i].Data = append([]byte(nil), entry.Data...)
+		}
+		message.Entries = entries
+	}
+	return message
 }
 
 func (n *Node) Stop() {

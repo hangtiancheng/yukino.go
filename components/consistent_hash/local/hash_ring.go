@@ -26,13 +26,25 @@ func NewLockEntityV2() *LockEntityV2 {
 }
 
 func (l *LockEntityV2) Lock(ctx context.Context, expireSeconds int) error {
+	if l == nil || ctx == nil {
+		return errors.New("lock entity and context are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if expireSeconds < 0 || int64(expireSeconds) > int64(^uint64(0)>>1)/int64(time.Second) {
+		return errors.New("lock expiration is out of range")
+	}
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
 	now := time.Now()
-	if !l.locked || l.expireAt.Before(now) {
+	if !l.locked || (!l.expireAt.IsZero() && !now.Before(l.expireAt)) {
 		l.locked = true
-		l.expireAt = now.Add(time.Duration(expireSeconds) * time.Second)
+		l.expireAt = time.Time{}
+		if expireSeconds > 0 {
+			l.expireAt = now.Add(time.Duration(expireSeconds) * time.Second)
+		}
 		l.owner = utils.GetProcessAndGoroutineIDStr()
 		return nil
 	}
@@ -41,9 +53,12 @@ func (l *LockEntityV2) Lock(ctx context.Context, expireSeconds int) error {
 }
 
 func (l *LockEntityV2) Unlock(ctx context.Context) error {
+	if l == nil || ctx == nil {
+		return errors.New("lock entity and context are required")
+	}
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if !l.locked || l.expireAt.Before(time.Now()) {
+	if !l.locked || (!l.expireAt.IsZero() && !time.Now().Before(l.expireAt)) {
 		return errors.New("not locked")
 	}
 
@@ -64,7 +79,7 @@ type SkiplistHashRing struct {
 }
 
 type LockEntity struct {
-	lock       sync.Mutex
+	lock       chan struct{}
 	doubleLock sync.Mutex
 	cancel     context.CancelFunc
 	owner      atomic.Value
@@ -72,6 +87,7 @@ type LockEntity struct {
 
 func NewSkiplistHashRing() *SkiplistHashRing {
 	return &SkiplistHashRing{
+		LockEntity:     LockEntity{lock: make(chan struct{}, 1)},
 		root:           &virtualNode{},
 		nodeToReplicas: make(map[string]int),
 		nodeToDataKey:  make(map[string]map[string]struct{}),
@@ -85,26 +101,45 @@ type virtualNode struct {
 }
 
 func (s *SkiplistHashRing) Lock(ctx context.Context, expireSeconds int) error {
-	s.lock.Lock()
+	if ctx == nil {
+		return errors.New("nil context")
+	}
+	if expireSeconds < 0 || int64(expireSeconds) > int64(^uint64(0)>>1)/int64(time.Second) {
+		return errors.New("lock expiration is out of range")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case s.lock <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		<-s.lock
+		return err
+	}
 	s.doubleLock.Lock()
-	defer s.doubleLock.Unlock()
-
 	token := os.GetCurrentProcessAndGoroutineIDStr()
 	s.owner.Store(token)
-	if expireSeconds <= 0 {
-		return nil
+	if s.cancel != nil {
+		s.cancel()
 	}
-
-	ctx2, cancel := context.WithCancel(context.Background())
-	s.cancel = cancel
-	go func() {
-		select {
-		case <-ctx2.Done():
-			return
-		case <-time.After(time.Duration(expireSeconds) * time.Second):
-			s.unlock(ctx, token)
-		}
-	}()
+	s.cancel = nil
+	if expireSeconds > 0 {
+		ctx2, cancel := context.WithCancel(context.Background())
+		s.cancel = cancel
+		timer := time.NewTimer(time.Duration(expireSeconds) * time.Second)
+		go func() {
+			defer timer.Stop()
+			select {
+			case <-ctx2.Done():
+			case <-timer.C:
+				_ = s.unlock(ctx, token)
+			}
+		}()
+	}
+	s.doubleLock.Unlock()
 	return nil
 }
 
@@ -121,7 +156,11 @@ func (s *SkiplistHashRing) unlock(ctx context.Context, token string) error {
 		s.cancel()
 	}
 
-	s.lock.Unlock()
+	select {
+	case <-s.lock:
+	default:
+		return errors.New("lock is not held")
+	}
 	return nil
 }
 
@@ -214,8 +253,6 @@ func (s *SkiplistHashRing) Rem(ctx context.Context, score int32, nodeID string) 
 		return fmt.Errorf("node: %s not exist in score: %d", nodeID, score)
 	}
 
-	delete(s.nodeToDataKey, nodeID)
-
 	if len(targetNode.nodeIDs) > 1 {
 		targetNode.nodeIDs = append(targetNode.nodeIDs[:index], targetNode.nodeIDs[index+1:]...)
 		return nil
@@ -239,7 +276,6 @@ func (s *SkiplistHashRing) Rem(ctx context.Context, score int32, nodeID string) 
 		s.root.nexts = s.root.nexts[:level]
 		break
 	}
-
 	return nil
 }
 
@@ -331,9 +367,8 @@ func (s *SkiplistHashRing) DeleteNodeToDataKeys(ctx context.Context, nodeID stri
 }
 
 func (s *SkiplistHashRing) roll() int {
-	randInst := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var level int
-	for randInst.Intn(2) == 1 {
+	for level < 31 && rand.Intn(2) == 1 {
 		level++
 	}
 	return level

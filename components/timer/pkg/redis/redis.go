@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/components/timer/common/conf"
@@ -32,14 +33,28 @@ func (c *Client) SetEx(ctx context.Context, key, value string, expireSeconds int
 	if key == "" || value == "" {
 		return errors.New("redis SET key or value can't be empty")
 	}
-	return c.client.Set(ctx, key, value, time.Duration(expireSeconds)*time.Second).Err()
+	expiration, err := secondsDuration(expireSeconds)
+	if err != nil {
+		return err
+	}
+	if c == nil || c.client == nil || ctx == nil {
+		return errors.New("redis client and context are required")
+	}
+	return c.client.Set(ctx, key, value, expiration).Err()
 }
 
 func (c *Client) SetNX(ctx context.Context, key, value string, expireSeconds int64) (any, error) {
 	if key == "" || value == "" {
 		return -1, errors.New("redis SET keyNX or value can't be empty")
 	}
-	ok, err := c.client.SetNX(ctx, key, value, time.Duration(expireSeconds)*time.Second).Result()
+	expiration, err := secondsDuration(expireSeconds)
+	if err != nil {
+		return -1, err
+	}
+	if c == nil || c.client == nil || ctx == nil {
+		return -1, errors.New("redis client and context are required")
+	}
+	ok, err := c.client.SetNX(ctx, key, value, expiration).Result()
 	if err != nil {
 		return -1, err
 	}
@@ -50,6 +65,9 @@ func (c *Client) SetNX(ctx context.Context, key, value string, expireSeconds int
 }
 
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
+	if c == nil || c.client == nil || ctx == nil {
+		return nil, errors.New("redis client and context are required")
+	}
 	if keyCount < 0 || keyCount > len(keysAndArgs) {
 		return nil, fmt.Errorf("redis Eval invalid keyCount: %d, len of keysAndArgs: %d", keyCount, len(keysAndArgs))
 	}
@@ -58,7 +76,11 @@ func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs
 	args := make([]any, 0, len(keysAndArgs)-keyCount)
 	for i, v := range keysAndArgs {
 		if i < keyCount {
-			keys = append(keys, v.(string))
+			key, ok := v.(string)
+			if !ok || key == "" {
+				return nil, fmt.Errorf("redis EVAL key %d must be a non-empty string", i)
+			}
+			keys = append(keys, key)
 		} else {
 			args = append(args, v)
 		}
@@ -111,7 +133,24 @@ func (c *Client) ZAdd(ctx context.Context, table string, score int64, value any)
 }
 
 func (c *Client) Expire(ctx context.Context, key string, expireSeconds int64) error {
-	return c.client.Expire(ctx, key, time.Duration(expireSeconds)*time.Second).Err()
+	if key == "" {
+		return errors.New("redis EXPIRE requires a key")
+	}
+	expiration, err := secondsDuration(expireSeconds)
+	if err != nil {
+		return err
+	}
+	if c == nil || c.client == nil || ctx == nil {
+		return errors.New("redis client and context are required")
+	}
+	return c.client.Expire(ctx, key, expiration).Err()
+}
+
+func secondsDuration(seconds int64) (time.Duration, error) {
+	if seconds <= 0 || seconds > math.MaxInt64/int64(time.Second) {
+		return 0, errors.New("redis expiration must be positive and fit in time.Duration")
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 func NewSetCommand(args ...any) *Command {
@@ -148,8 +187,19 @@ type Command struct {
 }
 
 func (c *Client) Transaction(ctx context.Context, commands ...*Command) ([]any, error) {
+	if c == nil || c.client == nil {
+		return nil, errors.New("redis client is nil")
+	}
+	if ctx == nil {
+		return nil, errors.New("redis transaction context is nil")
+	}
 	if len(commands) == 0 {
 		return nil, nil
+	}
+	for i, cmd := range commands {
+		if err := validateCommand(cmd); err != nil {
+			return nil, fmt.Errorf("invalid redis command %d: %w", i, err)
+		}
 	}
 
 	results, err := c.client.TxPipelined(ctx, func(pipe go_redis.Pipeliner) error {
@@ -160,15 +210,15 @@ func (c *Client) Transaction(ctx context.Context, commands ...*Command) ([]any, 
 				pipe.Set(ctx, key, cmd.Args[1], 0)
 			case "ZADD":
 				key := cmd.Args[0].(string)
-				score := toInt64(cmd.Args[1])
+				score, _ := toInt64(cmd.Args[1])
 				pipe.ZAdd(ctx, key, go_redis.Z{Score: float64(score), Member: cmd.Args[2]})
 			case "SETBIT":
 				key := cmd.Args[0].(string)
-				offset := toInt64(cmd.Args[1])
+				offset, _ := toInt64(cmd.Args[1])
 				pipe.SetBit(ctx, key, offset, 1)
 			case "EXPIRE":
 				key := cmd.Args[0].(string)
-				seconds := toInt64(cmd.Args[1])
+				seconds, _ := toInt64(cmd.Args[1])
 				pipe.Expire(ctx, key, time.Duration(seconds)*time.Second)
 			default:
 				return fmt.Errorf("unsupported redis command: %s", cmd.Name)
@@ -194,6 +244,13 @@ func (c *Client) SetBit(ctx context.Context, key string, offset int32) (bool, er
 		return false, err
 	}
 	return prev == 1, nil
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.client == nil {
+		return nil
+	}
+	return c.client.Close()
 }
 
 func (c *Client) GetBit(ctx context.Context, key string, offset int32) (bool, error) {
@@ -233,16 +290,89 @@ func (c *Client) GetDistributionLock(key string) DistributeLocker {
 	return NewReentrantDistributeLock(key, c)
 }
 
-func toInt64(v any) int64 {
+func validateCommand(cmd *Command) error {
+	if cmd == nil {
+		return errors.New("command is nil")
+	}
+	var key string
+	var expectedArgs int
+	switch cmd.Name {
+	case "SET":
+		expectedArgs = 2
+	case "ZADD":
+		expectedArgs = 3
+	case "SETBIT", "EXPIRE":
+		expectedArgs = 2
+	default:
+		return fmt.Errorf("unsupported redis command: %s", cmd.Name)
+	}
+	if len(cmd.Args) != expectedArgs {
+		return fmt.Errorf("%s expects %d arguments, got %d", cmd.Name, expectedArgs, len(cmd.Args))
+	}
+	var ok bool
+	if key, ok = cmd.Args[0].(string); !ok || key == "" {
+		return fmt.Errorf("%s key must be a non-empty string", cmd.Name)
+	}
+	if cmd.Name == "SET" {
+		if cmd.Args[1] == nil {
+			return errors.New("SET value is nil")
+		}
+		return nil
+	}
+	valueIndex := 1
+	if cmd.Name == "ZADD" {
+		valueIndex = 2
+		if cmd.Args[valueIndex] == nil {
+			return errors.New("ZADD member is nil")
+		}
+	}
+	value, err := toInt64(cmd.Args[1])
+	if err != nil {
+		return err
+	}
+	switch cmd.Name {
+	case "SETBIT":
+		if value < 0 {
+			return errors.New("SETBIT offset must not be negative")
+		}
+	case "EXPIRE":
+		if value <= 0 || value > math.MaxInt64/int64(time.Second) {
+			return errors.New("EXPIRE duration is out of range")
+		}
+	}
+	return nil
+}
+
+func toInt64(v any) (int64, error) {
 	switch val := v.(type) {
 	case int:
-		return int64(val)
+		return int64(val), nil
+	case int8:
+		return int64(val), nil
+	case int16:
+		return int64(val), nil
 	case int32:
-		return int64(val)
+		return int64(val), nil
 	case int64:
-		return val
+		return val, nil
+	case uint:
+		if uint64(val) > math.MaxInt64 {
+			return 0, errors.New("integer argument exceeds int64 range")
+		}
+		return int64(val), nil
+	case uint8:
+		return int64(val), nil
+	case uint16:
+		return int64(val), nil
+	case uint32:
+		return int64(val), nil
+	case uint64:
+		if val > math.MaxInt64 {
+			return 0, errors.New("integer argument exceeds int64 range")
+		}
+		return int64(val), nil
 	default:
-		return 0
+		return 0, fmt.Errorf("integer argument has unsupported type %T", v)
 	}
 }
 

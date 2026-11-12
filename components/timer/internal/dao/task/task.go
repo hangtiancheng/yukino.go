@@ -2,7 +2,7 @@ package task
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/hangtiancheng/yukino.go/components/timer/common/model/po"
 	"github.com/hangtiancheng/yukino.go/components/timer/pkg/mysql"
@@ -19,9 +19,14 @@ func NewTaskDAO(client *mysql.Client) *TaskDAO {
 }
 
 func (t *TaskDAO) GetTask(ctx context.Context, opts ...Option) (*po.Task, error) {
+	if t == nil || t.client == nil || t.client.DB == nil || ctx == nil {
+		return nil, errors.New("task dao and context are required")
+	}
 	db := t.client.WithContext(ctx)
 	for _, opt := range opts {
-		db = opt(db)
+		if opt != nil {
+			db = opt(db)
+		}
 	}
 
 	var task po.Task
@@ -29,9 +34,14 @@ func (t *TaskDAO) GetTask(ctx context.Context, opts ...Option) (*po.Task, error)
 }
 
 func (t *TaskDAO) GetTasks(ctx context.Context, opts ...Option) ([]*po.Task, error) {
+	if t == nil || t.client == nil || t.client.DB == nil || ctx == nil {
+		return nil, errors.New("task dao and context are required")
+	}
 	db := t.client.WithContext(ctx)
 	for _, opt := range opts {
-		db = opt(db)
+		if opt != nil {
+			db = opt(db)
+		}
 	}
 
 	var tasks []*po.Task
@@ -39,21 +49,31 @@ func (t *TaskDAO) GetTasks(ctx context.Context, opts ...Option) ([]*po.Task, err
 }
 
 func (t *TaskDAO) UpdateTask(ctx context.Context, task *po.Task) error {
+	if t == nil || t.client == nil || t.client.DB == nil || ctx == nil || task == nil {
+		return errors.New("task dao, context, and task are required")
+	}
 	return t.client.DB.WithContext(ctx).Updates(task).Error
 }
 
 func (t *TaskDAO) Count(ctx context.Context, opts ...Option) (int64, error) {
+	if t == nil || t.client == nil || t.client.DB == nil || ctx == nil {
+		return 0, errors.New("task dao and context are required")
+	}
 	db := t.client.DB.WithContext(ctx).Model(&po.Task{})
 	for _, opt := range opts {
-		db = opt(db)
+		if opt != nil {
+			db = opt(db)
+		}
 	}
 	var cnt int64
 	return cnt, db.Count(&cnt).Error
 }
 
 func (t *TaskDAO) CountGroupByMinute(ctx context.Context, startTimeStr, endTimeStr string) ([]*po.MinuteTaskCnt, error) {
-	_sql := fmt.Sprintf(SQLGetMinuteTaskCnt, startTimeStr, endTimeStr)
+	if t == nil || t.client == nil || t.client.DB == nil || ctx == nil {
+		return nil, errors.New("task dao and context are required")
+	}
 
 	var res []*po.MinuteTaskCnt
-	return res, t.client.DB.Raw(_sql).Scan(&res).Error
+	return res, t.client.DB.WithContext(ctx).Raw(SQLGetMinuteTaskCnt, startTimeStr, endTimeStr).Scan(&res).Error
 }

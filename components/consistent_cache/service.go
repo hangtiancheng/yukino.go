@@ -20,7 +20,9 @@ func NewService(cache Cache, db DB, opts ...Option) *Service {
 	}
 
 	for _, opt := range opts {
-		opt(s.opts)
+		if opt != nil {
+			opt(s.opts)
+		}
 	}
 
 	repair(s.opts)
@@ -28,12 +30,24 @@ func NewService(cache Cache, db DB, opts ...Option) *Service {
 }
 
 func (s *Service) Put(ctx context.Context, obj Object) error {
-	if err := s.cache.Disable(ctx, obj.Key(), s.opts.disableExpireSeconds); err != nil {
+	if s == nil || s.opts == nil {
+		return errors.New("cache service is not initialized")
+	}
+	if ctx == nil || obj == nil {
+		return errors.New("context and object are required")
+	}
+	if s.cache == nil || s.db == nil {
+		return errors.New("cache and database are required")
+	}
+	key := obj.Key()
+	if key == "" {
+		return errors.New("object key is empty")
+	}
+	if err := s.cache.Disable(ctx, key, s.opts.disableExpireSeconds); err != nil {
 		return err
 	}
 
 	defer func() {
-		key := obj.Key()
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -43,7 +57,7 @@ func (s *Service) Put(ctx context.Context, obj Object) error {
 		}()
 	}()
 
-	if err := s.cache.Del(ctx, obj.Key()); err != nil {
+	if err := s.cache.Del(ctx, key); err != nil {
 		return err
 	}
 
@@ -51,7 +65,20 @@ func (s *Service) Put(ctx context.Context, obj Object) error {
 }
 
 func (s *Service) Get(ctx context.Context, obj Object) (useCache bool, err error) {
-	v, err := s.cache.Get(ctx, obj.Key())
+	if s == nil || s.opts == nil {
+		return false, errors.New("cache service is not initialized")
+	}
+	if ctx == nil || obj == nil {
+		return false, errors.New("context and object are required")
+	}
+	if s.cache == nil || s.db == nil {
+		return false, errors.New("cache and database are required")
+	}
+	key := obj.Key()
+	if key == "" {
+		return false, errors.New("object key is empty")
+	}
+	v, err := s.cache.Get(ctx, key)
 	if err != nil && !errors.Is(err, ErrorCacheMiss) {
 		return false, err
 	}
@@ -59,6 +86,9 @@ func (s *Service) Get(ctx context.Context, obj Object) (useCache bool, err error
 	if err == nil {
 		if v == NullData {
 			return true, ErrorDataNotExist
+		}
+		if v == NullData+"\x00" {
+			v = NullData
 		}
 		return true, obj.Read(v)
 	}
@@ -68,10 +98,10 @@ func (s *Service) Get(ctx context.Context, obj Object) (useCache bool, err error
 	}
 
 	if errors.Is(err, ErrorDBMiss) {
-		if ok, err := s.cache.PutWhenEnable(ctx, obj.Key(), NullData, s.opts.CacheExpireSeconds()); err != nil {
-			s.opts.logger.Errorf("put null data into cache fail, key: %s, err: %v", obj.Key(), err)
+		if ok, err := s.cache.PutWhenEnable(ctx, key, NullData, s.opts.CacheExpireSeconds()); err != nil {
+			s.opts.logger.Errorf("put null data into cache fail, key: %s, err: %v", key, err)
 		} else {
-			s.opts.logger.Infof("put null data into cache resp, key: %s, ok: %t", obj.Key(), ok)
+			s.opts.logger.Infof("put null data into cache resp, key: %s, ok: %t", key, ok)
 		}
 
 		return false, ErrorDataNotExist
@@ -81,10 +111,13 @@ func (s *Service) Get(ctx context.Context, obj Object) (useCache bool, err error
 	if err != nil {
 		return false, err
 	}
-	if ok, err := s.cache.PutWhenEnable(ctx, obj.Key(), v, s.opts.CacheExpireSeconds()); err != nil {
-		s.opts.logger.Errorf("put data into cache fail, key: %s, data: %v, err: %v", obj.Key(), v, err)
+	if v == NullData {
+		v += "\x00"
+	}
+	if ok, err := s.cache.PutWhenEnable(ctx, key, v, s.opts.CacheExpireSeconds()); err != nil {
+		s.opts.logger.Errorf("put data into cache fail, key: %s, data: %v, err: %v", key, v, err)
 	} else {
-		s.opts.logger.Infof("put data into cache resp, key: %s, v: %v, ok: %t", obj.Key(), v, ok)
+		s.opts.logger.Infof("put data into cache resp, key: %s, v: %v, ok: %t", key, v, ok)
 	}
 
 	return false, nil
