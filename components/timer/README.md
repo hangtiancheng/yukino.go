@@ -14,11 +14,11 @@ Cron-style timer definitions are expanded into concrete tasks ahead of time, fan
                         V
                  ┌─────────────┐     per (minute, bucket) lock
                  │  Scheduler  │<──── distributed_lock ────┐
-                 └──────┬──────┘                     │
-                        │ trigger.Work(sliceKey)     │
-                        V                            │
-                 ┌─────────────┐                     │
-                 │   Trigger   │  ZRANGE due tasks ──┘
+                 └──────┬──────┘                           │
+                        │ trigger.Work(sliceKey)           │
+                        V                                  │
+                 ┌─────────────┐                           │
+                 │   Trigger   │  ZRANGE due tasks ────────┘
                  └──────┬──────┘
                         V
                  ┌─────────────┐   HTTP callback    ┌────────────┐
