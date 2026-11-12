@@ -28,7 +28,7 @@ Cron-style timer definitions are expanded into concrete tasks ahead of time, fan
                         V
                  ┌─────────────┐
                  │   Monitor   │  Prometheus metrics
-                 └─────^───────┘
+                 └─────────────┘
                        |
                  ┌─────────────┐
                  │  WebServer  │  timer/task CRUD REST API (yukino_http)
