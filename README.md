@@ -179,7 +179,7 @@ yukino.go/
 │   ├── yukino_orm/      # MongoDB ORM           github.com/hangtiancheng/yukino.go/libs/yukino_orm
 │   ├── yukino_cache/    # Distributed cache     github.com/hangtiancheng/yukino.go/libs/yukino_cache
 │   └── yukino_rpc/      # RPC framework         github.com/hangtiancheng/yukino.go/libs/yukino_rpc
-├── components/          # hand-written distributed components (time_wheel, redis_lock,
+├── components/          # hand-written distributed components (time_wheel, distributed_lock,
 │                        #   red_mq, consistent_hash, consistent_cache, lsm_tree, raft, tcc, timer)
 ├── apps/                # deployable servers, cmd/ + internal/ layout
 │   ├── task_flow/       # enterprise conditional & scheduled task platform (server/ + client/)

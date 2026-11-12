@@ -14,7 +14,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/dao"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/time_wheel"
 )
 
@@ -35,7 +35,7 @@ type Migrator struct {
 	dao      *dao.DAO
 	wheel    *time_wheel.RTimeWheel
 	registry *SingletonRegistry
-	locker   *redis_lock.Client
+	locker   *distributed_lock.Client
 	defs     *DefinitionCache
 
 	stopOnce sync.Once
@@ -43,7 +43,7 @@ type Migrator struct {
 	doneChan chan struct{}
 }
 
-func NewMigrator(cfg *conf.Config, d *dao.DAO, wheel *time_wheel.RTimeWheel, registry *SingletonRegistry, locker *redis_lock.Client, defs *DefinitionCache) *Migrator {
+func NewMigrator(cfg *conf.Config, d *dao.DAO, wheel *time_wheel.RTimeWheel, registry *SingletonRegistry, locker *distributed_lock.Client, defs *DefinitionCache) *Migrator {
 	return &Migrator{
 		cfg:      cfg,
 		dao:      d,
@@ -95,8 +95,8 @@ func (m *Migrator) tick() {
 		return
 	}
 
-	lock := redis_lock.NewRedisLock(migratorLockKey, m.locker,
-		redis_lock.WithExpireSeconds(int64(m.cfg.Scheduler.MigrateTickSeconds*2)))
+	lock := distributed_lock.NewRedisLock(migratorLockKey, m.locker,
+		distributed_lock.WithExpireSeconds(int64(m.cfg.Scheduler.MigrateTickSeconds*2)))
 	if err := lock.Lock(ctx); err != nil {
 		return
 	}

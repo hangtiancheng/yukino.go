@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/dao"
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/mocks"
@@ -25,7 +25,7 @@ func Test_MockTXStore_Lock(t *testing.T) {
 	mockTXStore := &MockTXStore{
 		dao:    mocks.NewMockTXRecordDAO(ctrl),
 		client: mocks.NewMockRedisClient(ctrl),
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -59,7 +59,7 @@ func Test_MockTXStore_CreateTX(t *testing.T) {
 	mockTXStore := &MockTXStore{
 		dao:    mockDAO,
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -88,7 +88,7 @@ func Test_MockTXStore_TXUpdate(t *testing.T) {
 	mockTXStore := &MockTXStore{
 		dao:    mockDAO,
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -122,7 +122,7 @@ func Test_MockTXStore_GetHangingTXs(t *testing.T) {
 	mockTXStore := &MockTXStore{
 		dao:    mockDAO,
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -162,7 +162,7 @@ func Test_MockTXStore_TXSubmit(t *testing.T) {
 	mockTXStore := &MockTXStore{
 		dao:    mockDAO,
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -209,7 +209,7 @@ func Test_MockTXStore_GetTX(t *testing.T) {
 	mockTXStore := &MockTXStore{
 		dao:    mockDAO,
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}

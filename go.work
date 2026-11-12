@@ -9,7 +9,7 @@ use (
 	./components/lsm_tree
 	./components/raft
 	./components/red_mq
-	./components/redis_lock
+	./components/distributed_lock
 	./components/tcc
 	./components/time_wheel
 	./components/timer

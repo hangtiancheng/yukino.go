@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/pkg"
 	go_redis "github.com/redis/go-redis/v9"
@@ -40,12 +40,12 @@ type MockComponent struct {
 	lockFactory LockFactory
 }
 
-func NewMockComponent(id string, client *redis_lock.Client) *MockComponent {
+func NewMockComponent(id string, client *distributed_lock.Client) *MockComponent {
 	return &MockComponent{
 		id:     id,
 		client: client,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
-			return redis_lock.NewRedisLock(key, client, opts...)
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
+			return distributed_lock.NewRedisLock(key, client, opts...)
 		},
 	}
 }

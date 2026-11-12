@@ -1,4 +1,4 @@
-module github.com/hangtiancheng/yukino.go/components/redis_lock
+module github.com/hangtiancheng/yukino.go/components/distributed_lock
 
 go 1.26.0
 

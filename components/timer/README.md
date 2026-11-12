@@ -13,7 +13,7 @@ Cron-style timer definitions are expanded into concrete tasks ahead of time, fan
                         │
                         V
                  ┌─────────────┐     per (minute, bucket) lock
-                 │  Scheduler  │<──── redis_lock ────┐
+                 │  Scheduler  │<──── distributed_lock ────┐
                  └──────┬──────┘                     │
                         │ trigger.Work(sliceKey)     │
                         V                            │
@@ -49,7 +49,7 @@ Cron-style timer definitions are expanded into concrete tasks ahead of time, fan
 ## Key design points
 
 - **Pre-materialization** — cron expressions are not evaluated per tick. The migrator expands them into task rows ahead of time, which keeps the hot path a simple sorted-set read.
-- **Distributed locking** — every shard of work is protected by a `redis_lock`. Lock TTLs differ between the acquire window (`tryLockSeconds`) and the success lease (`successExpireSeconds`) so slow work is not stolen.
+- **Distributed locking** — every shard of work is protected by a `distributed_lock`. Lock TTLs differ between the acquire window (`tryLockSeconds`) and the success lease (`successExpireSeconds`) so slow work is not stolen.
 - **Bloom-filter deduplication** — each executed `(timerID, unix)` pair is recorded in a per-day bloom filter with a 24h TTL; a hit falls back to a database status check before skipping.
 - **Bounded worker pools** — every role runs through a `pool.WorkerPool`, so a burst of due tasks cannot spawn unbounded goroutines.
 - **Dependency injection** — all wiring lives in `app/provider.go` using `go.uber.org/dig`, making the role graph explicit and testable.

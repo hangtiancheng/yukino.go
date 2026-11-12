@@ -1,6 +1,6 @@
 <div align="center">
 
-# redis_lock
+# distributed_lock
 
 **Distributed locking with an ownership-checked watchdog.**
 
@@ -34,7 +34,7 @@ Renew()  : Lua { if get(key) == token then expire(key) }    -- atomic
 ## Install
 
 ```bash
-go get github.com/hangtiancheng/yukino.go/components/redis_lock
+go get github.com/hangtiancheng/yukino.go/components/distributed_lock
 ```
 
 ## Quick start
@@ -42,10 +42,10 @@ go get github.com/hangtiancheng/yukino.go/components/redis_lock
 ### Simple lock
 
 ```go
-client := redis_lock.NewClient("tcp", "localhost:6379", "")
+client := distributed_lock.NewClient("tcp", "localhost:6379", "")
 
-lock := redis_lock.NewRedisLock("order:42", client,
-	redis_lock.WithExpireSeconds(30),
+lock := distributed_lock.NewRedisLock("order:42", client,
+	distributed_lock.WithExpireSeconds(30),
 )
 
 if err := lock.Lock(ctx); err != nil {
@@ -59,18 +59,18 @@ defer lock.Unlock(ctx)
 Omit `WithExpireSeconds` to enable the watchdog:
 
 ```go
-lock := redis_lock.NewRedisLock("order:42", client) // 30s lease, auto-renewed
+lock := distributed_lock.NewRedisLock("order:42", client) // 30s lease, auto-renewed
 ```
 
 ### Blocking lock
 
 ```go
-lock := redis_lock.NewRedisLock("order:42", client,
-	redis_lock.WithBlock(),
-	redis_lock.WithBlockWaitingSeconds(10),
+lock := distributed_lock.NewRedisLock("order:42", client,
+	distributed_lock.WithBlock(),
+	distributed_lock.WithBlockWaitingSeconds(10),
 )
 
-if err := lock.Lock(ctx); errors.Is(err, redis_lock.ErrLockAcquiredByOthers) {
+if err := lock.Lock(ctx); errors.Is(err, distributed_lock.ErrLockAcquiredByOthers) {
 	log.Println("gave up after 10s")
 }
 ```
@@ -78,13 +78,13 @@ if err := lock.Lock(ctx); errors.Is(err, redis_lock.ErrLockAcquiredByOthers) {
 ### RedLock
 
 ```go
-redLock, err := redis_lock.NewRedLock("order:42", []*redis_lock.SingleNodeConf{
+redLock, err := distributed_lock.NewRedLock("order:42", []*distributed_lock.SingleNodeConf{
 	{Network: "tcp", Address: "redis-1:6379"},
 	{Network: "tcp", Address: "redis-2:6379"},
 	{Network: "tcp", Address: "redis-3:6379"},
 },
-	redis_lock.WithSingleNodesTimeout(50*time.Millisecond),
-	redis_lock.WithRedLockExpireDuration(30*time.Second),
+	distributed_lock.WithSingleNodesTimeout(50*time.Millisecond),
+	distributed_lock.WithRedLockExpireDuration(30*time.Second),
 )
 if err != nil {
 	log.Fatal(err)

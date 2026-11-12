@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/mocks"
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/pkg"
@@ -67,7 +67,7 @@ func Test_MockComponent_Try(t *testing.T) {
 	mockComponent := &MockComponent{
 		id:     "id",
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -232,7 +232,7 @@ func Test_MockComponent_Confirm(t *testing.T) {
 	mockComponent := &MockComponent{
 		id:     "id",
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}
@@ -365,7 +365,7 @@ func Test_MockComponent_Cancel(t *testing.T) {
 	mockComponent := &MockComponent{
 		id:     "id",
 		client: mockClient,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
 			return mockLock
 		},
 	}

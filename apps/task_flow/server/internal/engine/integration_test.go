@@ -23,9 +23,9 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/llm"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/storage"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/red_mq"
 	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 	timerbloom "github.com/hangtiancheng/yukino.go/components/timer/pkg/bloom"
 	timerhash "github.com/hangtiancheng/yukino.go/components/timer/pkg/hash"
@@ -203,7 +203,7 @@ func TestDuplicateCommandsRunToolsOnceAndPersistMarkdown(t *testing.T) {
 	cfg.LLM.BaseURLEnv = "TASK_FLOW_TEST_LLM_URL"
 	producer := red_mq.NewProducer(mqredis.NewUniversalClient(client))
 	i := idem.New(client, time.Minute)
-	manager := tcc.NewTXManager(NewTXStore(db, redis_lock.NewUniversalClient(client)), tcc.WithMonitorTick(time.Hour))
+	manager := tcc.NewTXManager(NewTXStore(db, distributed_lock.NewUniversalClient(client)), tcc.WithMonitorTick(time.Hour))
 	defer manager.Stop()
 	if err := manager.Register(NewExecutionReserveComponent(d, i)); err != nil {
 		t.Fatal(err)

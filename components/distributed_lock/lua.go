@@ -1,4 +1,4 @@
-package redis_lock
+package distributed_lock
 
 const LuaCheckAndDeleteDistributionLock = `
   local lockerKey = KEYS[1]

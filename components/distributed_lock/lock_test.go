@@ -1,4 +1,4 @@
-package redis_lock
+package distributed_lock
 
 import (
 	"context"
@@ -11,10 +11,10 @@ import (
 )
 
 func Test_blockingLock(t *testing.T) {
-	addr := os.Getenv("REDIS_LOCK_ADDR")
-	passwd := os.Getenv("REDIS_LOCK_PASSWORD")
+	addr := os.Getenv("distributed_lock_ADDR")
+	passwd := os.Getenv("distributed_lock_PASSWORD")
 	if addr == "" {
-		t.Skip("set REDIS_LOCK_ADDR (and optional REDIS_LOCK_PASSWORD) to run this test against a real redis")
+		t.Skip("set distributed_lock_ADDR (and optional distributed_lock_PASSWORD) to run this test against a real redis")
 	}
 
 	client := NewClient("tcp", addr, passwd)
@@ -43,10 +43,10 @@ func Test_blockingLock(t *testing.T) {
 }
 
 func Test_nonBlockingLock(t *testing.T) {
-	addr := os.Getenv("REDIS_LOCK_ADDR")
-	passwd := os.Getenv("REDIS_LOCK_PASSWORD")
+	addr := os.Getenv("distributed_lock_ADDR")
+	passwd := os.Getenv("distributed_lock_PASSWORD")
 	if addr == "" {
-		t.Skip("set REDIS_LOCK_ADDR (and optional REDIS_LOCK_PASSWORD) to run this test against a real redis")
+		t.Skip("set distributed_lock_ADDR (and optional distributed_lock_PASSWORD) to run this test against a real redis")
 	}
 
 	client := NewClient("tcp", addr, passwd)
@@ -74,10 +74,10 @@ func Test_nonBlockingLock(t *testing.T) {
 }
 
 func Test_redLock(t *testing.T) {
-	addrs := strings.Split(os.Getenv("REDIS_LOCK_ADDRS"), ",")
-	passwd := os.Getenv("REDIS_LOCK_PASSWORD")
+	addrs := strings.Split(os.Getenv("distributed_lock_ADDRS"), ",")
+	passwd := os.Getenv("distributed_lock_PASSWORD")
 	if len(addrs) < 3 || addrs[0] == "" {
-		t.Skip("set REDIS_LOCK_ADDRS (comma separated, at least 3 nodes) and optional REDIS_LOCK_PASSWORD to run this test against real redis nodes")
+		t.Skip("set distributed_lock_ADDRS (comma separated, at least 3 nodes) and optional distributed_lock_PASSWORD to run this test against real redis nodes")
 	}
 
 	confs := make([]*SingleNodeConf, 0, len(addrs))

@@ -84,7 +84,7 @@ Prompt/model fields are snapshotted when executions are materialized. Existing p
 | libs/yukino_cache           | Byte-budgeted report cache, singleflight, peer discovery and gRPC in cluster mode |
 | components/red_mq           | Execution and condition Streams, retry, dead letters, abandoned-message recovery  |
 | components/time_wheel       | Distributed scheduled callbacks and local monitor ticks                           |
-| components/redis_lock       | Scheduler, monitor, and transaction recovery locks                                |
+| components/distributed_lock | Scheduler, monitor, and transaction recovery locks                                |
 | components/consistent_hash  | Live-node ring and singleton role placement                                       |
 | components/consistent_cache | Redis task-definition cache with invalidation and drift repair                    |
 | components/tcc              | SQL-backed reserve/publish transactions and recovery                              |

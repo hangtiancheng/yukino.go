@@ -10,7 +10,7 @@ require (
 	github.com/hangtiancheng/yukino.go/components/lsm_tree v0.0.0
 	github.com/hangtiancheng/yukino.go/components/raft v0.0.0
 	github.com/hangtiancheng/yukino.go/components/red_mq v0.0.0
-	github.com/hangtiancheng/yukino.go/components/redis_lock v0.0.0
+	github.com/hangtiancheng/yukino.go/components/distributed_lock v0.0.0
 	github.com/hangtiancheng/yukino.go/components/tcc v0.0.0
 	github.com/hangtiancheng/yukino.go/components/time_wheel v0.0.0
 	github.com/hangtiancheng/yukino.go/components/timer v0.0.0
@@ -70,7 +70,7 @@ replace (
 	github.com/hangtiancheng/yukino.go/components/lsm_tree => ../../../components/lsm_tree
 	github.com/hangtiancheng/yukino.go/components/raft => ../../../components/raft
 	github.com/hangtiancheng/yukino.go/components/red_mq => ../../../components/red_mq
-	github.com/hangtiancheng/yukino.go/components/redis_lock => ../../../components/redis_lock
+	github.com/hangtiancheng/yukino.go/components/distributed_lock => ../../../components/distributed_lock
 	github.com/hangtiancheng/yukino.go/components/tcc => ../../../components/tcc
 	github.com/hangtiancheng/yukino.go/components/time_wheel => ../../../components/time_wheel
 	github.com/hangtiancheng/yukino.go/components/timer => ../../../components/timer

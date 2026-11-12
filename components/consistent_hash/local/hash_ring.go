@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/components/consistent_hash/pkg/os"
-	"github.com/hangtiancheng/yukino.go/components/redis_lock/utils"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock/utils"
 )
 
 type LockEntityV2 struct {

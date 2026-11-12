@@ -1,4 +1,4 @@
-package redis_lock
+package distributed_lock
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock/utils"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock/utils"
 )
 
-const RedisLockKeyPrefix = "REDIS_LOCK_PREFIX_"
+const RedisLockKeyPrefix = "distributed_lock_PREFIX_"
 
 var (
 	ErrLockAcquiredByOthers = errors.New("lock is acquired by others")

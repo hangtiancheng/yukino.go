@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	go_redis "github.com/redis/go-redis/v9"
 )
 
@@ -41,12 +41,12 @@ func (r *RedisHashRing) getNodeDataKey(nodeID string) string {
 }
 
 func (r *RedisHashRing) Lock(ctx context.Context, expireSeconds int) error {
-	lock := redis_lock.NewRedisLock(r.getLockKey(), r.redisClient, redis_lock.WithExpireSeconds(int64(expireSeconds)))
+	lock := distributed_lock.NewRedisLock(r.getLockKey(), r.redisClient, distributed_lock.WithExpireSeconds(int64(expireSeconds)))
 	return lock.Lock(ctx)
 }
 
 func (r *RedisHashRing) Unlock(ctx context.Context) error {
-	lock := redis_lock.NewRedisLock(r.getLockKey(), r.redisClient)
+	lock := distributed_lock.NewRedisLock(r.getLockKey(), r.redisClient)
 	return lock.Unlock(ctx)
 }
 

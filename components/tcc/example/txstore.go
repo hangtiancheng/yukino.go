@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 	example_dao "github.com/hangtiancheng/yukino.go/components/tcc/example/dao"
 	"github.com/hangtiancheng/yukino.go/components/tcc/example/pkg"
@@ -20,12 +20,12 @@ type MockTXStore struct {
 	lockFactory LockFactory
 }
 
-func NewMockTXStore(dao TXRecordDAO, client *redis_lock.Client) *MockTXStore {
+func NewMockTXStore(dao TXRecordDAO, client *distributed_lock.Client) *MockTXStore {
 	return &MockTXStore{
 		dao:    dao,
 		client: client,
-		lockFactory: func(key string, opts ...redis_lock.LockOption) Lock {
-			return redis_lock.NewRedisLock(key, client, opts...)
+		lockFactory: func(key string, opts ...distributed_lock.LockOption) Lock {
+			return distributed_lock.NewRedisLock(key, client, opts...)
 		},
 	}
 }
@@ -94,7 +94,7 @@ func (m *MockTXStore) GetHangingTXs(ctx context.Context) ([]*tcc.Transaction, er
 }
 
 func (m *MockTXStore) Lock(ctx context.Context, expireDuration time.Duration) error {
-	lock := m.lockFactory(pkg.BuildTXRecordLockKey(), redis_lock.WithExpireSeconds(int64(expireDuration.Seconds())))
+	lock := m.lockFactory(pkg.BuildTXRecordLockKey(), distributed_lock.WithExpireSeconds(int64(expireDuration.Seconds())))
 	return lock.Lock(ctx)
 }
 

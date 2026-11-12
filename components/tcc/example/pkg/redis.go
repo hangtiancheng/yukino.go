@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 )
 
 const (
@@ -14,17 +14,17 @@ const (
 )
 
 var (
-	redisClient *redis_lock.Client
+	redisClient *distributed_lock.Client
 	once        sync.Once
 )
 
-func NewRedisClient(network, address, password string) *redis_lock.Client {
-	return redis_lock.NewClient(network, address, password)
+func NewRedisClient(network, address, password string) *distributed_lock.Client {
+	return distributed_lock.NewClient(network, address, password)
 }
 
-func GetRedisClient() *redis_lock.Client {
+func GetRedisClient() *distributed_lock.Client {
 	once.Do(func() {
-		redisClient = redis_lock.NewClient(network, address, password)
+		redisClient = distributed_lock.NewClient(network, address, password)
 	})
 	return redisClient
 }

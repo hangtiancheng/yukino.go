@@ -3,7 +3,7 @@ package example
 import (
 	"context"
 
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 )
 
 type RedisClient interface {
@@ -18,4 +18,4 @@ type Lock interface {
 	Unlock(ctx context.Context) error
 }
 
-type LockFactory func(key string, opts ...redis_lock.LockOption) Lock
+type LockFactory func(key string, opts ...distributed_lock.LockOption) Lock

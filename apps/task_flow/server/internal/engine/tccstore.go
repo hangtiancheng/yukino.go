@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -19,17 +19,17 @@ const tccStoreLockKey = "task_flow:tcc:txstore:lock"
 
 type TXStore struct {
 	db          *gorm.DB
-	lockFactory func(expireSeconds int64) *redis_lock.RedisLock
+	lockFactory func(expireSeconds int64) *distributed_lock.RedisLock
 	lockMu      sync.Mutex
-	heldLock    *redis_lock.RedisLock
+	heldLock    *distributed_lock.RedisLock
 }
 
-func NewTXStore(db *gorm.DB, lockClient *redis_lock.Client) *TXStore {
+func NewTXStore(db *gorm.DB, lockClient *distributed_lock.Client) *TXStore {
 	return &TXStore{
 		db: db,
-		lockFactory: func(expireSeconds int64) *redis_lock.RedisLock {
-			return redis_lock.NewRedisLock(tccStoreLockKey, lockClient,
-				redis_lock.WithExpireSeconds(expireSeconds))
+		lockFactory: func(expireSeconds int64) *distributed_lock.RedisLock {
+			return distributed_lock.NewRedisLock(tccStoreLockKey, lockClient,
+				distributed_lock.WithExpireSeconds(expireSeconds))
 		},
 	}
 }

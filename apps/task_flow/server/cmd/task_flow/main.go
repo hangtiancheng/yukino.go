@@ -33,9 +33,9 @@ import (
 	ccredis "github.com/hangtiancheng/yukino.go/components/consistent_cache/redis"
 	"github.com/hangtiancheng/yukino.go/components/consistent_hash"
 	chredis "github.com/hangtiancheng/yukino.go/components/consistent_hash/redis"
+	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
 	"github.com/hangtiancheng/yukino.go/components/red_mq"
 	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
-	"github.com/hangtiancheng/yukino.go/components/redis_lock"
 	"github.com/hangtiancheng/yukino.go/components/time_wheel"
 	time_wheel_http "github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/http"
 	twredis "github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/redis"
@@ -178,7 +178,7 @@ func run(configPath string) error {
 		consistent_cache.WithDisableExpireSeconds(1),
 	)
 
-	lockClient := redis_lock.NewUniversalClient(redisClient)
+	lockClient := distributed_lock.NewUniversalClient(redisClient)
 	mqClient := mqredis.NewUniversalClient(redisClient)
 	wheelClient := twredis.NewUniversalClient(redisClient)
 	hashClient := chredis.NewUniversalClient(redisClient)

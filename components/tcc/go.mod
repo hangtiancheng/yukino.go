@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/google/uuid v1.6.0
-	github.com/hangtiancheng/yukino.go/components/redis_lock v0.0.0
+	github.com/hangtiancheng/yukino.go/components/distributed_lock v0.0.0
 	github.com/redis/go-redis/v9 v9.23.0
 	go.uber.org/mock v0.6.0
 	gorm.io/driver/mysql v1.6.0
@@ -23,4 +23,4 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 )
 
-replace github.com/hangtiancheng/yukino.go/components/redis_lock => ../redis_lock
+replace github.com/hangtiancheng/yukino.go/components/distributed_lock => ../distributed_lock

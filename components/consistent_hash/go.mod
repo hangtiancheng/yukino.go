@@ -3,7 +3,7 @@ module github.com/hangtiancheng/yukino.go/components/consistent_hash
 go 1.26.0
 
 require (
-	github.com/hangtiancheng/yukino.go/components/redis_lock v0.0.0
+	github.com/hangtiancheng/yukino.go/components/distributed_lock v0.0.0
 	github.com/redis/go-redis/v9 v9.23.0
 )
 
@@ -13,4 +13,4 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 )
 
-replace github.com/hangtiancheng/yukino.go/components/redis_lock => ../redis_lock
+replace github.com/hangtiancheng/yukino.go/components/distributed_lock => ../distributed_lock

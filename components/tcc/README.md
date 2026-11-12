@@ -46,7 +46,7 @@ background run()
 - **Timeout-inferred failure** — a transaction whose components are still `hanging` after `WithTimeout` is declared failed and cancelled, so reservations never leak indefinitely.
 - **Parallel Try phase** — participants are contacted concurrently; the first failure cancels the context and triggers cancellation of the others.
 - **Registry-based components** — `Register(component)` binds an ID to an implementation; components are resolved by ID at Confirm/Cancel time.
-- **Global lock** — the `TXStore` contract includes `Lock` / `Unlock` (typically a `redis_lock`) so multiple manager instances do not advance the same transaction concurrently.
+- **Global lock** — the `TXStore` contract includes `Lock` / `Unlock` (typically a `distributed_lock`) so multiple manager instances do not advance the same transaction concurrently.
 - **Backoff monitor** — the recovery loop doubles its tick on error, capped at 8× the configured tick.
 
 ## Install
