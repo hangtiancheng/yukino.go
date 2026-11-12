@@ -12,13 +12,14 @@ func GetCurrentProcessID() string {
 	return strconv.Itoa(os.Getpid())
 }
 
-func GetCurrentGoroutineID() string {
-	buf := make([]byte, 128)
-	buf = buf[:runtime.Stack(buf, false)]
-	stackInfo := string(buf)
-	return strings.TrimSpace(strings.Split(strings.Split(stackInfo, "[running]")[0], "goroutine")[1])
+func GetCurrentGoroutineID() int64 {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	field := strings.Fields(string(buf[:n]))
+	id, _ := strconv.ParseInt(field[1], 10, 64)
+	return id
 }
 
 func GetProcessAndGoroutineIDStr() string {
-	return fmt.Sprintf("%s_%s", GetCurrentProcessID(), GetCurrentGoroutineID())
+	return fmt.Sprintf("%s_%d", GetCurrentProcessID(), GetCurrentGoroutineID())
 }
