@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	go_redis "github.com/redis/go-redis/v9"
 )
 
 type fakeClient struct {
@@ -176,6 +178,48 @@ func TestMockBlockingLockTimesOut(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed < time.Second {
 		t.Fatalf("waiter.Lock returned too early: %v", elapsed)
+	}
+}
+
+func TestMockWatchDogOutlivesLockContext(t *testing.T) {
+	fc := newFakeClient()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	l := NewRedisLock("k", fc)
+	if err := l.Lock(ctx); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+	if l.runningDog.Load() != 1 {
+		t.Fatal("watchdog stopped after the lock context was cancelled")
+	}
+	if err := l.Unlock(context.Background()); err != nil {
+		t.Fatalf("Unlock: %v", err)
+	}
+	waitFor(t, 2*time.Second, func() bool { return l.runningDog.Load() == 0 })
+}
+
+func TestNewClientMapsPoolOptions(t *testing.T) {
+	c := NewClient("tcp", "127.0.0.1:1", "", WithMaxIdle(7), WithMaxActive(10), WithIdleTimeoutSeconds(3))
+	t.Cleanup(func() { _ = c.Close() })
+
+	client, ok := c.client.(*go_redis.Client)
+	if !ok {
+		t.Fatalf("client type = %T, want *redis.Client", c.client)
+	}
+	opts := client.Options()
+	if opts.MaxIdleConns != 7 {
+		t.Fatalf("MaxIdleConns = %d, want 7", opts.MaxIdleConns)
+	}
+	if opts.MinIdleConns != 0 {
+		t.Fatalf("MinIdleConns = %d, want 0", opts.MinIdleConns)
+	}
+	if opts.PoolSize != 10 {
+		t.Fatalf("PoolSize = %d, want 10", opts.PoolSize)
+	}
+	if opts.ConnMaxIdleTime != 3*time.Second {
+		t.Fatalf("ConnMaxIdleTime = %v, want 3s", opts.ConnMaxIdleTime)
 	}
 }
 

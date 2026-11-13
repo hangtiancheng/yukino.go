@@ -26,7 +26,7 @@ DelayExpire() : Lua { if get(key) == token then expire(key) }    -- atomic
 ## Features
 
 - **Ownership-safe by construction** — acquire, release, and renew all use compare-and-act Lua scripts.
-- **Watchdog auto-renewal** — if you do not specify a TTL, the lock starts with a 30-second lease and a watchdog that renews every 10 seconds (setting a 15-second renewal TTL). Long-running work is protected without guessing a TTL.
+- **Watchdog auto-renewal** — if you do not specify a TTL, the lock starts with a 30-second lease and a watchdog that renews every 10 seconds (setting a 15-second renewal TTL). It renews until `Unlock`, independent of the context passed to `Lock`.
 - **Blocking or non-blocking** — `WithBlock()` polls every 50 ms until acquired or the wait budget elapses; without it, `Lock` fails fast with `ErrLockAcquiredByOthers`.
 - **RedLock across N nodes** — `RedLock` requires at least 3 distinct Redis instances (duplicate addresses are rejected) and succeeds only when a majority acknowledge within a per-node timeout.
 - **Retry-aware errors** — `IsRetryableErr` distinguishes "busy, try again" from real failures.
@@ -134,12 +134,12 @@ The `Client` also exposes `Get`, `Set`, `SetNX`, and `Del` helpers for downstrea
 
 ### `RedLock`
 
-| Method                            | Description                                                        |
-| --------------------------------- | ------------------------------------------------------------------ |
-| `NewRedLock(key, confs, opts...)` | Requires ≥ 3 distinct nodes; validates the TTL and timeout budget. |
-| `Lock(ctx)`                       | Acquire on a majority within the per-node timeout.                 |
-| `Unlock(ctx)`                     | Release the nodes acquired by the last successful `Lock`.          |
-| `Close()`                         | Unlock and close all underlying clients.                           |
+| Method                            | Description                                                         |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `NewRedLock(key, confs, opts...)` | Requires ≥ 3 distinct nodes; validates the TTL and timeout budget.  |
+| `Lock(ctx)`                       | Try all nodes in parallel; succeed when a majority acquire in time. |
+| `Unlock(ctx)`                     | Release the nodes acquired by the last successful `Lock`.           |
+| `Close()`                         | Unlock and close all underlying clients.                            |
 
 | Option                         | Default | Description                                                        |
 | ------------------------------ | ------- | ------------------------------------------------------------------ |

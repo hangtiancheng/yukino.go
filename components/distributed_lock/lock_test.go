@@ -18,10 +18,15 @@ func Test_blockingLock(t *testing.T) {
 	}
 
 	client := NewClient("tcp", addr, passwd)
+	defer client.Close()
 	lock1 := NewRedisLock("test_key", client, WithExpireSeconds(1))
 	lock2 := NewRedisLock("test_key", client, WithBlock(), WithBlockWaitingSeconds(2))
 
 	ctx := context.Background()
+	defer func() {
+		_ = lock1.Unlock(ctx)
+		_ = lock2.Unlock(ctx)
+	}()
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		if err := lock1.Lock(ctx); err != nil {
@@ -50,10 +55,15 @@ func Test_nonBlockingLock(t *testing.T) {
 	}
 
 	client := NewClient("tcp", addr, passwd)
+	defer client.Close()
 	lock1 := NewRedisLock("test_key", client, WithExpireSeconds(1))
 	lock2 := NewRedisLock("test_key", client)
 
 	ctx := context.Background()
+	defer func() {
+		_ = lock1.Unlock(ctx)
+		_ = lock2.Unlock(ctx)
+	}()
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		if err := lock1.Lock(ctx); err != nil {
@@ -93,6 +103,11 @@ func Test_redLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if closeErr := redLock.Close(); closeErr != nil {
+			t.Errorf("Close: %v", closeErr)
+		}
+	})
 
 	ctx := context.Background()
 	if err = redLock.Lock(ctx); err != nil {

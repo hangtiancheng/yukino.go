@@ -62,6 +62,12 @@ func NewRedLock(key string, confs []*SingleNodeConf, opts ...RedLockOption) (*Re
 	return &r, nil
 }
 
+type redLockAttempt struct {
+	lock *RedisLock
+	err  error
+	cost time.Duration
+}
+
 func (r *RedLock) Lock(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("nil context")
@@ -74,37 +80,49 @@ func (r *RedLock) Lock(ctx context.Context) error {
 	if len(r.held) > 0 {
 		return errors.New("redlock is already held")
 	}
-	var successCnt int
-	var attempted []*RedisLock
-	var acquired []*RedisLock
-	var timely []*RedisLock
-	for _, lock := range r.locks {
-		startTime := time.Now()
-		lockCtx, cancel := context.WithTimeout(ctx, r.singleNodesTimeout)
-		err := lock.lockWithWatchdog(lockCtx, ctx)
-		cancel()
-		cost := time.Since(startTime)
-		attempted = append(attempted, lock)
-		if err == nil {
-			acquired = append(acquired, lock)
-			if cost <= r.singleNodesTimeout {
-				successCnt++
-				timely = append(timely, lock)
-			}
+
+	attempts := make([]redLockAttempt, len(r.locks))
+	var wg sync.WaitGroup
+	for i, lock := range r.locks {
+		wg.Add(1)
+		go func(i int, lock *RedisLock) {
+			defer wg.Done()
+			lockCtx, cancel := context.WithTimeout(ctx, r.singleNodesTimeout)
+			defer cancel()
+			startTime := time.Now()
+			err := lock.lockWithWatchdog(lockCtx)
+			attempts[i] = redLockAttempt{lock: lock, err: err, cost: time.Since(startTime)}
+		}(i, lock)
+	}
+	wg.Wait()
+
+	acquired := make([]*RedisLock, 0, len(attempts))
+	timely := make([]*RedisLock, 0, len(attempts))
+	for _, attempt := range attempts {
+		if attempt.err != nil {
+			continue
+		}
+		acquired = append(acquired, attempt.lock)
+		if attempt.cost <= r.singleNodesTimeout {
+			timely = append(timely, attempt.lock)
 		}
 	}
+
 	if err := ctx.Err(); err != nil {
-		r.unlockLocks(ctx, attempted)
-		return err
+		failed, unlockErr := r.releaseLocks(ctx, acquired, false)
+		r.held = failed
+		return errors.Join(err, unlockErr)
 	}
 
-	if successCnt < len(r.locks)/2+1 {
-		r.unlockLocks(ctx, acquired, attempted)
-		return errors.New("lock failed")
+	if len(timely) < len(r.locks)/2+1 {
+		failed, unlockErr := r.releaseLocks(ctx, acquired, false)
+		r.held = failed
+		return errors.Join(errors.New("lock failed"), unlockErr)
 	}
-	r.unlockLocks(ctx, difference(attempted, timely))
-	r.held = timely
 
+	// Keep locks that could not be released so Unlock/Close can retry them.
+	failed, _ := r.releaseLocks(ctx, difference(acquired, timely), true)
+	r.held = append(timely, failed...)
 	return nil
 }
 
@@ -114,35 +132,47 @@ func (r *RedLock) Unlock(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var err error
 	remaining := make([]*RedisLock, 0, len(r.held))
+	var errs []error
 	for _, lock := range r.held {
 		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.singleNodesTimeout)
-		if _err := lock.Unlock(unlockCtx); _err != nil {
-			remaining = append(remaining, lock)
-			if err == nil {
-				err = _err
-			}
-		}
+		err := lock.Unlock(unlockCtx)
 		cancel()
+		if err == nil || errors.Is(err, errLockLost) {
+			continue
+		}
+		remaining = append(remaining, lock)
+		errs = append(errs, err)
 	}
 	r.held = remaining
-	return err
+	return errors.Join(errs...)
 }
 
-func (r *RedLock) unlockLocks(ctx context.Context, locks ...[]*RedisLock) {
-	seen := make(map[*RedisLock]struct{})
-	for _, lockSet := range locks {
-		for _, lock := range lockSet {
-			if _, ok := seen[lock]; ok {
-				continue
-			}
-			seen[lock] = struct{}{}
-			unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.singleNodesTimeout)
-			_ = lock.Unlock(unlockCtx)
-			cancel()
+func (r *RedLock) releaseLocks(ctx context.Context, locks []*RedisLock, keepWatchdog bool) ([]*RedisLock, error) {
+	seen := make(map[*RedisLock]struct{}, len(locks))
+	var failed []*RedisLock
+	var errs []error
+	for _, lock := range locks {
+		if lock == nil {
+			continue
 		}
+		if _, ok := seen[lock]; ok {
+			continue
+		}
+		seen[lock] = struct{}{}
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.singleNodesTimeout)
+		err := lock.Unlock(unlockCtx)
+		cancel()
+		if err == nil || errors.Is(err, errLockLost) {
+			continue
+		}
+		failed = append(failed, lock)
+		if !keepWatchdog {
+			lock.stopWatchDog()
+		}
+		errs = append(errs, err)
 	}
+	return failed, errors.Join(errs...)
 }
 
 func difference(left, right []*RedisLock) []*RedisLock {

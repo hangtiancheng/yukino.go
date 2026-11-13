@@ -52,10 +52,10 @@ func NewRedisLock(key string, client LockClient, opts ...LockOption) *RedisLock 
 }
 
 func (r *RedisLock) Lock(ctx context.Context) (err error) {
-	return r.lockWithWatchdog(ctx, ctx)
+	return r.lockWithWatchdog(ctx)
 }
 
-func (r *RedisLock) lockWithWatchdog(ctx, watchdogCtx context.Context) (err error) {
+func (r *RedisLock) lockWithWatchdog(ctx context.Context) (err error) {
 	r.operationMu.Lock()
 	defer r.operationMu.Unlock()
 	if r.client == nil {
@@ -67,8 +67,8 @@ func (r *RedisLock) lockWithWatchdog(ctx, watchdogCtx context.Context) (err erro
 	if r.key == "" {
 		return errors.New("redis lock key is empty")
 	}
-	if ctx == nil || watchdogCtx == nil {
-		return errors.New("redis lock contexts are nil")
+	if ctx == nil {
+		return errors.New("redis lock context is nil")
 	}
 	tokenBytes := make([]byte, 24)
 	if _, err = rand.Read(tokenBytes); err != nil {
@@ -83,7 +83,7 @@ func (r *RedisLock) lockWithWatchdog(ctx, watchdogCtx context.Context) (err erro
 			return
 		}
 		r.held = true
-		r.watchDog(watchdogCtx)
+		r.watchDog(ctx)
 	}()
 
 	err = r.tryLock(ctx)
@@ -127,7 +127,9 @@ func (r *RedisLock) watchDog(ctx context.Context) {
 	if r.stopDog != nil {
 		r.stopDog()
 	}
-	dogCtx, cancel := context.WithCancel(ctx)
+	// Renew until Unlock even if the context passed to Lock is cancelled while
+	// the critical section is still running.
+	dogCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	r.stopDog = cancel
 	r.watchDogMu.Unlock()
 
@@ -233,7 +235,7 @@ func (r *RedisLock) Unlock(ctx context.Context) error {
 	if ret, _ := reply.(int64); ret != 1 {
 		r.held = false
 		r.stopWatchDog()
-		return errors.New("can not unlock without ownership of lock")
+		return fmt.Errorf("can not unlock without ownership of lock: %w", errLockLost)
 	}
 
 	r.held = false

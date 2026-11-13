@@ -43,7 +43,7 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 		Addr:            c.address,
 		Password:        c.password,
 		PoolSize:        c.maxActive,
-		MinIdleConns:    c.maxIdle,
+		MaxIdleConns:    c.maxIdle,
 		ConnMaxIdleTime: time.Duration(c.idleTimeoutSeconds) * time.Second,
 	})
 	return &Client{
