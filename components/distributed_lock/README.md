@@ -7,7 +7,7 @@
 A Redis-backed distributed lock that is safe by construction: token-owned keys, Lua-checked release and renewal, an automatic watchdog for long critical sections, and a multi-node RedLock for when a single Redis is not enough.
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![Module](https://img.shields.io/badge/module-apps%2Fredis__lock-blue)](go.mod)
+[![Module](https://img.shields.io/badge/module-components%2Fdistributed__lock-blue)](go.mod)
 
 </div>
 
@@ -15,20 +15,20 @@ A Redis-backed distributed lock that is safe by construction: token-owned keys, 
 
 ## Design
 
-A lock is a Redis key holding a unique **token** (`process + goroutine id`). Every mutating operation is a Lua script that compares the stored token first, so a client can never release or renew a lock it does not own — even if its lease expired and someone else acquired it.
+A lock is a Redis key holding a unique **token** (24 random bytes, hex encoded). Every mutating operation is a Lua script that compares the stored token first, so a client can never release or renew a lock it does not own — even if its lease expired and someone else acquired it.
 
 ```text
-Lock()   : SET key token NX EX ttl
-Unlock() : Lua { if get(key) == token then del(key) }       -- atomic
-Renew()  : Lua { if get(key) == token then expire(key) }    -- atomic
+Lock()        : SET key token NX EX ttl
+Unlock()      : Lua { if get(key) == token then del(key) }       -- atomic
+DelayExpire() : Lua { if get(key) == token then expire(key) }    -- atomic
 ```
 
 ## Features
 
 - **Ownership-safe by construction** — acquire, release, and renew all use compare-and-act Lua scripts.
-- **Watchdog auto-renewal** — if you do not specify a TTL, the lock starts a watchdog that renews every 10 seconds and a 30-second default lease. Long-running work is protected without guessing a TTL.
+- **Watchdog auto-renewal** — if you do not specify a TTL, the lock starts with a 30-second lease and a watchdog that renews every 10 seconds (setting a 15-second renewal TTL). Long-running work is protected without guessing a TTL.
 - **Blocking or non-blocking** — `WithBlock()` polls every 50 ms until acquired or the wait budget elapses; without it, `Lock` fails fast with `ErrLockAcquiredByOthers`.
-- **RedLock across N nodes** — `RedLock` requires at least 3 independent Redis instances and succeeds only when a majority acknowledge within a per-node timeout.
+- **RedLock across N nodes** — `RedLock` requires at least 3 distinct Redis instances (duplicate addresses are rejected) and succeeds only when a majority acknowledge within a per-node timeout.
 - **Retry-aware errors** — `IsRetryableErr` distinguishes "busy, try again" from real failures.
 
 ## Install
@@ -93,20 +93,36 @@ if err != nil {
 if err := redLock.Lock(ctx); err != nil {
 	log.Fatal(err)
 }
-defer redLock.Unlock(ctx)
+defer redLock.Close()
 ```
 
 ## API
 
+### `Client`
+
+| Method                                           | Description                                  |
+| ------------------------------------------------ | -------------------------------------------- |
+| `NewClient(network, address, password, opts...)` | Build a go-redis client for the lock.        |
+| `NewUniversalClient(redisClient)`                | Wrap an existing go-redis `UniversalClient`. |
+| `Close()`                                        | Close the underlying Redis client.           |
+
+| Option                      | Default | Description                         |
+| --------------------------- | ------- | ----------------------------------- |
+| `WithMaxActive(n)`          | `100`   | Maximum pool size.                  |
+| `WithMaxIdle(n)`            | `20`    | Maximum idle connections.           |
+| `WithIdleTimeoutSeconds(n)` | `10`    | Idle connection timeout in seconds. |
+
+The `Client` also exposes `Get`, `Set`, `SetNX`, and `Del` helpers for downstream components.
+
 ### `RedisLock`
 
-| Method                               | Description                                                        |
-| ------------------------------------ | ------------------------------------------------------------------ |
-| `NewRedisLock(key, client, opts...)` | Build a lock for `key`. The token identifies the owning goroutine. |
-| `Lock(ctx)`                          | Acquire once, or poll if blocking mode is on.                      |
-| `Unlock(ctx)`                        | Release only if the token still matches; stops the watchdog.       |
-| `DelayExpire(ctx, seconds)`          | Owner-checked TTL extension.                                       |
-| `IsRetryableErr(err)`                | Reports whether `err` is `ErrLockAcquiredByOthers`.                |
+| Method                               | Description                                                         |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| `NewRedisLock(key, client, opts...)` | Build a lock for `key`. Each `Lock` call uses a fresh random token. |
+| `Lock(ctx)`                          | Acquire once, or poll if blocking mode is on.                       |
+| `Unlock(ctx)`                        | Release only if the token still matches; stops the watchdog.        |
+| `DelayExpire(ctx, seconds)`          | Owner-checked TTL extension.                                        |
+| `IsRetryableErr(err)`                | Reports whether `err` is `ErrLockAcquiredByOthers`.                 |
 
 ### `LockOptions`
 
@@ -118,21 +134,22 @@ defer redLock.Unlock(ctx)
 
 ### `RedLock`
 
-| Method                            | Description                                        |
-| --------------------------------- | -------------------------------------------------- |
-| `NewRedLock(key, confs, opts...)` | Requires ≥ 3 nodes; validates the timeout budget.  |
-| `Lock(ctx)`                       | Acquire on a majority within the per-node timeout. |
-| `Unlock(ctx)`                     | Release on every node.                             |
+| Method                            | Description                                                        |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `NewRedLock(key, confs, opts...)` | Requires ≥ 3 distinct nodes; validates the TTL and timeout budget. |
+| `Lock(ctx)`                       | Acquire on a majority within the per-node timeout.                 |
+| `Unlock(ctx)`                     | Release the nodes acquired by the last successful `Lock`.          |
+| `Close()`                         | Unlock and close all underlying clients.                           |
 
-| Option                         | Default | Description                               |
-| ------------------------------ | ------- | ----------------------------------------- |
-| `WithSingleNodesTimeout(d)`    | `50ms`  | Max time for one node's acquire to count. |
-| `WithRedLockExpireDuration(d)` | `0`     | Lock TTL across nodes.                    |
+| Option                         | Default | Description                                                        |
+| ------------------------------ | ------- | ------------------------------------------------------------------ |
+| `WithSingleNodesTimeout(d)`    | `50ms`  | Max time for one node's acquire to count.                          |
+| `WithRedLockExpireDuration(d)` | `30s`   | Lock TTL across nodes; must be a positive whole number of seconds. |
 
 ## Notes
 
 > [!IMPORTANT]
-> `RedisLock` is **not reentrant**. Acquiring the same key twice from the same goroutine will fail (or block) because the token is per-goroutine. If you need nesting, track it at a layer above the lock.
+> `RedisLock` is **not reentrant**. A second `Lock` on the same instance fails with "already held", and releasing from another instance fails the token check. If you need nesting, track it at a layer above the lock.
 
 > [!TIP]
 > Prefer the watchdog (omit `WithExpireSeconds`) when the critical section's duration is unknown. A fixed TTL shorter than your work is the classic way to lose mutual exclusion.
@@ -146,7 +163,11 @@ defer redLock.Unlock(ctx)
 go test ./...
 ```
 
-Edit the Redis connection constants in `lock_test.go` before running the integration tests.
+Integration tests are skipped unless these environment variables are set:
+
+- `distributed_lock_ADDR` — Redis address for the single-node tests.
+- `distributed_lock_PASSWORD` — optional Redis password.
+- `distributed_lock_ADDRS` — comma-separated addresses (at least 3) for `Test_redLock`.
 
 ## License
 

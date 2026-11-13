@@ -192,13 +192,13 @@ func (r *RedisLock) blockingLock(ctx context.Context) error {
 	ticker := time.NewTicker(time.Duration(50) * time.Millisecond)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("lock failed, ctx timeout, err: %w", ctx.Err())
 		case <-timeoutCh:
 			return fmt.Errorf("block waiting time out, err: %w", ErrLockAcquiredByOthers)
-		default:
+		case <-ticker.C:
 		}
 
 		err := r.tryLock(ctx)
@@ -210,8 +210,6 @@ func (r *RedisLock) blockingLock(ctx context.Context) error {
 			return err
 		}
 	}
-
-	return nil
 }
 
 func (r *RedisLock) Unlock(ctx context.Context) error {

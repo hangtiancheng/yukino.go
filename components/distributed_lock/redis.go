@@ -117,13 +117,6 @@ func (c *Client) Del(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key).Err()
 }
 
-func (c *Client) Incr(ctx context.Context, key string) (int64, error) {
-	if key == "" {
-		return -1, errors.New("redis INCR key can't be empty")
-	}
-	return c.client.Incr(ctx, key).Result()
-}
-
 func (c *Client) Eval(ctx context.Context, src string, keyCount int, keysAndArgs []any) (any, error) {
 	if keyCount < 0 || keyCount > len(keysAndArgs) {
 		return nil, fmt.Errorf("redis EVAL keyCount %d out of range [0, %d]", keyCount, len(keysAndArgs))

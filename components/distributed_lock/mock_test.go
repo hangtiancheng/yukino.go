@@ -350,7 +350,7 @@ func TestRedLockValidation(t *testing.T) {
 func TestRedLockLockFailsWithUnreachableNodes(t *testing.T) {
 	confs := make([]*SingleNodeConf, 0, 3)
 	for i := 0; i < 3; i++ {
-		confs = append(confs, &SingleNodeConf{Network: "tcp", Address: "127.0.0.1:1"})
+		confs = append(confs, &SingleNodeConf{Network: "tcp", Address: fmt.Sprintf("127.0.0.1:%d", i+1)})
 	}
 	rl, err := NewRedLock("k", confs,
 		WithRedLockExpireDuration(30*time.Second),

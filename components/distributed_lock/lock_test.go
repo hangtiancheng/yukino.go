@@ -91,7 +91,7 @@ func Test_redLock(t *testing.T) {
 
 	redLock, err := NewRedLock("test_key", confs, WithRedLockExpireDuration(10*time.Second), WithSingleNodesTimeout(100*time.Millisecond))
 	if err != nil {
-		return
+		t.Fatal(err)
 	}
 
 	ctx := context.Background()

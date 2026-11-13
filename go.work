@@ -6,10 +6,10 @@ use (
 	./apps/task_flow/server
 	./components/consistent_cache
 	./components/consistent_hash
+	./components/distributed_lock
 	./components/lsm_tree
 	./components/raft
 	./components/red_mq
-	./components/distributed_lock
 	./components/tcc
 	./components/time_wheel
 	./components/timer

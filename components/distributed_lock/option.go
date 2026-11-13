@@ -16,7 +16,6 @@ type ClientOptions struct {
 	maxIdle            int
 	idleTimeoutSeconds int
 	maxActive          int
-	wait               bool
 	network            string
 	address            string
 	password           string
@@ -39,12 +38,6 @@ func WithIdleTimeoutSeconds(idleTimeoutSeconds int) ClientOption {
 func WithMaxActive(maxActive int) ClientOption {
 	return func(c *ClientOptions) {
 		c.maxActive = maxActive
-	}
-}
-
-func WithWaitMode() ClientOption {
-	return func(c *ClientOptions) {
-		c.wait = true
 	}
 }
 

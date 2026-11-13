@@ -37,7 +37,7 @@ func NewRedLock(key string, confs []*SingleNodeConf, opts ...RedLockOption) (*Re
 	if r.expireDuration < time.Second || r.expireDuration%time.Second != 0 {
 		return nil, errors.New("redlock expiration must be a positive whole number of seconds")
 	}
-	if r.singleNodesTimeout >= r.expireDuration/time.Duration(len(confs)) {
+	if time.Duration(len(confs))*r.singleNodesTimeout*10 > r.expireDuration {
 		return nil, errors.New("expire thresholds of single node is too long")
 	}
 
