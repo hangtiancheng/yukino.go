@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const RedisLockKeyPrefix = "distributed_lock_PREFIX_"
+const DistributedLockKeyPrefix = "DISTRIBUTED_LOCK_PREFIX_"
 
 var (
 	ErrLockAcquiredByOthers = errors.New("lock is acquired by others")
@@ -254,5 +254,5 @@ func (r *RedisLock) stopWatchDog() {
 }
 
 func (r *RedisLock) getLockKey() string {
-	return RedisLockKeyPrefix + r.key
+	return DistributedLockKeyPrefix + r.key
 }
