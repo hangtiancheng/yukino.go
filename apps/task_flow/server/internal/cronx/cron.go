@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"time"
 
-	timercron "github.com/hangtiancheng/yukino.go/components/timer/pkg/cron"
+	schedcron "github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/cron"
 )
 
 type Schedule struct {
 	expr   string
-	parser *timercron.CronParser
+	parser *schedcron.CronParser
 }
 
 func Parse(expr string) (*Schedule, error) {
-	parser := timercron.NewCronParser()
+	parser := schedcron.NewCronParser()
 	if !parser.IsValidCronExpr(expr) {
 		if _, err := parser.NextAfter(expr, time.Now()); err != nil {
 			return nil, fmt.Errorf("cron expr %q: %w", expr, err)

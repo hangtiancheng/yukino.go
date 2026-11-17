@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/raft/raft"
+	"github.com/hangtiancheng/yukino.go/components/raft"
 )
 
 type raftProxy struct {

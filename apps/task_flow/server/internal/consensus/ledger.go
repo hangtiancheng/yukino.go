@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/raft/raft"
+	"github.com/hangtiancheng/yukino.go/components/raft"
 )
 
 const recentCap = 64

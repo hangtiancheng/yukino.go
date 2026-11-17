@@ -7,7 +7,7 @@
 A distributed transaction manager implementing the TCC (Try-Confirm-Cancel) pattern: every transaction is journaled before the first network call, so a coordinator that dies mid-flight can recover by replaying its own log.
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![Module](https://img.shields.io/badge/module-apps%2Ftcc__demo-blue)](go.mod)
+[![Module](https://img.shields.io/badge/module-components%2Ftcc-blue)](go.mod)
 
 </div>
 
@@ -46,7 +46,7 @@ background run()
 - **Timeout-inferred failure** — a transaction whose components are still `hanging` after `WithTimeout` is declared failed and cancelled, so reservations never leak indefinitely.
 - **Parallel Try phase** — participants are contacted concurrently; the first failure cancels the context and triggers cancellation of the others.
 - **Registry-based components** — `Register(component)` binds an ID to an implementation; components are resolved by ID at Confirm/Cancel time.
-- **Global lock** — the `TXStore` contract includes `Lock` / `Unlock` (typically a `distributed_lock`) so multiple manager instances do not advance the same transaction concurrently.
+- **Global lock** — the `TXStore` contract includes `Lock` / `Unlock` (typically a `redis_lock`) so multiple manager instances do not advance the same transaction concurrently.
 - **Backoff monitor** — the recovery loop doubles its tick on error, capped at 8× the configured tick.
 
 ## Install

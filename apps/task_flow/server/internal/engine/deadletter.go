@@ -7,7 +7,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/dao"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
-	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
+	mqredis "github.com/hangtiancheng/yukino.go/components/redis_mq/redis"
 )
 
 type DeadLetterMailbox struct {

@@ -13,8 +13,8 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/telemetry"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
-	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
+	mqredis "github.com/hangtiancheng/yukino.go/components/redis_mq/redis"
 )
 
 type CondEvent struct {
@@ -32,15 +32,15 @@ type ConditionPipeline struct {
 	cfg        *conf.Config
 	dao        *dao.DAO
 	idem       *idem.Service
-	producer   *red_mq.Producer
+	producer   *redis_mq.Producer
 	dispatcher *Dispatcher
 	defs       *DefinitionCache
 	client     *mqredis.Client
 	mailbox    *DeadLetterMailbox
-	consumers  []*red_mq.Consumer
+	consumers  []*redis_mq.Consumer
 }
 
-func NewConditionPipeline(cfg *conf.Config, d *dao.DAO, i *idem.Service, producer *red_mq.Producer, dispatcher *Dispatcher, defs *DefinitionCache, client *mqredis.Client, mailbox *DeadLetterMailbox) *ConditionPipeline {
+func NewConditionPipeline(cfg *conf.Config, d *dao.DAO, i *idem.Service, producer *redis_mq.Producer, dispatcher *Dispatcher, defs *DefinitionCache, client *mqredis.Client, mailbox *DeadLetterMailbox) *ConditionPipeline {
 	return &ConditionPipeline{
 		cfg:        cfg,
 		dao:        d,
@@ -111,17 +111,17 @@ func (p *ConditionPipeline) PublishRecordInserted(ctx context.Context, table str
 func (p *ConditionPipeline) Start(workers int) error {
 	for i := 0; i < workers; i++ {
 		consumerID := fmt.Sprintf("%s-cond-%d", p.cfg.Node.ID, i)
-		consumer, err := red_mq.NewConsumer(
+		consumer, err := redis_mq.NewConsumer(
 			p.client,
 			p.cfg.MQ.CondTopic,
 			p.cfg.MQ.CondGroup,
 			consumerID,
 			p.handle,
-			red_mq.WithMaxRetryLimit(p.cfg.MQ.MaxRetry),
-			red_mq.WithReceiveTimeout(time.Duration(p.cfg.Executor.ReceiveTimeoutMs)*time.Millisecond),
-			red_mq.WithHandleMsgsTimeout(time.Duration(p.cfg.Executor.HandleTimeoutSeconds)*time.Second),
-			red_mq.WithAbandonedMessageRecovery(time.Duration(p.cfg.Executor.HandleTimeoutSeconds+60)*time.Second),
-			red_mq.WithDeadLetterMailbox(p.mailbox.ForTopic(p.cfg.MQ.CondTopic)),
+			redis_mq.WithMaxRetryLimit(p.cfg.MQ.MaxRetry),
+			redis_mq.WithReceiveTimeout(time.Duration(p.cfg.Executor.ReceiveTimeoutMs)*time.Millisecond),
+			redis_mq.WithHandleMsgsTimeout(time.Duration(p.cfg.Executor.HandleTimeoutSeconds)*time.Second),
+			redis_mq.WithAbandonedMessageRecovery(time.Duration(p.cfg.Executor.HandleTimeoutSeconds+60)*time.Second),
+			redis_mq.WithDeadLetterMailbox(p.mailbox.ForTopic(p.cfg.MQ.CondTopic)),
 		)
 		if err != nil {
 			p.Stop()

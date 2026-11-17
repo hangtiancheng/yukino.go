@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/hangtiancheng/yukino.go/components/raft/raft"
+	"github.com/hangtiancheng/yukino.go/components/raft"
 )
 
 type service struct {

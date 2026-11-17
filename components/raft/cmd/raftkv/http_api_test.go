@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hangtiancheng/yukino.go/components/raft/raft"
+	"github.com/hangtiancheng/yukino.go/components/raft"
 )
 
 type errReader struct{}

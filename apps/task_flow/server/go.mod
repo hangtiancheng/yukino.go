@@ -5,15 +5,15 @@ go 1.26.0
 require (
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/goccy/go-yaml v1.19.2
-	github.com/hangtiancheng/yukino.go/components/consistent_cache v0.0.0
+	github.com/hangtiancheng/yukino.go/components/cache_aside v0.0.0
 	github.com/hangtiancheng/yukino.go/components/consistent_hash v0.0.0
 	github.com/hangtiancheng/yukino.go/components/lsm_tree v0.0.0
 	github.com/hangtiancheng/yukino.go/components/raft v0.0.0
-	github.com/hangtiancheng/yukino.go/components/red_mq v0.0.0
-	github.com/hangtiancheng/yukino.go/components/distributed_lock v0.0.0
+	github.com/hangtiancheng/yukino.go/components/redis_mq v0.0.0
+	github.com/hangtiancheng/yukino.go/components/redis_lock v0.0.0
 	github.com/hangtiancheng/yukino.go/components/tcc v0.0.0
 	github.com/hangtiancheng/yukino.go/components/time_wheel v0.0.0
-	github.com/hangtiancheng/yukino.go/components/timer v0.0.0
+	github.com/hangtiancheng/yukino.go/apps/scheduled_task v0.0.0
 	github.com/hangtiancheng/yukino.go/libs/yukino_cache v0.0.0
 	github.com/hangtiancheng/yukino.go/libs/yukino_http v0.0.1
 	github.com/openai/openai-go v1.12.0
@@ -65,15 +65,15 @@ require (
 )
 
 replace (
-	github.com/hangtiancheng/yukino.go/components/consistent_cache => ../../../components/consistent_cache
+	github.com/hangtiancheng/yukino.go/components/cache_aside => ../../../components/cache_aside
 	github.com/hangtiancheng/yukino.go/components/consistent_hash => ../../../components/consistent_hash
 	github.com/hangtiancheng/yukino.go/components/lsm_tree => ../../../components/lsm_tree
 	github.com/hangtiancheng/yukino.go/components/raft => ../../../components/raft
-	github.com/hangtiancheng/yukino.go/components/red_mq => ../../../components/red_mq
-	github.com/hangtiancheng/yukino.go/components/distributed_lock => ../../../components/distributed_lock
+	github.com/hangtiancheng/yukino.go/components/redis_mq => ../../../components/redis_mq
+	github.com/hangtiancheng/yukino.go/components/redis_lock => ../../../components/redis_lock
 	github.com/hangtiancheng/yukino.go/components/tcc => ../../../components/tcc
 	github.com/hangtiancheng/yukino.go/components/time_wheel => ../../../components/time_wheel
-	github.com/hangtiancheng/yukino.go/components/timer => ../../../components/timer
+	github.com/hangtiancheng/yukino.go/apps/scheduled_task => ../../../apps/scheduled_task
 	github.com/hangtiancheng/yukino.go/libs/yukino_cache => ../../../libs/yukino_cache
 	github.com/hangtiancheng/yukino.go/libs/yukino_http => ../../../libs/yukino_http
 )

@@ -7,7 +7,7 @@
 A complete, dependency-free LSM storage engine written in Go: write-ahead log, lock-free-friendly skiplist memtable, block-based SSTables with bloom filters, and background leveled compaction.
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![Module](https://img.shields.io/badge/module-apps%2Flsm__tree-blue)](go.mod)
+[![Module](https://img.shields.io/badge/module-components%2Flsm__tree-blue)](go.mod)
 
 </div>
 

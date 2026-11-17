@@ -185,23 +185,23 @@ yukino_agent/config.json
 
 .legacy
 
-# yukino-cloud-storage runtime artifacts
-components/yukino-cloud-storage/deep_storage/
-components/yukino-cloud-storage/low_storage/
-components/yukino-cloud-storage/logfile/
-components/yukino-cloud-storage/temp/
-components/yukino-cloud-storage/storage.data
-components/yukino-cloud-storage/vendor/
+# cloud_storage runtime artifacts
+apps/cloud_storage/deep_storage/
+apps/cloud_storage/low_storage/
+apps/cloud_storage/logfile/
+apps/cloud_storage/temp/
+apps/cloud_storage/storage.data
+apps/cloud_storage/vendor/
 
-# yukino-kv runtime data
-components/yukino-kv/**/data/
-components/yukino-kv/**/test.conf
-components/yukino-kv/**/demo.conf
-components/yukino-kv/**/raftstatePersist*.txt
-components/yukino-kv/**/snapshotPersist*.txt
+# raft_kv runtime data
+apps/raft_kv/**/data/
+apps/raft_kv/**/test.conf
+apps/raft_kv/**/demo.conf
+apps/raft_kv/**/raftstatePersist*.txt
+apps/raft_kv/**/snapshotPersist*.txt
 
-# yukino-log runtime artifacts
-components/yukino-log/logs/
+# yukino_log runtime artifacts
+libs/yukino_log/logs/
 
-# yukino-skiplist local persistence
-components/yukino-skiplist/store/
+# yukino_skiplist local persistence
+libs/yukino_skiplist/store/

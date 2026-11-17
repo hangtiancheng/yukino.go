@@ -70,7 +70,7 @@ The browser supplies an Idempotency-Key for manual actions. API clients should r
 
 SQL triggers write a change record in the business transaction. A rollback removes the change record. Concurrent relays use `FOR UPDATE SKIP LOCKED` to create one pending execution and an outbox entry together. The outbox is marked published after Redis accepts the message. A publication crash may redeliver the message.
 
-Handwritten red_mq queues provide at-least-once delivery. Redis claims and a bounded Bloom filter accelerate dispatch. The MySQL unique key and conditional updates are the authority: the executor claims `queued -> running` only for the transaction that owns the row. Repeated messages, callback retries, Redis failover, and concurrent server nodes cannot claim the same execution again while its durable row is retained.
+Handwritten redis_mq queues provide at-least-once delivery. Redis claims and a bounded Bloom filter accelerate dispatch. The MySQL unique key and conditional updates are the authority: the executor claims `queued -> running` only for the transaction that owns the row. Repeated messages, callback retries, Redis failover, and concurrent server nodes cannot claim the same execution again while its durable row is retained.
 
 TCC reserves the execution and publishes its command. Its SQL transaction log allows confirm/cancel recovery. Pending executions and queued commands can be recovered after wheel or queue loss. Abandoned Redis pending entries can be reclaimed. A crashed execution already in `running` becomes failed; it is not automatically restarted because an external side effect may already have happened. This is an at-most-once execution claim, not a promise of exactly-once external API side effects.
 
@@ -78,19 +78,19 @@ Prompt/model fields are snapshotted when executions are materialized. Existing p
 
 ## Components
 
-| Repository component        | Use                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| libs/yukino_http            | API routing and middleware                                                        |
-| libs/yukino_cache           | Byte-budgeted report cache, singleflight, peer discovery and gRPC in cluster mode |
-| components/red_mq           | Execution and condition Streams, retry, dead letters, abandoned-message recovery  |
-| components/time_wheel       | Distributed scheduled callbacks and local monitor ticks                           |
-| components/distributed_lock | Scheduler, monitor, and transaction recovery locks                                |
-| components/consistent_hash  | Live-node ring and singleton role placement                                       |
-| components/consistent_cache | Redis task-definition cache with invalidation and drift repair                    |
-| components/tcc              | SQL-backed reserve/publish transactions and recovery                              |
-| components/timer            | Cron parsing, two-bit Bloom precheck, bounded handwritten worker pool             |
-| components/lsm_tree         | Persistent node-local execution journal                                           |
-| components/raft             | Single-member, node-local ordered decision ledger                                 |
+| Repository component     | Use                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| libs/yukino_http         | API routing and middleware                                                        |
+| libs/yukino_cache        | Byte-budgeted report cache, singleflight, peer discovery and gRPC in cluster mode |
+| components/redis_mq      | Execution and condition Streams, retry, dead letters, abandoned-message recovery  |
+| components/time_wheel    | Distributed scheduled callbacks and local monitor ticks                           |
+| components/redis_lock    | Scheduler, monitor, and transaction recovery locks                                |
+| components/consistent_hash | Live-node ring and singleton role placement                                     |
+| components/cache_aside   | Redis task-definition cache with invalidation and drift repair                    |
+| components/tcc           | SQL-backed reserve/publish transactions and recovery                              |
+| apps/scheduled_task      | Cron parsing, two-bit Bloom precheck, bounded handwritten worker pool             |
+| components/lsm_tree      | Persistent node-local execution journal                                           |
+| components/raft          | Single-member, node-local ordered decision ledger                                 |
 
 The Raft ledger is diagnostic and node-local. Execution ownership is coordinated through MySQL, not this ledger. Redis standalone, Sentinel, and Cluster clients share the same configured pool across the handwritten components. MySQL reads used for ownership always go to the configured primary; replicas are monitored instead of serving potentially stale ownership decisions.
 

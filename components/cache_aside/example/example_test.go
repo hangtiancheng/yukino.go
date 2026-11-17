@@ -1,0 +1,254 @@
+package example
+
+import (
+	"context"
+	"errors"
+	"math/rand"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/hangtiancheng/yukino.go/components/cache_aside"
+	"github.com/hangtiancheng/yukino.go/components/cache_aside/mysql"
+	"github.com/hangtiancheng/yukino.go/components/cache_aside/redis"
+)
+
+const (
+	redisAddress  = "please fill in redis address"
+	redisPassword = "please fill in redis password"
+
+	mysqlDSN = "please fill in mysql dsn"
+)
+
+func requireInfra(t *testing.T) {
+	t.Helper()
+	if strings.Contains(redisAddress, "please fill in") || strings.Contains(mysqlDSN, "please fill in") {
+		t.Skip("redis/mysql endpoints not configured; fill in redisAddress/mysqlDSN to run this integration test")
+	}
+}
+
+func newService() *cache_aside.Service {
+	cache := redis.NewRedisCache(&redis.Config{
+		Address:  redisAddress,
+		Password: redisPassword,
+	})
+	db := mysql.NewDB(mysqlDSN)
+	return cache_aside.NewService(cache, db,
+		cache_aside.WithCacheExpireSeconds(120),
+		cache_aside.WithDisableExpireSeconds(1),
+	)
+}
+
+func Test_CacheAside(t *testing.T) {
+	requireInfra(t)
+	service := cache_aside.NewService(
+		redis.NewRedisCache(&redis.Config{
+			Address:  redisAddress,
+			Password: redisPassword,
+		}),
+		mysql.NewDB(mysqlDSN),
+		cache_aside.WithCacheExpireSeconds(120),
+		cache_aside.WithCacheExpireRandomMode(),
+		cache_aside.WithDisableExpireSeconds(1),
+	)
+	ctx := context.Background()
+	exp := Example{
+		Key_: "test",
+		Data: "test",
+	}
+	if err := service.Put(ctx, &exp); err != nil {
+		t.Error(err)
+		return
+	}
+
+	expReceiver := Example{
+		Key_: "test",
+	}
+	if _, err := service.Get(ctx, &expReceiver); err != nil {
+		t.Error(err)
+		return
+	}
+
+	t.Logf("read data: %s, ", expReceiver.Data)
+}
+
+func Test_CacheAside_Correct(t *testing.T) {
+	requireInfra(t)
+	service := newService()
+	ctx := context.Background()
+
+	prefix := time.Now().String() + "-"
+	dataChan := make(chan *Example)
+	go func() {
+		var wg sync.WaitGroup
+		for range 100 {
+			wg.Go(func() {
+				k := prefix + strconv.Itoa(rand.Intn(100))
+				v := prefix + strconv.Itoa(rand.Intn(100))
+				data := Example{
+					Key_: k,
+					Data: v,
+				}
+				if err := service.Put(ctx, &data); err != nil {
+					t.Error(err)
+					return
+				}
+				dataChan <- &data
+			})
+		}
+		wg.Wait()
+		close(dataChan)
+	}()
+
+	mp := make(map[string]string, 500)
+	for data := range dataChan {
+		mp[data.Key_] = data.Data
+	}
+
+	<-time.After(time.Second)
+
+	var useCacheCnt int
+	var expectUseCacheCnt int
+	querySet := make(map[string]struct{}, 100)
+	for range 100 {
+		k := strconv.Itoa(rand.Intn(100))
+		data := Example{
+			Key_: prefix + k,
+		}
+		if _, ok := querySet[prefix+k]; ok {
+			expectUseCacheCnt++
+		}
+		querySet[prefix+k] = struct{}{}
+
+		useCache, err := service.Get(ctx, &data)
+		if err != nil && !errors.Is(err, cache_aside.ErrorDataNotExist) {
+			t.Error(err)
+			continue
+		}
+
+		if useCache {
+			useCacheCnt++
+		}
+
+		expect, ok := mp[data.Key_]
+		if errors.Is(err, cache_aside.ErrorDataNotExist) != !ok {
+			t.Errorf("expected data-not-exist=%v, got %v", !ok, errors.Is(err, cache_aside.ErrorDataNotExist))
+		}
+		if !ok {
+			continue
+		}
+
+		if data.Data != expect {
+			t.Errorf("expected data=%s, got %s", expect, data.Data)
+		}
+	}
+
+	if useCacheCnt != expectUseCacheCnt {
+		t.Errorf("expected useCacheCnt=%d, got %d", expectUseCacheCnt, useCacheCnt)
+	}
+}
+
+func Test_CacheAside_ReadWrite(t *testing.T) {
+	requireInfra(t)
+	service := newService()
+
+	ctx := context.Background()
+
+	prefix := time.Now().String()
+
+	var wg sync.WaitGroup
+	dataChan := make(chan *Example)
+
+	startV, endV := 1, 5
+	go func() {
+		for i := startV; i <= endV; i++ {
+			i := i
+			wg.Go(func() {
+				k := prefix
+				v := prefix + strconv.Itoa(i)
+				data := Example{
+					Key_: k,
+					Data: v,
+				}
+				if err := service.Put(ctx, &data); err != nil {
+					t.Error(err)
+				}
+				dataChan <- &data
+			})
+		}
+	}()
+
+	go func() {
+		for i := 0; i < 10*(endV-startV+1); i++ {
+			wg.Go(func() {
+				data := Example{
+					Key_: prefix,
+				}
+				useCache, err := service.Get(ctx, &data)
+				if err != nil && !errors.Is(err, cache_aside.ErrorDataNotExist) {
+					t.Error(err)
+					return
+				}
+				if errors.Is(err, cache_aside.ErrorDataNotExist) {
+					return
+				}
+				if useCache {
+					t.Errorf("expected useCache=false, got true")
+				}
+				gotData, err := strconv.Atoi(data.Data)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if gotData < startV || gotData > endV {
+					t.Errorf("expected gotData in [%d, %d], got %d", startV, endV, gotData)
+				}
+			})
+		}
+	}()
+
+	dataSlice := make([]*Example, 0, 5)
+	for i := startV; i <= endV; i++ {
+		data := <-dataChan
+		dataSlice = append(dataSlice, data)
+	}
+
+	data := Example{
+		Key_: prefix,
+	}
+	useCache, err := service.Get(ctx, &data)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if useCache {
+		t.Errorf("expected useCache=false, got true")
+	}
+	if data.Data != dataSlice[len(dataSlice)-1].Data {
+		t.Errorf("expected data=%s, got %s", dataSlice[len(dataSlice)-1].Data, data.Data)
+	}
+
+	wg.Wait()
+
+	<-time.After(time.Second)
+	if useCache, err = service.Get(ctx, &data); err != nil {
+		t.Error(err)
+		return
+	}
+	if useCache {
+		t.Errorf("expected useCache=false, got true")
+	}
+
+	if useCache, err = service.Get(ctx, &data); err != nil {
+		t.Error(err)
+		return
+	}
+	if !useCache {
+		t.Errorf("expected useCache=true, got false")
+	}
+	if data.Data != dataSlice[len(dataSlice)-1].Data {
+		t.Errorf("expected data=%s, got %s", dataSlice[len(dataSlice)-1].Data, data.Data)
+	}
+}

@@ -12,8 +12,10 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const MODULES = {
   cache: "libs/yukino_cache",
   http: "libs/yukino_http",
+  log: "libs/yukino_log",
   orm: "libs/yukino_orm",
   rpc: "libs/yukino_rpc",
+  skiplist: "libs/yukino_skiplist",
 };
 
 function run(command) {

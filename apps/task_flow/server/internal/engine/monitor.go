@@ -8,15 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/pool"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/conf"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/dao"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/storage"
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
+	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
 	"github.com/hangtiancheng/yukino.go/components/time_wheel"
-	"github.com/hangtiancheng/yukino.go/components/timer/pkg/pool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -35,8 +35,8 @@ type Monitor struct {
 	defs       *DefinitionCache
 	registry   *SingletonRegistry
 	client     redis.UniversalClient
-	locker     *distributed_lock.Client
-	producer   *red_mq.Producer
+	locker     *redis_lock.Client
+	producer   *redis_mq.Producer
 	pool       pool.WorkerPool
 
 	wheel    *time_wheel.TimeWheel
@@ -47,7 +47,7 @@ type Monitor struct {
 	stopChan chan struct{}
 }
 
-func NewMonitor(cfg *conf.Config, d *dao.DAO, dispatcher *Dispatcher, registry *SingletonRegistry, client redis.UniversalClient, locker *distributed_lock.Client, producer *red_mq.Producer, defs *DefinitionCache, recoverWorkers int) *Monitor {
+func NewMonitor(cfg *conf.Config, d *dao.DAO, dispatcher *Dispatcher, registry *SingletonRegistry, client redis.UniversalClient, locker *redis_lock.Client, producer *redis_mq.Producer, defs *DefinitionCache, recoverWorkers int) *Monitor {
 	if recoverWorkers <= 0 {
 		recoverWorkers = 8
 	}
@@ -118,7 +118,7 @@ func (m *Monitor) sweep() {
 	if !m.registry.IsOwner(ctx, SingletonMonitor) {
 		return
 	}
-	lock := distributed_lock.NewRedisLock(monitorLockKey, m.locker, distributed_lock.WithExpireSeconds(55))
+	lock := redis_lock.NewRedisLock(monitorLockKey, m.locker, redis_lock.WithExpireSeconds(55))
 	if err := lock.Lock(ctx); err != nil {
 		return
 	}

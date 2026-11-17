@@ -15,8 +15,8 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/telemetry"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
-	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
+	mqredis "github.com/hangtiancheng/yukino.go/components/redis_mq/redis"
 )
 
 type Executor struct {
@@ -29,7 +29,7 @@ type Executor struct {
 	mailbox   *DeadLetterMailbox
 	journal   *journal.Store
 	ledger    *consensus.Ledger
-	consumers []*red_mq.Consumer
+	consumers []*redis_mq.Consumer
 }
 
 func NewExecutor(cfg *conf.Config, d *dao.DAO, agent *llm.Agent, reports *ReportStore, defs *DefinitionCache, client *mqredis.Client, mailbox *DeadLetterMailbox, jr *journal.Store, ledger *consensus.Ledger) *Executor {
@@ -49,17 +49,17 @@ func NewExecutor(cfg *conf.Config, d *dao.DAO, agent *llm.Agent, reports *Report
 func (e *Executor) Start(workers int) error {
 	for i := 0; i < workers; i++ {
 		consumerID := fmt.Sprintf("%s-exec-%d", e.cfg.Node.ID, i)
-		consumer, err := red_mq.NewConsumer(
+		consumer, err := redis_mq.NewConsumer(
 			e.client,
 			e.cfg.MQ.ExecTopic,
 			e.cfg.MQ.ExecGroup,
 			consumerID,
 			e.handle,
-			red_mq.WithMaxRetryLimit(e.cfg.MQ.MaxRetry),
-			red_mq.WithReceiveTimeout(time.Duration(e.cfg.Executor.ReceiveTimeoutMs)*time.Millisecond),
-			red_mq.WithHandleMsgsTimeout(time.Duration(e.cfg.Executor.HandleTimeoutSeconds)*time.Second),
-			red_mq.WithAbandonedMessageRecovery(time.Duration(e.cfg.Executor.HandleTimeoutSeconds+60)*time.Second),
-			red_mq.WithDeadLetterMailbox(e.mailbox.ForTopic(e.cfg.MQ.ExecTopic)),
+			redis_mq.WithMaxRetryLimit(e.cfg.MQ.MaxRetry),
+			redis_mq.WithReceiveTimeout(time.Duration(e.cfg.Executor.ReceiveTimeoutMs)*time.Millisecond),
+			redis_mq.WithHandleMsgsTimeout(time.Duration(e.cfg.Executor.HandleTimeoutSeconds)*time.Second),
+			redis_mq.WithAbandonedMessageRecovery(time.Duration(e.cfg.Executor.HandleTimeoutSeconds+60)*time.Second),
+			redis_mq.WithDeadLetterMailbox(e.mailbox.ForTopic(e.cfg.MQ.ExecTopic)),
 		)
 		if err != nil {
 			e.Stop()

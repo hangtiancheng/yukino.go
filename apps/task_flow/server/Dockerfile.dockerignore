@@ -1,13 +1,13 @@
 *
-!components/consistent_cache
+!components/cache_aside
 !components/consistent_hash
 !components/lsm_tree
 !components/raft
-!components/red_mq
-!components/distributed_lock
+!components/redis_mq
+!components/redis_lock
 !components/tcc
 !components/time_wheel
-!components/timer
+!apps/scheduled_task
 !libs/yukino_cache
 !libs/yukino_http
 !apps/task_flow/server

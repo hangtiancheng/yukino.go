@@ -16,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	schedbloom "github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/bloom"
+	schedhash "github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/hash"
+	schedredis "github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/redis"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/cdc"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/conf"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/dao"
@@ -23,13 +26,10 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/llm"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/storage"
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
-	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
+	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
+	mqredis "github.com/hangtiancheng/yukino.go/components/redis_mq/redis"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
-	timerbloom "github.com/hangtiancheng/yukino.go/components/timer/pkg/bloom"
-	timerhash "github.com/hangtiancheng/yukino.go/components/timer/pkg/hash"
-	timerredis "github.com/hangtiancheng/yukino.go/components/timer/pkg/redis"
 	"github.com/redis/go-redis/v9"
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -126,7 +126,7 @@ func TestTransactionalCaptureAndConcurrentRelay(t *testing.T) {
 	if err := db.Exec("DELETE FROM risk_records WHERE id = (SELECT id FROM (SELECT MIN(id) AS id FROM risk_records) AS r)").Error; err != nil {
 		t.Fatal(err)
 	}
-	producer := red_mq.NewProducer(mqredis.NewUniversalClient(client), red_mq.WithMsgQueueLen(1000))
+	producer := redis_mq.NewProducer(mqredis.NewUniversalClient(client), redis_mq.WithMsgQueueLen(1000))
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
@@ -201,9 +201,9 @@ func TestDuplicateCommandsRunToolsOnceAndPersistMarkdown(t *testing.T) {
 	defer provider.Close()
 	t.Setenv("TASK_FLOW_TEST_LLM_URL", provider.URL+"/v1")
 	cfg.LLM.BaseURLEnv = "TASK_FLOW_TEST_LLM_URL"
-	producer := red_mq.NewProducer(mqredis.NewUniversalClient(client))
+	producer := redis_mq.NewProducer(mqredis.NewUniversalClient(client))
 	i := idem.New(client, time.Minute)
-	manager := tcc.NewTXManager(NewTXStore(db, distributed_lock.NewUniversalClient(client)), tcc.WithMonitorTick(time.Hour))
+	manager := tcc.NewTXManager(NewTXStore(db, redis_lock.NewUniversalClient(client)), tcc.WithMonitorTick(time.Hour))
 	defer manager.Stop()
 	if err := manager.Register(NewExecutionReserveComponent(d, i)); err != nil {
 		t.Fatal(err)
@@ -299,7 +299,7 @@ func TestOutboxSurvivesRedisOutage(t *testing.T) {
 	listener.Close()
 	offline := redis.NewClient(&redis.Options{Addr: address, MaxRetries: -1, DialTimeout: 100 * time.Millisecond})
 	defer offline.Close()
-	failed := cdc.NewRelay(db, red_mq.NewProducer(mqredis.NewUniversalClient(offline)), cfg.MQ.CondTopic)
+	failed := cdc.NewRelay(db, redis_mq.NewProducer(mqredis.NewUniversalClient(offline)), cfg.MQ.CondTopic)
 	if err := failed.Drain(ctx, 10); err == nil {
 		t.Fatal("publication should fail while Redis is offline")
 	}
@@ -308,7 +308,7 @@ func TestOutboxSurvivesRedisOutage(t *testing.T) {
 	if pending != 1 {
 		t.Fatalf("outbox lost during outage: %d", pending)
 	}
-	recovered := cdc.NewRelay(db, red_mq.NewProducer(mqredis.NewUniversalClient(client)), cfg.MQ.CondTopic)
+	recovered := cdc.NewRelay(db, redis_mq.NewProducer(mqredis.NewUniversalClient(client)), cfg.MQ.CondTopic)
 	if err := recovered.Drain(ctx, 10); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestAbandonedMessageRecovery(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 	got := make(chan struct{}, 1)
-	consumer, err := red_mq.NewConsumer(mqredis.NewUniversalClient(client), cfg.MQ.ExecTopic, cfg.MQ.ExecGroup, "replacement", func(ctx context.Context, msg *mqredis.MsgEntity) error {
+	consumer, err := redis_mq.NewConsumer(mqredis.NewUniversalClient(client), cfg.MQ.ExecTopic, cfg.MQ.ExecGroup, "replacement", func(ctx context.Context, msg *mqredis.MsgEntity) error {
 		if msg.Key != "orphan" || msg.Val != "durable" {
 			return fmt.Errorf("unexpected recovered payload")
 		}
@@ -342,7 +342,7 @@ func TestAbandonedMessageRecovery(t *testing.T) {
 		default:
 		}
 		return nil
-	}, red_mq.WithAbandonedMessageRecovery(time.Millisecond), red_mq.WithReceiveTimeout(10*time.Millisecond))
+	}, redis_mq.WithAbandonedMessageRecovery(time.Millisecond), redis_mq.WithReceiveTimeout(10*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,8 +358,8 @@ func TestBloomRequiresBothBitsAndBoundsMemory(t *testing.T) {
 	_, client, cfg := integrationDB(t)
 	ctx := context.Background()
 	key := cfg.Node.ID + ":bloom"
-	h1, h2 := timerhash.NewMurmur3Encryptor(), timerhash.NewMurmur3AltEncryptor()
-	filter := timerbloom.NewFilter(timerredis.NewUniversalClient(client), h1, h2)
+	h1, h2 := schedhash.NewMurmur3Encryptor(), schedhash.NewMurmur3AltEncryptor()
+	filter := schedbloom.NewFilter(schedredis.NewUniversalClient(client), h1, h2)
 	value := "event-identity"
 	client.SetBit(ctx, key, int64(h1.Encrypt(value)%(1<<24)), 1)
 	if seen, err := filter.Exist(ctx, key, value); err != nil || seen {

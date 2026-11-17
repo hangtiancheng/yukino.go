@@ -1,0 +1,134 @@
+package redis_lock
+
+import "time"
+
+const (
+	DefaultIdleTimeoutSeconds = 10
+	DefaultMaxActive          = 100
+	DefaultMaxIdle            = 20
+
+	DefaultLockExpireSeconds    = 30
+	WatchDogWorkStepSeconds     = 10
+	DefaultRedLockExpireSeconds = 30
+)
+
+type ClientOptions struct {
+	maxIdle            int
+	idleTimeoutSeconds int
+	maxActive          int
+	network            string
+	address            string
+	password           string
+}
+
+type ClientOption func(c *ClientOptions)
+
+func WithMaxIdle(maxIdle int) ClientOption {
+	return func(c *ClientOptions) {
+		c.maxIdle = maxIdle
+	}
+}
+
+func WithIdleTimeoutSeconds(idleTimeoutSeconds int) ClientOption {
+	return func(c *ClientOptions) {
+		c.idleTimeoutSeconds = idleTimeoutSeconds
+	}
+}
+
+func WithMaxActive(maxActive int) ClientOption {
+	return func(c *ClientOptions) {
+		c.maxActive = maxActive
+	}
+}
+
+func repairClient(c *ClientOptions) {
+	if c.maxIdle <= 0 {
+		c.maxIdle = DefaultMaxIdle
+	}
+
+	if c.idleTimeoutSeconds <= 0 {
+		c.idleTimeoutSeconds = DefaultIdleTimeoutSeconds
+	}
+
+	if c.maxActive <= 0 {
+		c.maxActive = DefaultMaxActive
+	}
+	if c.maxIdle > c.maxActive {
+		c.maxIdle = c.maxActive
+	}
+}
+
+type LockOption func(*LockOptions)
+
+func WithBlock() LockOption {
+	return func(o *LockOptions) {
+		o.isBlock = true
+	}
+}
+
+func WithBlockWaitingSeconds(waitingSeconds int64) LockOption {
+	return func(o *LockOptions) {
+		o.blockWaitingSeconds = waitingSeconds
+	}
+}
+
+func WithExpireSeconds(expireSeconds int64) LockOption {
+	return func(o *LockOptions) {
+		o.expireSeconds = expireSeconds
+	}
+}
+
+func repairLock(o *LockOptions) {
+	if o.isBlock && o.blockWaitingSeconds <= 0 {
+		o.blockWaitingSeconds = 5
+	}
+
+	if o.expireSeconds > 0 {
+		return
+	}
+
+	o.expireSeconds = DefaultLockExpireSeconds
+	o.watchDogMode = true
+}
+
+type LockOptions struct {
+	isBlock             bool
+	blockWaitingSeconds int64
+	expireSeconds       int64
+	watchDogMode        bool
+}
+
+type RedLockOption func(*RedLockOptions)
+
+type RedLockOptions struct {
+	singleNodesTimeout time.Duration
+	expireDuration     time.Duration
+}
+
+func WithSingleNodesTimeout(singleNodesTimeout time.Duration) RedLockOption {
+	return func(o *RedLockOptions) {
+		o.singleNodesTimeout = singleNodesTimeout
+	}
+}
+
+func WithRedLockExpireDuration(expireDuration time.Duration) RedLockOption {
+	return func(o *RedLockOptions) {
+		o.expireDuration = expireDuration
+	}
+}
+
+type SingleNodeConf struct {
+	Network  string
+	Address  string
+	Password string
+	Opts     []ClientOption
+}
+
+func repairRedLock(o *RedLockOptions) {
+	if o.singleNodesTimeout <= 0 {
+		o.singleNodesTimeout = DefaultSingleLockTimeout
+	}
+	if o.expireDuration <= 0 {
+		o.expireDuration = DefaultRedLockExpireSeconds * time.Second
+	}
+}

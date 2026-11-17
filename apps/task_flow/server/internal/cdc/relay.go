@@ -12,20 +12,20 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/telemetry"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type Relay struct {
 	db       *gorm.DB
-	producer *red_mq.Producer
+	producer *redis_mq.Producer
 	topic    string
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 }
 
-func NewRelay(db *gorm.DB, producer *red_mq.Producer, topic string) *Relay {
+func NewRelay(db *gorm.DB, producer *redis_mq.Producer, topic string) *Relay {
 	return &Relay{db: db, producer: producer, topic: topic}
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/dao"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/obsx"
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
+	"github.com/hangtiancheng/yukino.go/components/redis_lock"
 	"github.com/hangtiancheng/yukino.go/components/time_wheel"
 )
 
@@ -33,9 +33,9 @@ type FireCallback struct {
 type Migrator struct {
 	cfg      *conf.Config
 	dao      *dao.DAO
-	wheel    *time_wheel.RTimeWheel
+	wheel    *time_wheel.RedisDelayQueue
 	registry *SingletonRegistry
-	locker   *distributed_lock.Client
+	locker   *redis_lock.Client
 	defs     *DefinitionCache
 
 	stopOnce sync.Once
@@ -43,7 +43,7 @@ type Migrator struct {
 	doneChan chan struct{}
 }
 
-func NewMigrator(cfg *conf.Config, d *dao.DAO, wheel *time_wheel.RTimeWheel, registry *SingletonRegistry, locker *distributed_lock.Client, defs *DefinitionCache) *Migrator {
+func NewMigrator(cfg *conf.Config, d *dao.DAO, wheel *time_wheel.RedisDelayQueue, registry *SingletonRegistry, locker *redis_lock.Client, defs *DefinitionCache) *Migrator {
 	return &Migrator{
 		cfg:      cfg,
 		dao:      d,
@@ -95,8 +95,8 @@ func (m *Migrator) tick() {
 		return
 	}
 
-	lock := distributed_lock.NewRedisLock(migratorLockKey, m.locker,
-		distributed_lock.WithExpireSeconds(int64(m.cfg.Scheduler.MigrateTickSeconds*2)))
+	lock := redis_lock.NewRedisLock(migratorLockKey, m.locker,
+		redis_lock.WithExpireSeconds(int64(m.cfg.Scheduler.MigrateTickSeconds*2)))
 	if err := lock.Lock(ctx); err != nil {
 		return
 	}
@@ -213,7 +213,7 @@ func (m *Migrator) registerFire(ctx context.Context, task *po.ScheduledTask, fir
 	}
 
 	callback := FireCallback{ExecutionID: id, FireKey: fireKey}
-	return m.wheel.AddTask(ctx, fireKey, &time_wheel.RTaskElement{
+	return m.wheel.AddTask(ctx, fireKey, &time_wheel.RedisDelayTask{
 		CallbackURL: callbackURL,
 		Method:      http.MethodPost,
 		Req:         callback,

@@ -3,23 +3,22 @@ go 1.26.0
 use (
 	./apps/agent/server
 	./apps/agent_proxy
+	./apps/cloud_storage
+	./apps/raft_kv
+	./apps/scheduled_task
 	./apps/task_flow/server
-	./components/consistent_cache
+	./components/cache_aside
 	./components/consistent_hash
-	./components/distributed_lock
 	./components/lsm_tree
 	./components/raft
-	./components/red_mq
+	./components/redis_lock
+	./components/redis_mq
 	./components/tcc
 	./components/time_wheel
-	./components/timer
-	./components/yukino-cloud-storage
-	./components/yukino-kv
-	./components/yukino-log
-	./components/yukino-memory-pool
-	./components/yukino-skiplist
 	./libs/yukino_cache
 	./libs/yukino_http
+	./libs/yukino_log
 	./libs/yukino_orm
 	./libs/yukino_rpc
+	./libs/yukino_skiplist
 )

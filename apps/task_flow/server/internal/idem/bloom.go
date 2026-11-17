@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"time"
 
-	timerconf "github.com/hangtiancheng/yukino.go/components/timer/common/conf"
-	"github.com/hangtiancheng/yukino.go/components/timer/pkg/bloom"
-	"github.com/hangtiancheng/yukino.go/components/timer/pkg/hash"
-	timerredis "github.com/hangtiancheng/yukino.go/components/timer/pkg/redis"
+	schedconf "github.com/hangtiancheng/yukino.go/apps/scheduled_task/common/conf"
+	"github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/bloom"
+	"github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/hash"
+	schedredis "github.com/hangtiancheng/yukino.go/apps/scheduled_task/pkg/redis"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -20,14 +20,14 @@ type BloomFilter struct {
 }
 
 func NewSharedBloomFilter(client redis.UniversalClient, ttl time.Duration) *BloomFilter {
-	return &BloomFilter{filter: bloom.NewFilter(timerredis.NewUniversalClient(client), hash.NewMurmur3Encryptor(), hash.NewMurmur3AltEncryptor()), ttl: ttl}
+	return &BloomFilter{filter: bloom.NewFilter(schedredis.NewUniversalClient(client), hash.NewMurmur3Encryptor(), hash.NewMurmur3AltEncryptor()), ttl: ttl}
 }
 
 func NewBloomFilter(address, password string, ttl time.Duration) *BloomFilter {
 	if ttl <= 0 {
 		ttl = 48 * time.Hour
 	}
-	provider := timerconf.NewRedisConfigProvider(&timerconf.RedisConfig{
+	provider := schedconf.NewRedisConfigProvider(&schedconf.RedisConfig{
 		Network:            "tcp",
 		Address:            address,
 		Password:           password,
@@ -35,7 +35,7 @@ func NewBloomFilter(address, password string, ttl time.Duration) *BloomFilter {
 		MaxActive:          50,
 		IdleTimeoutSeconds: 30,
 	})
-	client := timerredis.GetClient(provider)
+	client := schedredis.GetClient(provider)
 	return &BloomFilter{
 		filter: bloom.NewFilter(client, hash.NewMurmur3Encryptor(), hash.NewMurmur3AltEncryptor()),
 		ttl:    ttl,

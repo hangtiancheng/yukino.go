@@ -3,15 +3,15 @@
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 
-COPY components/consistent_cache/ ./components/consistent_cache/
+COPY components/cache_aside/ ./components/cache_aside/
 COPY components/consistent_hash/ ./components/consistent_hash/
 COPY components/lsm_tree/ ./components/lsm_tree/
 COPY components/raft/ ./components/raft/
-COPY components/red_mq/ ./components/red_mq/
-COPY components/distributed_lock/ ./components/distributed_lock/
+COPY components/redis_mq/ ./components/redis_mq/
+COPY components/redis_lock/ ./components/redis_lock/
 COPY components/tcc/ ./components/tcc/
 COPY components/time_wheel/ ./components/time_wheel/
-COPY components/timer/ ./components/timer/
+COPY apps/scheduled_task/ ./apps/scheduled_task/
 COPY libs/yukino_cache/ ./libs/yukino_cache/
 COPY libs/yukino_http/ ./libs/yukino_http/
 

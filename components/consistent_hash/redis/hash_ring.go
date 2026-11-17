@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock/utils"
+	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/redis_lock/utils"
 	go_redis "github.com/redis/go-redis/v9"
 )
 
@@ -19,14 +19,14 @@ type RedisHashRing struct {
 	key         string
 	redisClient *Client
 	lockMu      sync.Mutex
-	locks       map[string]*distributed_lock.RedisLock
+	locks       map[string]*redis_lock.RedisLock
 }
 
 func NewRedisHashRing(key string, redisClient *Client) *RedisHashRing {
 	return &RedisHashRing{
 		key:         key,
 		redisClient: redisClient,
-		locks:       make(map[string]*distributed_lock.RedisLock),
+		locks:       make(map[string]*redis_lock.RedisLock),
 	}
 }
 
@@ -50,7 +50,7 @@ func (r *RedisHashRing) Lock(ctx context.Context, expireSeconds int) error {
 	if ctx == nil {
 		return errors.New("nil context")
 	}
-	lock := distributed_lock.NewRedisLock(r.getLockKey(), r.redisClient, distributed_lock.WithExpireSeconds(int64(expireSeconds)))
+	lock := redis_lock.NewRedisLock(r.getLockKey(), r.redisClient, redis_lock.WithExpireSeconds(int64(expireSeconds)))
 	if err := lock.Lock(ctx); err != nil {
 		return err
 	}

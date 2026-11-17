@@ -172,19 +172,19 @@ var (
 	callbackHeader map[string]string
 )
 
-func Test_redis_timeWheel(t *testing.T) {
+func Test_RedisDelayQueue(t *testing.T) {
 	if address == "please fill in redis address" || callbackURL == "please fill in callback url" {
 		t.Skip("fill in the redis/callback constants at the top of this file to run this integration test")
 	}
 
-	rTimeWheel := NewRTimeWheel(
+	delayQueue := NewRedisDelayQueue(
 		redis.NewClient(network, address, password),
 		time_wheel_http.NewClient(),
 	)
-	defer rTimeWheel.Stop()
+	defer delayQueue.Stop()
 
 	ctx := context.Background()
-	if err := rTimeWheel.AddTask(ctx, "test1", &RTaskElement{
+	if err := delayQueue.AddTask(ctx, "test1", &RedisDelayTask{
 		CallbackURL: callbackURL,
 		Method:      callbackMethod,
 		Req:         callbackReq,
@@ -194,7 +194,7 @@ func Test_redis_timeWheel(t *testing.T) {
 		return
 	}
 
-	if err := rTimeWheel.AddTask(ctx, "test2", &RTaskElement{
+	if err := delayQueue.AddTask(ctx, "test2", &RedisDelayTask{
 		CallbackURL: callbackURL,
 		Method:      callbackMethod,
 		Req:         callbackReq,
@@ -204,7 +204,7 @@ func Test_redis_timeWheel(t *testing.T) {
 		return
 	}
 
-	if err := rTimeWheel.RemoveTask(ctx, "test2", time.Now().Add(4*time.Second)); err != nil {
+	if err := delayQueue.RemoveTask(ctx, "test2", time.Now().Add(4*time.Second)); err != nil {
 		t.Error(err)
 		return
 	}

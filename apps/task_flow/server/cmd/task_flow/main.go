@@ -28,14 +28,14 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/telemetry"
 	tcc "github.com/hangtiancheng/yukino.go/components/tcc"
 
-	"github.com/hangtiancheng/yukino.go/components/consistent_cache"
-	ccmysql "github.com/hangtiancheng/yukino.go/components/consistent_cache/mysql"
-	ccredis "github.com/hangtiancheng/yukino.go/components/consistent_cache/redis"
+	"github.com/hangtiancheng/yukino.go/components/cache_aside"
+	ccmysql "github.com/hangtiancheng/yukino.go/components/cache_aside/mysql"
+	ccredis "github.com/hangtiancheng/yukino.go/components/cache_aside/redis"
 	"github.com/hangtiancheng/yukino.go/components/consistent_hash"
 	chredis "github.com/hangtiancheng/yukino.go/components/consistent_hash/redis"
-	"github.com/hangtiancheng/yukino.go/components/distributed_lock"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
-	mqredis "github.com/hangtiancheng/yukino.go/components/red_mq/redis"
+	"github.com/hangtiancheng/yukino.go/components/redis_lock"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
+	mqredis "github.com/hangtiancheng/yukino.go/components/redis_mq/redis"
 	"github.com/hangtiancheng/yukino.go/components/time_wheel"
 	time_wheel_http "github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/http"
 	twredis "github.com/hangtiancheng/yukino.go/components/time_wheel/pkg/redis"
@@ -173,18 +173,18 @@ func run(configPath string) error {
 		ccredis.NewCache(defCacheRedis),
 		ccredis.NewCache(defCacheRedis),
 		defCacheDB,
-		consistent_cache.WithCacheExpireSeconds(int64(cfg.Cache.DefCacheExpireSeconds)),
-		consistent_cache.WithCacheExpireRandomMode(),
-		consistent_cache.WithDisableExpireSeconds(1),
+		cache_aside.WithCacheExpireSeconds(int64(cfg.Cache.DefCacheExpireSeconds)),
+		cache_aside.WithCacheExpireRandomMode(),
+		cache_aside.WithDisableExpireSeconds(1),
 	)
 
-	lockClient := distributed_lock.NewUniversalClient(redisClient)
+	lockClient := redis_lock.NewUniversalClient(redisClient)
 	mqClient := mqredis.NewUniversalClient(redisClient)
 	wheelClient := twredis.NewUniversalClient(redisClient)
 	hashClient := chredis.NewUniversalClient(redisClient)
 
-	producer := red_mq.NewProducer(mqClient, red_mq.WithMsgQueueLen(cfg.MQ.MsgQueueLen))
-	wheel := time_wheel.NewRTimeWheel(wheelClient, time_wheel_http.NewClient())
+	producer := redis_mq.NewProducer(mqClient, redis_mq.WithMsgQueueLen(cfg.MQ.MsgQueueLen))
+	wheel := time_wheel.NewRedisDelayQueue(wheelClient, time_wheel_http.NewClient())
 	defer wheel.Stop()
 
 	hashRing := chredis.NewRedisHashRing("task_flow:nodes", hashClient)

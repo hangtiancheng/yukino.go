@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
-	"github.com/hangtiancheng/yukino.go/components/consistent_cache"
+	"github.com/hangtiancheng/yukino.go/components/cache_aside"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -340,10 +340,10 @@ func (o *ConditionTaskObject) Read(body string) error {
 	return json.Unmarshal([]byte(body), &o.ConditionTask)
 }
 
-var ErrDefNotExist = consistent_cache.ErrorDataNotExist
+var ErrDefNotExist = cache_aside.ErrorDataNotExist
 
 func IsNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, consistent_cache.ErrorDataNotExist)
+	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, cache_aside.ErrorDataNotExist)
 }
 
 func IsDuplicateEntry(err error) bool {

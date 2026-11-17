@@ -6,19 +6,19 @@ import (
 
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/dao"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
-	"github.com/hangtiancheng/yukino.go/components/consistent_cache"
+	"github.com/hangtiancheng/yukino.go/components/cache_aside"
 )
 
 type DefinitionCache struct {
 	dao       *dao.DAO
-	schedSvc  *consistent_cache.Service
-	condSvc   *consistent_cache.Service
+	schedSvc  *cache_aside.Service
+	condSvc   *cache_aside.Service
 	schedKeys prefixedCache
 	condKeys  prefixedCache
 }
 
 type prefixedCache struct {
-	inner  consistent_cache.Cache
+	inner  cache_aside.Cache
 	prefix string
 }
 
@@ -42,13 +42,13 @@ func (p prefixedCache) PutWhenEnable(ctx context.Context, key, value string, exp
 	return p.inner.PutWhenEnable(ctx, p.prefix+key, value, expireSeconds)
 }
 
-func NewDefinitionCache(d *dao.DAO, schedCache, condCache consistent_cache.Cache, db consistent_cache.DB, opts ...consistent_cache.Option) *DefinitionCache {
+func NewDefinitionCache(d *dao.DAO, schedCache, condCache cache_aside.Cache, db cache_aside.DB, opts ...cache_aside.Option) *DefinitionCache {
 	schedKeys := prefixedCache{inner: schedCache, prefix: "task_flow:def:sched:"}
 	condKeys := prefixedCache{inner: condCache, prefix: "task_flow:def:cond:"}
 	return &DefinitionCache{
 		dao:       d,
-		schedSvc:  consistent_cache.NewService(schedKeys, db, opts...),
-		condSvc:   consistent_cache.NewService(condKeys, db, opts...),
+		schedSvc:  cache_aside.NewService(schedKeys, db, opts...),
+		condSvc:   cache_aside.NewService(condKeys, db, opts...),
 		schedKeys: schedKeys,
 		condKeys:  condKeys,
 	}

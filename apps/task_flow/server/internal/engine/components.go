@@ -12,7 +12,7 @@ import (
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/idem"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/model/po"
 	"github.com/hangtiancheng/yukino.go/apps/task_flow/server/internal/telemetry"
-	"github.com/hangtiancheng/yukino.go/components/red_mq"
+	"github.com/hangtiancheng/yukino.go/components/redis_mq"
 	"github.com/hangtiancheng/yukino.go/components/tcc"
 )
 
@@ -152,11 +152,11 @@ func (c *ExecutionReserveComponent) ack(req *tcc.TCCReq) *tcc.TCCResp {
 }
 
 type MQDispatchComponent struct {
-	producer *red_mq.Producer
+	producer *redis_mq.Producer
 	topic    string
 }
 
-func NewMQDispatchComponent(producer *red_mq.Producer, topic string) *MQDispatchComponent {
+func NewMQDispatchComponent(producer *redis_mq.Producer, topic string) *MQDispatchComponent {
 	return &MQDispatchComponent{producer: producer, topic: topic}
 }
 

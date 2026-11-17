@@ -7,7 +7,7 @@
 A Go implementation of a consistent hash ring whose nodes live in Redis, where adding or removing a node automatically tells you _which keys_ must move and _where_. No rebalancing surprises, no thundering herds.
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![Module](https://img.shields.io/badge/module-apps%2Fconsistent__hash-blue)](go.mod)
+[![Module](https://img.shields.io/badge/module-components%2Fconsistent__hash-blue)](go.mod)
 
 </div>
 

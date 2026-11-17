@@ -1,6 +1,6 @@
 package main
 
-import "github.com/hangtiancheng/yukino.go/components/raft/raft"
+import "github.com/hangtiancheng/yukino.go/components/raft"
 
 func main() {
 	proposeC := make(chan string)

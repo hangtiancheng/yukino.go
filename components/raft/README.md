@@ -37,7 +37,7 @@ A from-scratch Go implementation of the Raft consensus algorithm (leader electio
              └─────────────┘                        └──────────────┘
 ```
 
-- **`raft/`** — the consensus core. Pure state machine, no networking: `raft`, `follower.go`, `candidate.go`, `leader.go`, `log.go`, `progress.go`, `read.go`, `storage.go`, `node.go`, `ready.go`.
+- **root package** — the consensus core. Pure state machine, no networking: `raft`, `follower.go`, `candidate.go`, `leader.go`, `log.go`, `progress.go`, `read.go`, `storage.go`, `node.go`, `ready.go`.
 - **`proxy.go`** — the driver. Ticks the node, drains `Ready()`, persists state, applies committed entries, and calls `Advance()`.
 - **`kv_store.go`** — the application state machine; consumes `commitC`.
 - **`http_api.go`** — client-facing HTTP surface.
@@ -129,7 +129,7 @@ _ = node.ReadIndex(ctx, nil)
 ## Testing
 
 ```bash
-go test ./raft/...
+go test ./...
 ```
 
 ## License

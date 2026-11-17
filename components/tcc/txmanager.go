@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hangtiancheng/yukino.go/components/tcc/log"
+	"github.com/hangtiancheng/yukino.go/components/tcc/internal/log"
 )
 
 type TXManager struct {

@@ -43,7 +43,7 @@ The handwritten TCC monitor bounds recovery concurrency and uses a deadline shor
 
 The Bloom filter uses two Murmur3 positions in a 2 MiB daily bitmap and an expiration. A Bloom positive is always checked against the durable execution row. False positives cannot suppress new work.
 
-Task definitions use consistent_cache. Reports use yukino_cache with a byte budget and expiration; the cluster overlay enables an etcd-discovered peer ring. Cache misses fall back to SQL. The execution-status mirror is eventually consistent, versioned, paginated, and retained independently of authoritative execution rows.
+Task definitions use cache_aside. Reports use yukino_cache with a byte budget and expiration; the cluster overlay enables an etcd-discovered peer ring. Cache misses fall back to SQL. The execution-status mirror is eventually consistent, versioned, paginated, and retained independently of authoritative execution rows.
 
 The LSM journal persists local audit records. Raft runs a single-member local ledger for ordered diagnostic decisions, with an explicit shutdown path. Neither substitutes for SQL ownership or database replication.
 

@@ -4,7 +4,7 @@
 
 **A family of elegant, production-oriented Go infrastructure libraries.**
 
-Four independent modules — HTTP framework, MongoDB ORM, distributed cache, and RPC framework — each inspired by a best-in-class design, each usable on its own.
+Six independent modules — HTTP framework, MongoDB ORM, distributed cache, RPC framework, concurrent logging, and a persistent skip list — each inspired by a best-in-class design, each usable on its own.
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -21,6 +21,8 @@ Four independent modules — HTTP framework, MongoDB ORM, distributed cache, and
 | [`yukino_orm`](./libs/yukino_orm)     | MongoDB ORM       | [Knex.js](https://knexjs.org)                      | Chainable query builder, transactions, grouped aggregation, streaming, auto-increment sequences                              |
 | [`yukino_cache`](./libs/yukino_cache) | Distributed cache | [groupcache](https://github.com/golang/groupcache) | Read-through + singleflight, write propagation, dual-level LRU, consistent hashing, etcd discovery, live dashboard           |
 | [`yukino_rpc`](./libs/yukino_rpc)     | RPC framework     | [grpc-go](https://github.com/grpc/grpc-go)         | grpc-go-style API over a custom TCP binary protocol, multiplexing, streaming, circuit breaker, rate limiting, load balancing |
+| [`yukino_log`](./libs/yukino_log)     | Logging library   | C++ async logging backend                          | Synchronous front end, double-buffered file backend, level filtering, size- and day-based rotation                            |
+| [`yukino_skiplist`](./libs/yukino_skiplist) | Ordered map | C++ skip list                                  | Generic concurrent skip list, ordered iteration, snapshots, dump/load persistence                                            |
 
 The modules are independently versioned and importable. The only cross-module dependency is optional: `yukino_cache`'s real-time dashboard is served through `yukino_http`.
 
@@ -178,11 +180,16 @@ yukino.go/
 │   ├── yukino_http/     # HTTP framework        github.com/hangtiancheng/yukino.go/libs/yukino_http
 │   ├── yukino_orm/      # MongoDB ORM           github.com/hangtiancheng/yukino.go/libs/yukino_orm
 │   ├── yukino_cache/    # Distributed cache     github.com/hangtiancheng/yukino.go/libs/yukino_cache
-│   └── yukino_rpc/      # RPC framework         github.com/hangtiancheng/yukino.go/libs/yukino_rpc
-├── components/          # hand-written distributed components (time_wheel, distributed_lock,
-│                        #   red_mq, consistent_hash, consistent_cache, lsm_tree, raft, tcc, timer)
+│   ├── yukino_rpc/      # RPC framework         github.com/hangtiancheng/yukino.go/libs/yukino_rpc
+│   ├── yukino_log/      # Async logging          github.com/hangtiancheng/yukino.go/libs/yukino_log
+│   └── yukino_skiplist/ # Concurrent skip list   github.com/hangtiancheng/yukino.go/libs/yukino_skiplist
+├── components/          # hand-written distributed components (time_wheel, redis_lock,
+│                        #   redis_mq, consistent_hash, cache_aside, lsm_tree, raft, tcc)
 ├── apps/                # deployable servers, cmd/ + internal/ layout
 │   ├── task_flow/       # enterprise conditional & scheduled task platform (server/ + client/)
+│   ├── scheduled_task/  # distributed cron / scheduled task service
+│   ├── cloud_storage/   # cloud storage service and log backup daemon
+│   ├── raft_kv/         # linearizable Raft key-value store
 │   ├── agent/           # AI OnCall assistant          (client: packages/yukino-agent)
 │   ├── agent_proxy/     # coding-agent proxy, released as yukino-agent-proxy
 │   ├── chat/            # IM server                   (client: packages/yukino-chat)
@@ -223,6 +230,8 @@ cd libs/yukino_http && go test ./...
 cd libs/yukino_orm && go test ./...    # uses mongodb://localhost:27017 (MONGO_URI to override)
 cd libs/yukino_cache && go test ./...
 cd libs/yukino_rpc && go test ./...
+cd libs/yukino_log && go test ./...
+cd libs/yukino_skiplist && go test ./...
 ```
 
 ## Versioning
