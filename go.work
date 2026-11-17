@@ -13,6 +13,11 @@ use (
 	./components/tcc
 	./components/time_wheel
 	./components/timer
+	./components/yukino-cloud-storage
+	./components/yukino-kv
+	./components/yukino-log
+	./components/yukino-memory-pool
+	./components/yukino-skiplist
 	./libs/yukino_cache
 	./libs/yukino_http
 	./libs/yukino_orm
