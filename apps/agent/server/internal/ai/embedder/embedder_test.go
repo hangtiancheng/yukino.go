@@ -55,3 +55,42 @@ func TestEmbeddingResponseOrderAndValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestEmbeddingBatchesProviderRequests(t *testing.T) {
+	var sizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Input []string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		sizes = append(sizes, len(body.Input))
+		var data []map[string]any
+		for n := len(body.Input) - 1; n >= 0; n-- {
+			var value int
+			fmt.Sscanf(body.Input[n], "%d", &value)
+			data = append(data, map[string]any{"index": n, "embedding": []float64{float64(value)}})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": data})
+	}))
+	defer server.Close()
+	eb, err := New(context.Background(), &config.Config{EmbeddingModel: config.EmbeddingConfig{Provider: "openai", BaseURL: server.URL, APIKey: "test", Model: "test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := make([]string, 43)
+	for n := range texts {
+		texts[n] = fmt.Sprint(n)
+	}
+	vectors, err := eb.EmbedStrings(context.Background(), texts)
+	if err != nil || len(vectors) != 43 || fmt.Sprint(sizes) != "[20 20 3]" {
+		t.Fatalf("batches=%v vectors=%d error=%v", sizes, len(vectors), err)
+	}
+	for n, v := range vectors {
+		if v[0] != float64(n) {
+			t.Fatalf("output order at %d: %v", n, v)
+		}
+	}
+}

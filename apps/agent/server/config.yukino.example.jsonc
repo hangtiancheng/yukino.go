@@ -1,0 +1,24 @@
+{
+  "yukino_config": "~/.yukino/config.yaml",
+  "server_addr": ":8123",
+  "think_chat_model": {
+    "provider_name": "ds-openai",
+    "max_tokens": 8192
+  },
+  "quick_chat_model": {
+    "provider_name": "ds-openai",
+    "max_tokens": 4096
+  },
+  "embedding_model": {
+    "provider_name": "ali-openai",
+    "model": "qwen3.7-text-embedding-flash",
+    "batch_size": 20
+  },
+  "file_dir": "./data/docs",
+  "prometheus_url": "http://127.0.0.1:9090",
+  "milvus": {
+    "addr": "127.0.0.1:19530",
+    "db_name": "agent",
+    "collection_name": "biz_qwen37_flash"
+  }
+}

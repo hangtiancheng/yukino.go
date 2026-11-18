@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	sdkconfig "github.com/hangtiancheng/yukino-code/apps/yukino/config"
 )
 
 const (
@@ -18,7 +20,8 @@ const (
 )
 
 type Config struct {
-	ServerAddr string `json:"server_addr"`
+	YukinoConfig string `json:"yukino_config"`
+	ServerAddr   string `json:"server_addr"`
 
 	ModelProvider string `json:"model_provider"`
 
@@ -41,9 +44,11 @@ type Config struct {
 }
 
 type ChatModelConfig struct {
-	APIKey  string `json:"api_key"`
-	BaseURL string `json:"base_url"`
-	Model   string `json:"model"`
+	ProviderName     string                    `json:"provider_name"`
+	ResolvedProvider *sdkconfig.ProviderConfig `json:"-"`
+	APIKey           string                    `json:"api_key"`
+	BaseURL          string                    `json:"base_url"`
+	Model            string                    `json:"model"`
 
 	MaxTokens int `json:"max_tokens"`
 
@@ -51,7 +56,9 @@ type ChatModelConfig struct {
 }
 
 type EmbeddingConfig struct {
-	Provider string `json:"provider"`
+	BatchSize    int    `json:"batch_size"`
+	ProviderName string `json:"provider_name"`
+	Provider     string `json:"provider"`
 
 	APIKey  string `json:"api_key"`
 	BaseURL string `json:"base_url"`
@@ -91,6 +98,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config file %s: %w", path, err)
 	}
 
+	if err := resolveProviders(cfg); err != nil {
+		return nil, err
+	}
 	applyDefaults(cfg)
 	return cfg, nil
 }

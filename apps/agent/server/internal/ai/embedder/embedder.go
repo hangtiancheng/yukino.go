@@ -12,8 +12,9 @@ import (
 )
 
 type Embedder struct {
-	client openai.Client
-	model  string
+	client    openai.Client
+	model     string
+	batchSize int
 }
 
 func New(ctx context.Context, cfg *config.Config) (*Embedder, error) {
@@ -24,12 +25,28 @@ func New(ctx context.Context, cfg *config.Config) (*Embedder, error) {
 	if cfg.EmbeddingModel.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(cfg.EmbeddingModel.BaseURL))
 	}
-	return &Embedder{client: openai.NewClient(opts...), model: cfg.EmbeddingModel.Model}, nil
+	batchSize := cfg.EmbeddingModel.BatchSize
+	if batchSize <= 0 {
+		batchSize = 20
+	}
+	return &Embedder{client: openai.NewClient(opts...), model: cfg.EmbeddingModel.Model, batchSize: batchSize}, nil
 }
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
+	vectors := make([][]float64, 0, len(texts))
+	for start := 0; start < len(texts); start += e.batchSize {
+		batch, err := e.embedBatch(ctx, texts[start:min(start+e.batchSize, len(texts))])
+		if err != nil {
+			return nil, fmt.Errorf("embed batch starting at %d: %w", start, err)
+		}
+		vectors = append(vectors, batch...)
+	}
+	return vectors, nil
+}
+
+func (e *Embedder) embedBatch(ctx context.Context, texts []string) ([][]float64, error) {
 	result, err := e.client.Embeddings.New(ctx, openai.EmbeddingNewParams{Model: openai.EmbeddingModel(e.model), Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: texts}, EncodingFormat: openai.EmbeddingNewParamsEncodingFormatFloat})
 	if err != nil {
 		return nil, err

@@ -108,7 +108,15 @@ cp config.example.jsonc config.json      # then edit config.json
 go run ./cmd/agent
 ```
 
-The Go server reads `config.json` (not environment variables). `config.example.jsonc` documents every field and its default, and is parsed as JSONC — `//` comments and trailing commas are allowed, so the example can be copied verbatim. `config.json` is git-ignored because it holds real API keys.
+The Go server reads `config.json` as JSONC: `//` comments and trailing commas are allowed. `config.example.jsonc` shows inline model settings; `config.yukino.example.jsonc` reuses named providers from Yukino YAML. `config.json` is git-ignored because inline settings may contain API keys.
+
+### Reuse named Yukino providers
+
+Copy `config.yukino.example.jsonc` to `config.json` to use `ds-openai` for both chat models and `ali-openai` for embeddings. The embedding model is explicitly set to `qwen3.7-text-embedding-flash`. Provider credentials, protocol, thinking settings and capabilities are read from `~/.yukino/config.yaml` at startup. Restart after changing that file. No API keys need to be copied into the server configuration. Embedding requests use batches of 20 by default; `embedding_model.batch_size` can set the provider limit.
+
+`yukino_config` selects the YAML file (defaults to Yukino's global configuration). Each model's `provider_name` selects a named provider. Chat `model` and `max_tokens` can override the profile; the embedding `model` overrides the profile's chat model. Inline model configurations are also supported. When running in Docker, mount the YAML file read-only and set `yukino_config` to its container path.
+
+The local example connects to the existing Docker Milvus at `127.0.0.1:19530` and uses `agent.biz_qwen37_flash`, a separate collection for this embedding model. It does not require starting the bundled Compose stack.
 
 ### Container image
 

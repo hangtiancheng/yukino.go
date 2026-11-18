@@ -9,6 +9,11 @@ import (
 )
 
 func New(cfg *appconfig.Config, mc appconfig.ChatModelConfig, system string) (llm.Client, string, error) {
+	if mc.ResolvedProvider != nil {
+		provider := *mc.ResolvedProvider
+		client, err := llm.NewClient(&provider, system)
+		return client, provider.Protocol, err
+	}
 	protocol := "openai-compat"
 	switch cfg.ModelProvider {
 	case appconfig.ModelProviderOpenAI:
