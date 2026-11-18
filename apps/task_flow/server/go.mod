@@ -5,21 +5,21 @@ go 1.26.0
 require (
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/goccy/go-yaml v1.19.2
+	github.com/hangtiancheng/yukino.go/apps/scheduled_task v0.0.0
 	github.com/hangtiancheng/yukino.go/components/cache_aside v0.0.0
 	github.com/hangtiancheng/yukino.go/components/consistent_hash v0.0.0
 	github.com/hangtiancheng/yukino.go/components/lsm_tree v0.0.0
 	github.com/hangtiancheng/yukino.go/components/raft v0.0.0
-	github.com/hangtiancheng/yukino.go/components/redis_mq v0.0.0
 	github.com/hangtiancheng/yukino.go/components/redis_lock v0.0.0
+	github.com/hangtiancheng/yukino.go/components/redis_mq v0.0.0
 	github.com/hangtiancheng/yukino.go/components/tcc v0.0.0
 	github.com/hangtiancheng/yukino.go/components/time_wheel v0.0.0
-	github.com/hangtiancheng/yukino.go/apps/scheduled_task v0.0.0
 	github.com/hangtiancheng/yukino.go/libs/yukino_cache v0.0.0
 	github.com/hangtiancheng/yukino.go/libs/yukino_http v0.0.1
 	github.com/openai/openai-go v1.12.0
 	github.com/redis/go-redis/v9 v9.23.0
 	go.opentelemetry.io/otel v1.47.0
-	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.46.0
+	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	gorm.io/driver/mysql v1.6.0
@@ -39,11 +39,12 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/pingcap/errors v0.11.5-0.20260310054046-9c8b3586e4b2 // indirect
 	github.com/pkg/errors v0.9.2-0.20201214064552-5dd12d0cfe7f // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
-	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/gjson v1.20.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
-	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/pretty v1.2.2 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twmb/murmur3 v1.2.0 // indirect
 	go.etcd.io/etcd/api/v3 v3.7.0 // indirect
@@ -55,7 +56,7 @@ require (
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
@@ -65,15 +66,15 @@ require (
 )
 
 replace (
+	github.com/hangtiancheng/yukino.go/apps/scheduled_task => ../../../apps/scheduled_task
 	github.com/hangtiancheng/yukino.go/components/cache_aside => ../../../components/cache_aside
 	github.com/hangtiancheng/yukino.go/components/consistent_hash => ../../../components/consistent_hash
 	github.com/hangtiancheng/yukino.go/components/lsm_tree => ../../../components/lsm_tree
 	github.com/hangtiancheng/yukino.go/components/raft => ../../../components/raft
-	github.com/hangtiancheng/yukino.go/components/redis_mq => ../../../components/redis_mq
 	github.com/hangtiancheng/yukino.go/components/redis_lock => ../../../components/redis_lock
+	github.com/hangtiancheng/yukino.go/components/redis_mq => ../../../components/redis_mq
 	github.com/hangtiancheng/yukino.go/components/tcc => ../../../components/tcc
 	github.com/hangtiancheng/yukino.go/components/time_wheel => ../../../components/time_wheel
-	github.com/hangtiancheng/yukino.go/apps/scheduled_task => ../../../apps/scheduled_task
 	github.com/hangtiancheng/yukino.go/libs/yukino_cache => ../../../libs/yukino_cache
 	github.com/hangtiancheng/yukino.go/libs/yukino_http => ../../../libs/yukino_http
 )
