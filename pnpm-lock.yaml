@@ -179,11 +179,11 @@ importers:
   apps/agent/client:
     dependencies:
       '@yukino.js/lit-jsx':
-        specifier: latest
-        version: 0.0.1
+        specifier: file:../../../../yukino.js/packages/lit-jsx
+        version: file:../yukino.js/packages/lit-jsx
       '@yukino.js/sentry':
-        specifier: latest
-        version: 0.0.1(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        specifier: file:../../../../yukino-sentry/sentry
+        version: file:../yukino-sentry/sentry(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
@@ -253,11 +253,11 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@yukino.js/lit-jsx':
-        specifier: latest
-        version: 0.0.1
+        specifier: file:../../../../yukino.js/packages/lit-jsx
+        version: file:../yukino.js/packages/lit-jsx
       '@yukino.js/sentry':
-        specifier: latest
-        version: 0.0.1(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        specifier: file:../../../../yukino-sentry/sentry
+        version: file:../yukino-sentry/sentry(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       daisyui:
         specifier: ^5.7.50
         version: 5.7.50
@@ -763,11 +763,11 @@ packages:
   '@xstate/fsm@1.6.5':
     resolution: {integrity: sha512-b5o1I6aLNeYlU/3CPlj/Z91ybk1gUsKT+5NAJI+2W4UjvS5KLG28K9v5UvNoFVjHV8PajVZ00RH3vnjyQO7ZAw==}
 
-  '@yukino.js/lit-jsx@0.0.1':
-    resolution: {integrity: sha512-+yZgJ2nJDuhDQPh3yXR1Gv0ka49WeHuhmRKCik5rJonmpCkfIZfYQEakNYVNMBQdit53L8VyAmWhEEFu3TQVwg==}
+  '@yukino.js/lit-jsx@file:../yukino.js/packages/lit-jsx':
+    resolution: {directory: ../yukino.js/packages/lit-jsx, type: directory}
 
-  '@yukino.js/sentry@0.0.1':
-    resolution: {integrity: sha512-9cKZdLps7aX91MTg21rqS575ghg5jOZnFwvAvGddC3YOpq1KKjxXV9iXwAifiyjHmE7ZZJgRNVQEI5JU0rn6Pg==}
+  '@yukino.js/sentry@file:../yukino-sentry/sentry':
+    resolution: {directory: ../yukino-sentry/sentry, type: directory}
     peerDependencies:
       react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       vite: ^7.0.0 || ^8.0.0
@@ -1638,11 +1638,11 @@ snapshots:
 
   '@xstate/fsm@1.6.5': {}
 
-  '@yukino.js/lit-jsx@0.0.1':
+  '@yukino.js/lit-jsx@file:../yukino.js/packages/lit-jsx':
     dependencies:
       lit: 3.3.3
 
-  '@yukino.js/sentry@0.0.1(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@yukino.js/sentry@file:../yukino-sentry/sentry(react@19.3.1)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
       '@fingerprintjs/fingerprintjs': 5.3.0
       '@rrweb/record': 2.1.0

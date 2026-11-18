@@ -11,8 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@yukino.js/lit-jsx": "latest",
-    "@yukino.js/sentry": "latest",
+    "@yukino.js/lit-jsx": "file:../../../../yukino.js/packages/lit-jsx",
+    "@yukino.js/sentry": "file:../../../../yukino-sentry/sentry",
     "dompurify": "^3.4.17",
     "highlight.js": "^11.12.0",
     "lit": "^3.3.3",
