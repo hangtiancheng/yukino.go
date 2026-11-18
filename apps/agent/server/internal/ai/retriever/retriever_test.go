@@ -5,45 +5,23 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/cloudwego/eino/components/retriever"
-	"github.com/cloudwego/eino/schema"
+	milvusclient "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
-type stubRetriever struct {
-	docs []*schema.Document
-	err  error
-}
-
-func (s *stubRetriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
-	return s.docs, s.err
-}
-
-func TestEmptyTolerantRetriever(t *testing.T) {
-	ctx := context.Background()
-
-	empty := &emptyTolerantRetriever{inner: &stubRetriever{
-		err: errors.New("[milvus retriever] no results found"),
-	}}
-	docs, err := empty.Retrieve(ctx, "q")
-	if err != nil {
-		t.Fatalf("want nil error on empty collection, got %v", err)
+func TestSearchDocuments(t *testing.T) {
+	docs, err := searchDocuments([]milvusclient.SearchResult{{ResultCount: 0}})
+	if err != nil || len(docs) != 0 {
+		t.Fatalf("empty results: %v %v", docs, err)
 	}
-	if len(docs) != 0 {
-		t.Errorf("want empty docs, got %d", len(docs))
-	}
-
 	boom := errors.New("connection refused")
-	passthrough := &emptyTolerantRetriever{inner: &stubRetriever{err: boom}}
-	if _, err := passthrough.Retrieve(ctx, "q"); !errors.Is(err, boom) {
-		t.Errorf("want pass-through error, got %v", err)
+	if _, err = searchDocuments([]milvusclient.SearchResult{{Err: boom}}); !errors.Is(err, boom) {
+		t.Fatalf("error lost: %v", err)
 	}
-
-	want := []*schema.Document{{ID: "1", Content: "c"}}
-	ok := &emptyTolerantRetriever{inner: &stubRetriever{docs: want}}
-	got, err := ok.Retrieve(ctx, "q")
-	if err != nil || len(got) != 1 || got[0].ID != "1" {
-		t.Errorf("want pass-through docs, got %v (err %v)", got, err)
+	results := []milvusclient.SearchResult{{ResultCount: 1, IDs: entity.NewColumnVarChar("id", []string{"doc1"}), Fields: milvusclient.ResultSet{entity.NewColumnVarChar("content", []string{"hello"}), entity.NewColumnJSONBytes("metadata", [][]byte{[]byte(`{"title":"Guide"}`)})}}}
+	docs, err = searchDocuments(results)
+	if err != nil || len(docs) != 1 || docs[0].ID != "doc1" || docs[0].Content != "hello" || docs[0].MetaData["title"] != "Guide" {
+		t.Fatalf("documents: %+v %v", docs, err)
 	}
 }
 

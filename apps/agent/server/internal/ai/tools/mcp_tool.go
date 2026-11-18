@@ -10,9 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-	"github.com/eino-contrib/jsonschema"
+	sdktools "github.com/hangtiancheng/yukino-code/apps/yukino/tools"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,12 +18,12 @@ import (
 
 var (
 	mcpMu         sync.Mutex
-	cachedTools   []tool.BaseTool
+	cachedTools   []sdktools.Tool
 	cachedKey     string
 	cachedSession *mcp.ClientSession
 )
 
-func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, error) {
+func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]sdktools.Tool, error) {
 	mcpMu.Lock()
 	defer mcpMu.Unlock()
 
@@ -43,7 +41,7 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 	tools, session, err := buildMcpTools(ctx, cfg)
 	if err != nil {
 		logger.L().Warn("mcp connect failed, skipping log tools", "transport", cfg.Transport, "err", err)
-		return []tool.BaseTool{}, nil
+		return []sdktools.Tool{}, nil
 	}
 
 	if cachedSession != nil {
@@ -59,11 +57,9 @@ func GetLogMcpTool(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, 
 
 // invalidateMcpSession drops the cached tools when they belong to the given
 // session. It runs when the session's connection dies (watchSession) or when a
-// tool call fails at the transport level (mcpToolAdapter.InvokableRun), so the
+// tool call fails at the transport level (mcpToolAdapter.Execute), so the
 // next GetLogMcpTool call reconnects instead of serving tools bound to a dead
-// session for the rest of the process lifetime. The legacy implementation
-// reconnected on every request; this preserves that resilience while keeping
-// one long-lived session.
+// session for the rest of the process lifetime.
 func invalidateMcpSession(session *mcp.ClientSession) {
 	mcpMu.Lock()
 	if cachedSession == session {
@@ -83,7 +79,7 @@ func invalidateMcpSession(session *mcp.ClientSession) {
 // broken by a transport failure, then invalidates the cache. Transports
 // without a persistent stream (newer streamable-HTTP protocol revisions drop
 // the standalone SSE listener) never notice server death here; those are
-// covered by the CallTool-time invalidation in InvokableRun.
+// covered by the CallTool-time invalidation in Execute.
 func watchSession(session *mcp.ClientSession) {
 	_ = session.Wait()
 	invalidateMcpSession(session)
@@ -97,7 +93,7 @@ func mcpCacheKey(cfg config.MCPConfig) (string, error) {
 	return string(raw), nil
 }
 
-func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]tool.BaseTool, *mcp.ClientSession, error) {
+func buildMcpTools(ctx context.Context, cfg config.MCPConfig) ([]sdktools.Tool, *mcp.ClientSession, error) {
 	// GetLogMcpTool caches the session behind the returned tools for the
 	// lifetime of the process, but ctx here is typically the first HTTP
 	// request's context. The SSE transport binds its long-lived GET stream to
@@ -161,75 +157,62 @@ func newMcpTransport(cfg config.MCPConfig) (mcp.Transport, error) {
 	}
 }
 
-func listMcpTools(ctx context.Context, session *mcp.ClientSession) ([]tool.BaseTool, error) {
-	tools := make([]tool.BaseTool, 0)
+func listMcpTools(ctx context.Context, session *mcp.ClientSession) ([]sdktools.Tool, error) {
+	tools := make([]sdktools.Tool, 0)
 	for t, err := range session.Tools(ctx, &mcp.ListToolsParams{}) {
 		if err != nil {
 			return nil, fmt.Errorf("list mcp tools: %w", err)
 		}
-		info, err := einoToolInfo(t)
+		info, err := mcpInputSchema(t)
 		if err != nil {
 			return nil, err
 		}
-		tools = append(tools, &mcpToolAdapter{session: session, name: t.Name, info: info})
+		tools = append(tools, &mcpToolAdapter{session: session, name: t.Name, inputSchema: info, description: t.Description})
 	}
 	return tools, nil
 }
 
-func einoToolInfo(t *mcp.Tool) (*schema.ToolInfo, error) {
-	info := &schema.ToolInfo{
-		Name: t.Name,
-		Desc: t.Description,
-	}
+func mcpInputSchema(t *mcp.Tool) (map[string]any, error) {
 	if t.InputSchema == nil {
-		return info, nil
+		return map[string]any{"type": "object", "properties": map[string]any{}}, nil
 	}
-
 	raw, err := json.Marshal(t.InputSchema)
 	if err != nil {
-		return nil, fmt.Errorf("marshal input schema of mcp tool %s: %w", t.Name, err)
+		return nil, err
 	}
-	s := &jsonschema.Schema{}
-	if err := json.Unmarshal(raw, s); err != nil {
-		return nil, fmt.Errorf("parse input schema of mcp tool %s: %w", t.Name, err)
+	var schema map[string]any
+	if err = json.Unmarshal(raw, &schema); err != nil {
+		return nil, err
 	}
-	info.ParamsOneOf = schema.NewParamsOneOfByJSONSchema(s)
-	return info, nil
+	return schema, nil
 }
 
 type mcpToolAdapter struct {
-	session *mcp.ClientSession
-	name    string
-	info    *schema.ToolInfo
+	session     *mcp.ClientSession
+	name        string
+	inputSchema map[string]any
+	description string
 }
 
-func (t *mcpToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
-	return t.info, nil
+func (t *mcpToolAdapter) Name() string                    { return t.name }
+func (t *mcpToolAdapter) Description() string             { return t.description }
+func (t *mcpToolAdapter) Category() sdktools.ToolCategory { return sdktools.CategoryWrite }
+func (t *mcpToolAdapter) Schema() map[string]any {
+	return map[string]any{"name": t.name, "description": t.description, "input_schema": t.inputSchema}
 }
-
-func (t *mcpToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
-	var args map[string]any
-	if argumentsInJSON != "" {
-		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
-			return "", fmt.Errorf("parse arguments for mcp tool %s: %w", t.name, err)
-		}
-	}
-
-	result, err := t.session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      t.name,
-		Arguments: args,
-	})
+func (t *mcpToolAdapter) Execute(ctx context.Context, args map[string]any) sdktools.ToolResult {
+	result, err := t.session.CallTool(ctx, &mcp.CallToolParams{Name: t.name, Arguments: args})
 	if err != nil {
-		// A request-level failure (as opposed to result.IsError, which is a
-		// tool-level failure) usually means the session's transport is gone.
-		// Drop the cache so the next agent build reconnects. Skip when our own
-		// context was cancelled: the session may be perfectly healthy.
 		if ctx.Err() == nil {
 			invalidateMcpSession(t.session)
 		}
-		return "", fmt.Errorf("call mcp tool %s: %w", t.name, err)
+		return sdktools.ToolResult{Output: fmt.Sprintf("call mcp tool %s: %v", t.name, err), IsError: true}
 	}
-	return formatCallResult(t.name, result)
+	out, err := formatCallResult(t.name, result)
+	if err != nil {
+		return sdktools.ToolResult{Output: err.Error(), IsError: true}
+	}
+	return sdktools.ToolResult{Output: out}
 }
 
 func formatCallResult(name string, result *mcp.CallToolResult) (string, error) {

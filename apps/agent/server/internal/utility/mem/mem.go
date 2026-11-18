@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"sync"
 
-	"github.com/cloudwego/eino/schema"
+	"github.com/hangtiancheng/yukino-code/apps/yukino/conversation"
 )
 
 const MaxSessions = 100
@@ -34,7 +34,7 @@ func Get(id string) *ConversationMemory {
 
 	m := &ConversationMemory{
 		ID:            id,
-		Messages:      []*schema.Message{},
+		Messages:      []conversation.Message{},
 		MaxWindowSize: 6,
 	}
 	m.element = lruList.PushBack(m)
@@ -43,14 +43,14 @@ func Get(id string) *ConversationMemory {
 }
 
 type ConversationMemory struct {
-	ID            string            `json:"id"`
-	Messages      []*schema.Message `json:"messages"`
+	ID            string                 `json:"id"`
+	Messages      []conversation.Message `json:"messages"`
 	MaxWindowSize int
 	element       *list.Element
 	mu            sync.Mutex
 }
 
-func (m *ConversationMemory) Append(msg *schema.Message) {
+func (m *ConversationMemory) Append(msg conversation.Message) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -64,8 +64,8 @@ func (m *ConversationMemory) Append(msg *schema.Message) {
 	}
 }
 
-func (m *ConversationMemory) All() []*schema.Message {
+func (m *ConversationMemory) All() []conversation.Message {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]*schema.Message(nil), m.Messages...)
+	return append([]conversation.Message(nil), m.Messages...)
 }

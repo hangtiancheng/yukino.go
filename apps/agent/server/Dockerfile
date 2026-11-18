@@ -1,14 +1,18 @@
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /src
 
+COPY --from=yukino / /sdk/yukino
+
 COPY libs ./libs
 COPY apps/agent/server ./apps/agent/server
 
 WORKDIR /src/apps/agent/server
+
+RUN go mod edit -replace=github.com/hangtiancheng/yukino-code/apps/yukino=/sdk/yukino
 
 RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -o /out/yukino-agent ./cmd/agent
 

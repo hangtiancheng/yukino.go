@@ -1,30 +1,10 @@
 package chat_pipeline
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/schema"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
-
-type ChatTemplateConfig struct {
-	FormatType schema.FormatType
-	Templates  []schema.MessagesTemplate
-}
-
-func newChatTemplate(ctx context.Context, cfg *config.Config) (prompt.ChatTemplate, error) {
-	tplCfg := &ChatTemplateConfig{
-		FormatType: schema.FString,
-		Templates: []schema.MessagesTemplate{
-			schema.SystemMessage(buildSystemPrompt(cfg)),
-			schema.MessagesPlaceholder("history", false),
-			schema.UserMessage("{content}"),
-		},
-	}
-	return prompt.FromMessages(tplCfg.FormatType, tplCfg.Templates...), nil
-}
 
 func buildSystemPrompt(cfg *config.Config) string {
 	logTopicLine := ""

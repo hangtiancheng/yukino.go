@@ -10,8 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
+	tool "github.com/hangtiancheng/yukino-code/apps/yukino/tools"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -109,33 +108,30 @@ func TestGetLogMcpToolTransports(t *testing.T) {
 				t.Fatalf("got %d tools, want 2", len(tools))
 			}
 
-			byName := map[string]tool.BaseTool{}
+			byName := map[string]tool.Tool{}
 			for _, tl := range tools {
-				info, err := tl.Info(ctx)
-				if err != nil {
-					t.Fatalf("Info: %v", err)
+				if tl.Schema()["input_schema"] == nil {
+					t.Errorf("missing input_schema")
 				}
-				if info.ParamsOneOf == nil {
-					t.Errorf("tool %s has nil ParamsOneOf", info.Name)
-				}
-				byName[info.Name] = tl
+				byName[tl.Name()] = tl
 			}
 			if byName["echo"] == nil || byName["fail"] == nil {
 				t.Fatalf("missing expected tools, got %v", keys(byName))
 			}
 
-			echo := byName["echo"].(tool.InvokableTool)
-			out, err := echo.InvokableRun(ctx, `{"message":"hi"}`)
-			if err != nil {
-				t.Fatalf("InvokableRun echo: %v", err)
+			echo := byName["echo"]
+			result := echo.Execute(ctx, map[string]any{"message": "hi"})
+			if result.IsError {
+				t.Fatal(result.Output)
 			}
+			out := result.Output
 			if out != "echo: hi" {
 				t.Errorf("echo output = %q, want %q", out, "echo: hi")
 			}
 
-			fail := byName["fail"].(tool.InvokableTool)
-			if _, err := fail.InvokableRun(ctx, `{"message":"x"}`); err == nil || !strings.Contains(err.Error(), "boom") {
-				t.Errorf("fail tool error = %v, want it to contain %q", err, "boom")
+			fail := byName["fail"]
+			if result := fail.Execute(ctx, map[string]any{"message": "x"}); !result.IsError || !strings.Contains(result.Output, "boom") {
+				t.Errorf("failure result: %+v", result)
 			}
 
 			cached, err := GetLogMcpTool(ctx, cfg)
@@ -189,8 +185,12 @@ type sentinelTool struct {
 	id string
 }
 
-func (s *sentinelTool) Info(context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{Name: s.id}, nil
+func (s *sentinelTool) Name() string                { return s.id }
+func (s *sentinelTool) Description() string         { return s.id }
+func (s *sentinelTool) Category() tool.ToolCategory { return tool.CategoryRead }
+func (s *sentinelTool) Schema() map[string]any      { return nil }
+func (s *sentinelTool) Execute(context.Context, map[string]any) tool.ToolResult {
+	return tool.ToolResult{}
 }
 
 func newThreeToolMCPServer() *mcp.Server {
@@ -277,14 +277,10 @@ func TestSSECachedSessionSurvivesRequestContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLogMcpTool: %v", err)
 	}
-	var echo tool.InvokableTool
+	var echo tool.Tool
 	for _, tl := range tools {
-		info, err := tl.Info(reqCtx)
-		if err != nil {
-			t.Fatalf("Info: %v", err)
-		}
-		if info.Name == "echo" {
-			echo = tl.(tool.InvokableTool)
+		if tl.Name() == "echo" {
+			echo = tl
 		}
 	}
 	if echo == nil {
@@ -297,10 +293,11 @@ func TestSSECachedSessionSurvivesRequestContextCancellation(t *testing.T) {
 	// Bounded call context so a regression fails fast instead of hanging.
 	callCtx, callCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer callCancel()
-	out, err := echo.InvokableRun(callCtx, `{"message":"hi"}`)
-	if err != nil {
-		t.Fatalf("cached SSE tool invocation failed after request ctx cancellation: %v", err)
+	result := echo.Execute(callCtx, map[string]any{"message": "hi"})
+	if result.IsError {
+		t.Fatal(result.Output)
 	}
+	out := result.Output
 	if out != "echo: hi" {
 		t.Errorf("echo output = %q, want %q", out, "echo: hi")
 	}
@@ -340,14 +337,10 @@ func TestGetLogMcpToolReconnectsAfterServerRestart(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("got %d tools, want 2", len(tools))
 	}
-	var echo tool.InvokableTool
+	var echo tool.Tool
 	for _, tl := range tools {
-		info, err := tl.Info(ctx)
-		if err != nil {
-			t.Fatalf("Info: %v", err)
-		}
-		if info.Name == "echo" {
-			echo = tl.(tool.InvokableTool)
+		if tl.Name() == "echo" {
+			echo = tl
 		}
 	}
 	if echo == nil {
@@ -374,7 +367,7 @@ func TestGetLogMcpToolReconnectsAfterServerRestart(t *testing.T) {
 			t.Fatalf("cache still serving %d tools after MCP server death", len(got))
 		}
 		callCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		_, _ = echo.InvokableRun(callCtx, `{"message":"ping"}`)
+		_ = echo.Execute(callCtx, map[string]any{"message": "ping"})
 		cancel()
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -390,7 +383,7 @@ func TestGetLogMcpToolReconnectsAfterServerRestart(t *testing.T) {
 	defer srv2.Close()
 
 	deadline = time.Now().Add(15 * time.Second)
-	var restored []tool.BaseTool
+	var restored []tool.Tool
 	for {
 		got, err := GetLogMcpTool(ctx, cfg)
 		if err != nil {
@@ -406,14 +399,10 @@ func TestGetLogMcpToolReconnectsAfterServerRestart(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	var echo2 tool.InvokableTool
+	var echo2 tool.Tool
 	for _, tl := range restored {
-		info, err := tl.Info(ctx)
-		if err != nil {
-			t.Fatalf("Info after restart: %v", err)
-		}
-		if info.Name == "echo" {
-			echo2 = tl.(tool.InvokableTool)
+		if tl.Name() == "echo" {
+			echo2 = tl
 		}
 	}
 	if echo2 == nil {
@@ -421,10 +410,11 @@ func TestGetLogMcpToolReconnectsAfterServerRestart(t *testing.T) {
 	}
 	callCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := echo2.InvokableRun(callCtx, `{"message":"hi"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun after restart: %v", err)
+	result := echo2.Execute(callCtx, map[string]any{"message": "hi"})
+	if result.IsError {
+		t.Fatal(result.Output)
 	}
+	out := result.Output
 	if out != "echo: hi" {
 		t.Errorf("echo output = %q, want %q", out, "echo: hi")
 	}

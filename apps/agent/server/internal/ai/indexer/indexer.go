@@ -7,13 +7,12 @@ import (
 	"path/filepath"
 	"unicode/utf8"
 
-	eino_milvus "github.com/cloudwego/eino-ext/components/indexer/milvus"
-	"github.com/cloudwego/eino/components/indexer"
-	"github.com/cloudwego/eino/schema"
+	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/ai/document"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/ai/embedder"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/consts"
 	yukino_milvus "github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/milvus"
+	milvusclient "github.com/milvus-io/milvus-sdk-go/v2/client"
 )
 
 type docRow struct {
@@ -23,7 +22,7 @@ type docRow struct {
 	Metadata []byte    `json:"metadata" milvus:"name:metadata"`
 }
 
-func NewMilvusIndexer(ctx context.Context, cfg *config.Config) (indexer.Indexer, error) {
+func NewMilvusIndexer(ctx context.Context, cfg *config.Config) (*Indexer, error) {
 	cli, dim, err := yukino_milvus.NewClient(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -34,17 +33,52 @@ func NewMilvusIndexer(ctx context.Context, cfg *config.Config) (indexer.Indexer,
 		return nil, err
 	}
 
-	return eino_milvus.NewIndexer(ctx, &eino_milvus.IndexerConfig{
-		Client:            cli,
-		Collection:        cfg.Milvus.CollectionName,
-		Fields:            yukino_milvus.Fields(dim),
-		MetricType:        eino_milvus.COSINE,
-		DocumentConverter: documentToRows,
-		Embedding:         eb,
-	})
+	return &Indexer{cli: cli, collection: cfg.Milvus.CollectionName, embedder: eb, dimension: dim}, nil
 }
 
-func documentToRows(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
+type Indexer struct {
+	cli        milvusclient.Client
+	collection string
+	embedder   *embedder.Embedder
+	dimension  int
+}
+
+func (i *Indexer) Store(ctx context.Context, docs []*document.Document) ([]string, error) {
+	if len(docs) == 0 {
+		return []string{}, nil
+	}
+	texts := make([]string, len(docs))
+	ids := make([]string, len(docs))
+	for n, doc := range docs {
+		if doc == nil {
+			return nil, fmt.Errorf("nil document")
+		}
+		texts[n] = doc.Content
+		ids[n] = doc.ID
+	}
+	vectors, err := i.embedder.EmbedStrings(ctx, texts)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range vectors {
+		if len(v) != i.dimension {
+			return nil, fmt.Errorf("embedding dimension %d != %d", len(v), i.dimension)
+		}
+	}
+	rows, err := documentToRows(ctx, docs, vectors)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = i.cli.InsertRows(ctx, i.collection, "", rows); err != nil {
+		return nil, err
+	}
+	if err = i.cli.Flush(ctx, i.collection, false); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func documentToRows(ctx context.Context, docs []*document.Document, vectors [][]float64) ([]interface{}, error) {
 	if len(docs) != len(vectors) {
 		return nil, fmt.Errorf("docs/vectors length mismatch: %d != %d", len(docs), len(vectors))
 	}

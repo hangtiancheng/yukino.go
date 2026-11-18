@@ -1,18 +1,11 @@
 package app
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
-	"net/http"
-	"strings"
-
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/schema"
+	"github.com/hangtiancheng/yukino-code/apps/yukino/conversation"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/ai/agent/chat_pipeline"
-	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/log_callback"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/mem"
 	"github.com/hangtiancheng/yukino.go/libs/yukino_http"
+	"net/http"
 )
 
 type chatRequest struct {
@@ -20,107 +13,52 @@ type chatRequest struct {
 	Question string `json:"question"`
 }
 
-func (a *App) handleChat(ctx *yukino_http.Context, next func()) {
+func readChat(ctx *yukino_http.Context) (chatRequest, bool) {
 	var req chatRequest
 	if err := ctx.BindJSON(&req); err != nil {
 		ctx.Throw(http.StatusBadRequest, "invalid request body")
-		return
+		return req, false
 	}
 	if req.ID == "" || req.Question == "" {
 		ctx.Throw(http.StatusBadRequest, "missing id or question")
-		return
+		return req, false
 	}
-
-	appCtx := ctx.Request.Context()
-	userMsg := &chat_pipeline.UserMessage{
-		ID:      req.ID,
-		Query:   req.Question,
-		History: mem.Get(req.ID).All(),
-	}
-
-	runner, err := chat_pipeline.BuildChatAgent(appCtx, a.cfg)
-	if err != nil {
-		ctx.Throw(http.StatusInternalServerError, structuredErrorMessage(err))
-		return
-	}
-
-	out, err := runner.Invoke(appCtx, userMsg, compose.WithCallbacks(log_callback.NewHandler(nil)))
-	if err != nil {
-		ctx.Throw(http.StatusInternalServerError, structuredErrorMessage(err))
-		return
-	}
-
-	raw := out.Content
-	mem.Get(req.ID).Append(schema.UserMessage(req.Question))
-	mem.Get(req.ID).Append(schema.AssistantMessage(raw, nil))
-
-	ctx.Status = http.StatusOK
-	ctx.JSON(yukino_http.H{
-		"message": "OK",
-		"data":    yukino_http.H{"answer": raw},
-	})
+	return req, true
 }
-
+func saveChat(id, question, answer string) {
+	memory := mem.Get(id)
+	memory.Append(conversation.Message{Role: "user", Content: question})
+	memory.Append(conversation.Message{Role: "assistant", Content: answer})
+}
+func (a *App) handleChat(ctx *yukino_http.Context, next func()) {
+	req, ok := readChat(ctx)
+	if !ok {
+		return
+	}
+	answer, err := chat_pipeline.Run(ctx.Request.Context(), a.cfg, req.Question, mem.Get(req.ID).All(), nil)
+	if err != nil {
+		ctx.Throw(http.StatusInternalServerError, structuredErrorMessage(err))
+		return
+	}
+	saveChat(req.ID, req.Question, answer)
+	ctx.JSON(yukino_http.H{"message": "OK", "data": yukino_http.H{"answer": answer}})
+}
 func (a *App) handleChatStream(ctx *yukino_http.Context, next func()) {
-	var req chatRequest
-	if err := ctx.BindJSON(&req); err != nil {
-		ctx.Throw(http.StatusBadRequest, "invalid request body")
+	req, ok := readChat(ctx)
+	if !ok {
 		return
 	}
-	if req.ID == "" || req.Question == "" {
-		ctx.Throw(http.StatusBadRequest, "missing id or question")
-		return
-	}
-
-	appCtx := ctx.Request.Context()
 	sse := ctx.SSE()
-	connectedPayload, _ := json.Marshal(map[string]string{
-		"status":    "connected",
-		"client_id": req.ID,
+	sse.JSON("connected", map[string]string{"status": "connected", "client_id": req.ID})
+	answer, err := chat_pipeline.Run(ctx.Request.Context(), a.cfg, req.Question, mem.Get(req.ID).All(), func(text string) {
+		if text != "" {
+			sse.Event("message", text)
+		}
 	})
-	sse.Event("connected", string(connectedPayload))
-
-	userMsg := &chat_pipeline.UserMessage{
-		ID:      req.ID,
-		Query:   req.Question,
-		History: mem.Get(req.ID).All(),
-	}
-
-	runner, err := chat_pipeline.BuildChatAgent(appCtx, a.cfg)
 	if err != nil {
 		sse.Event("error", err.Error())
 		return
 	}
-
-	sr, err := runner.Stream(appCtx, userMsg, compose.WithCallbacks(log_callback.NewHandler(nil)))
-	if err != nil {
-		sse.Event("error", err.Error())
-		return
-	}
-	defer sr.Close()
-
-	var fullResponse strings.Builder
-	defer func() {
-		resp := fullResponse.String()
-		if resp != "" {
-			mem.Get(req.ID).Append(schema.UserMessage(req.Question))
-			mem.Get(req.ID).Append(schema.AssistantMessage(resp, nil))
-		}
-	}()
-
-	for {
-		chunk, err := sr.Recv()
-		if errors.Is(err, io.EOF) {
-			sse.Event("done", "Stream completed")
-			return
-		}
-		if err != nil {
-			sse.Event("error", err.Error())
-			return
-		}
-		fullResponse.WriteString(chunk.Content)
-		if chunk.Content != "" {
-			sse.Event("message", chunk.Content)
-		}
-	}
+	saveChat(req.ID, req.Question, answer)
+	sse.Event("done", "Stream completed")
 }

@@ -4,7 +4,7 @@
 
 **An AI OnCall assistant — RAG chat, plan-execute-replan agents, and a Prometheus bridge.**
 
-A Go agent server built on [CloudWeGo Eino](https://github.com/cloudwego/eino): retrieval-augmented chat with tool calling, an autonomous alert-analysis pipeline, a Milvus standalone vector knowledge base, and end-to-end browser observability that turns client reports into Prometheus metrics.
+A Go agent server built on the [Yukino Go SDK](../../../../yukino-code/apps/yukino/SDK.md): retrieval-augmented chat with tool calling, an autonomous alert-analysis pipeline, a Milvus standalone vector knowledge base, and end-to-end browser observability that turns client reports into Prometheus metrics.
 
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Module](https://img.shields.io/badge/module-yukino__agent-blue)](go.mod)
@@ -72,7 +72,7 @@ Both chat models accept an OpenAI-compatible endpoint or Anthropic; the embeddin
 
 - **RAG with deduplication** — documents are split, embedded, and stored in Milvus with a `_source` metadata field; re-indexing a file first removes prior chunks with the same source.
 - **Tool calling** — a `get_current_time` tool, an MCP-backed log-search tool (streamable HTTP, SSE or stdio transport), a Prometheus alerts tool, an internal-docs retriever, and a MySQL CRUD tool. Each tool lives in its own file under `internal/ai/tools`.
-- **Graceful degradation** — a missing MCP server or embedder disables that capability instead of failing startup.
+- **Graceful degradation** — an unavailable MCP server omits log tools; embedding and retrieval failures are returned to the caller.
 - **Plan-Execute-Replan** — JSON-only planner/replanner prompts keep the loop parseable; the executor runs steps against the bound tool set.
 - **Conversation memory** — per-session memory keeps follow-up questions coherent.
 - **Native Float32 vectors** — embeddings are stored in Milvus as FloatVector with COSINE similarity and an AUTOINDEX. The collection dimension is probed from the live embedding provider, and the collection is recreated when the stored dimension no longer matches.
@@ -112,18 +112,28 @@ The Go server reads `config.json` (not environment variables). `config.example.j
 
 ### Container image
 
-`go.mod` replaces the `yukino.go` libraries with relative paths, so the build context must be the **repository root**:
+`go.mod` uses a local replacement for `github.com/hangtiancheng/yukino-code/apps/yukino` at `/Users/user/github/yukino-code/apps/yukino`. Go 1.26+ and that SDK checkout are required. Change the replacement when moving the checkout:
+
+```bash
+go mod edit -replace=github.com/hangtiancheng/yukino-code/apps/yukino=/path/to/yukino-code/apps/yukino
+go mod tidy
+```
+
+The SDK supplies the provider clients, agent loop, conversation state and tool registry. Document loading/splitting, OpenAI embeddings and Milvus indexing/search use direct application code and SDKs. No Eino runtime or compatibility API remains. Chat is limited to 25 tool/model turns; planning is limited to 20 steps, with at most 100 turns per execution. Failed or cancelled streams emit an error and do not save a partial answer.
+
+Container builds use the **repository root** and a named SDK build context (Docker BuildKit):
 
 ```bash
 # from the repo root
-docker build -f apps/agent/server/Dockerfile -t yukino-agent .
+docker build --build-context yukino=/Users/user/github/yukino-code/apps/yukino \
+  -f apps/agent/server/Dockerfile -t yukino-agent .
 
 docker run -p 8123:8123 \
   -v $(pwd)/apps/agent/server/config.json:/app/config.json:ro \
   yukino-agent
 ```
 
-`make docker-build` runs the same build. The image ships `config.example.jsonc` for reference only; `config.json` must be mounted.
+`make docker-build` runs the same build; override `YUKINO_SDK=/path/to/yukino-code/apps/yukino` if needed. The image ships `config.example.jsonc` for reference only; `config.json` must be mounted.
 
 ```bash
 make run        # go run ./cmd/agent

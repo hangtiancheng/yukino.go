@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	sdktools "github.com/hangtiancheng/yukino-code/apps/yukino/tools"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 )
 
@@ -22,11 +21,12 @@ type GetCurrentTimeOutput struct {
 	Message      string `json:"message" jsonschema:"description=Status message"`
 }
 
-func NewGetCurrentTimeTool() (tool.InvokableTool, error) {
-	t, err := utils.InferOptionableTool(
+func NewGetCurrentTimeTool() (sdktools.Tool, error) {
+	t, err := newFunction(
 		"get_current_time",
 		"Get current system time in multiple formats. Returns Unix timestamp in seconds, milliseconds, and microseconds. Use when you need current time for logging, timing operations, or timestamping events.",
-		func(ctx context.Context, input *GetCurrentTimeInput, opts ...tool.Option) (string, error) {
+		sdktools.CategoryRead,
+		func(ctx context.Context, input *GetCurrentTimeInput) (string, error) {
 			now := time.Now()
 			timestamp := now.Format("2006-01-02 15:04:05.000")
 			logger.L().Info("getting current time", "timestamp", timestamp)
@@ -46,7 +46,6 @@ func NewGetCurrentTimeTool() (tool.InvokableTool, error) {
 			}
 			return string(b), nil
 		},
-		utils.WithUnmarshalArguments(TolerateEmptyArguments[*GetCurrentTimeInput]()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("infer get_current_time tool: %w", err)

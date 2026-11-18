@@ -7,12 +7,12 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/schema"
+	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/ai/document"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/consts"
 )
 
 func TestDocumentToRows(t *testing.T) {
-	docs := []*schema.Document{
+	docs := []*document.Document{
 		{
 			ID:      "doc-1",
 			Content: "hello world",
@@ -66,7 +66,7 @@ func TestDocumentToRows(t *testing.T) {
 
 func TestDocumentToRowsTruncatesContent(t *testing.T) {
 	long := strings.Repeat("a", consts.MaxContentLength+100)
-	docs := []*schema.Document{{ID: "doc-2", Content: long, MetaData: map[string]any{}}}
+	docs := []*document.Document{{ID: "doc-2", Content: long, MetaData: map[string]any{}}}
 	vectors := [][]float64{{0.1}}
 
 	rows, err := documentToRows(context.Background(), docs, vectors)
@@ -82,10 +82,10 @@ func TestDocumentToRowsTruncatesContent(t *testing.T) {
 func TestDocumentToRowsErrors(t *testing.T) {
 	ctx := context.Background()
 
-	if _, err := documentToRows(ctx, []*schema.Document{{ID: "a"}}, nil); err == nil {
+	if _, err := documentToRows(ctx, []*document.Document{{ID: "a"}}, nil); err == nil {
 		t.Error("want error on docs/vectors length mismatch")
 	}
-	if _, err := documentToRows(ctx, []*schema.Document{{ID: ""}}, [][]float64{{0.1}}); err == nil {
+	if _, err := documentToRows(ctx, []*document.Document{{ID: ""}}, [][]float64{{0.1}}); err == nil {
 		t.Error("want error on empty doc id")
 	}
 }
@@ -120,7 +120,7 @@ func TestDocumentToRowsTruncatesAtRuneBoundary(t *testing.T) {
 	// the middle of the first Chinese rune.
 	padding := strings.Repeat("a", consts.MaxContentLength-1)
 	content := padding + "中文"
-	docs := []*schema.Document{{ID: "doc-rune", Content: content, MetaData: map[string]any{}}}
+	docs := []*document.Document{{ID: "doc-rune", Content: content, MetaData: map[string]any{}}}
 	vectors := [][]float64{{0.1}}
 
 	rows, err := documentToRows(context.Background(), docs, vectors)

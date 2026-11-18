@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	sdktools "github.com/hangtiancheng/yukino-code/apps/yukino/tools"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/ai/retriever"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/config"
 )
@@ -21,11 +20,12 @@ type queryInternalDocResult struct {
 	Metadata map[string]any `json:"metadata"`
 }
 
-func NewQueryInternalDocsTool(cfg *config.Config) (tool.InvokableTool, error) {
-	t, err := utils.InferOptionableTool(
+func NewQueryInternalDocsTool(cfg *config.Config) (sdktools.Tool, error) {
+	t, err := newFunction(
 		"query_internal_docs",
 		"Search internal documentation and knowledge base for relevant information. Performs RAG to find similar documents and extract processing steps. Useful for understanding internal procedures, best practices, or step-by-step guides.",
-		func(ctx context.Context, input *QueryInternalDocsInput, opts ...tool.Option) (string, error) {
+		sdktools.CategoryRead,
+		func(ctx context.Context, input *QueryInternalDocsInput) (string, error) {
 			errPayload := func(err error) (string, error) {
 				b, _ := json.Marshal(map[string]any{
 					"success": false,

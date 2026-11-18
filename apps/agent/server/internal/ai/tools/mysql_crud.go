@@ -7,8 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	sdktools "github.com/hangtiancheng/yukino-code/apps/yukino/tools"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -19,12 +18,13 @@ type MysqlCrudInput struct {
 	OperateType string `json:"operate_type" jsonschema:"required,enum=query,enum=insert,enum=update,enum=delete" jsonschema_description:"SQL operation type"`
 }
 
-func NewMysqlCrudTool() (tool.InvokableTool, error) {
-	t, err := utils.InferOptionableTool(
+func NewMysqlCrudTool() (sdktools.Tool, error) {
+	t, err := newFunction(
 		"mysql_crud",
 		"Execute SQL queries against a MySQL database and return results in JSON format. Supports query, insert, update, and delete operations. Results are formatted as JSON for easy parsing.",
-		func(ctx context.Context, input *MysqlCrudInput, opts ...tool.Option) (string, error) {
-			result, err := execMysqlSql(input)
+		sdktools.CategoryWrite,
+		func(ctx context.Context, input *MysqlCrudInput) (string, error) {
+			result, err := execMysqlSql(ctx, input)
 			if err != nil {
 				b, _ := json.Marshal(map[string]any{
 					"success": false,
@@ -62,7 +62,7 @@ func normalizeDsn(dsn string) string {
 	return dsn + sep + "parseTime=true"
 }
 
-func execMysqlSql(input *MysqlCrudInput) (string, error) {
+func execMysqlSql(ctx context.Context, input *MysqlCrudInput) (string, error) {
 	db, err := gorm.Open(mysql.Open(normalizeDsn(input.DSN)), &gorm.Config{})
 	if err != nil {
 		return "", fmt.Errorf("open mysql: %w", err)
@@ -73,6 +73,7 @@ func execMysqlSql(input *MysqlCrudInput) (string, error) {
 		}
 	}()
 
+	db = db.WithContext(ctx)
 	if input.OperateType == "query" {
 		var results []map[string]any
 		if err := db.Raw(input.SQL).Scan(&results).Error; err != nil {

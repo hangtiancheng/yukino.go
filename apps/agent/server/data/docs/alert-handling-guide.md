@@ -28,7 +28,7 @@ Resolution:
 2. Break down what they are doing: `go_sched_goroutines_waiting_goroutines` versus `_running_` and `_runnable_`. A growing waiting count means goroutines blocked forever on a channel, mutex, or network read with no deadline.
 3. Compare with creation rate: `rate(go_sched_goroutines_created_goroutines_total[5m])`. Creation without a matching decline means something spawns per request and never returns.
 4. Leaked goroutines retain their stacks, so check `go_memory_classes_heap_stacks_bytes` climbing alongside.
-5. Usual causes here: a request context that is never cancelled, an unbuffered channel with no reader, or an eino pipeline whose stream is never drained to completion.
+5. Usual causes here: a request context that is never cancelled, an unbuffered channel with no reader, or a Yukino agent whose event stream is never drained to completion.
 
 # GoSchedulerLatencyHigh
 

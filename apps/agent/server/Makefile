@@ -1,5 +1,6 @@
 
 GO ?= go
+YUKINO_SDK ?= $(abspath ../../../../yukino-code/apps/yukino)
 APP := yukino-agent
 PKG := ./...
 
@@ -38,7 +39,7 @@ docker-down:
 	docker compose down
 
 docker-build:
-	docker build -f Dockerfile -t $(APP) ../../..
+	docker build --build-context yukino=$(YUKINO_SDK) -f Dockerfile -t $(APP) ../../..
 
 help:
 	@echo "Yukino Agent Makefile targets:"

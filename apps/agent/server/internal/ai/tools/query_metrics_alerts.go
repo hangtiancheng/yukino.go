@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	sdktools "github.com/hangtiancheng/yukino-code/apps/yukino/tools"
 	"github.com/hangtiancheng/yukino.go/apps/agent/server/internal/utility/logger"
 )
 
@@ -47,7 +46,7 @@ type PrometheusAlertsOutput struct {
 	Error   string            `json:"error,omitempty"`
 }
 
-func queryPrometheusAlerts(baseURL string) (PrometheusAlertsResult, error) {
+func queryPrometheusAlerts(ctx context.Context, baseURL string) (PrometheusAlertsResult, error) {
 	if baseURL == "" {
 		return PrometheusAlertsResult{}, nil
 	}
@@ -58,11 +57,18 @@ func queryPrometheusAlerts(baseURL string) (PrometheusAlertsResult, error) {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	var result PrometheusAlertsResult
 
-	resp, err := httpClient.Get(apiURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return result, err
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return result, fmt.Errorf("query Prometheus alerts: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("Prometheus returned HTTP %d", resp.StatusCode)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -96,14 +102,15 @@ func calculateDuration(activeAtStr string) string {
 	}
 }
 
-func NewPrometheusAlertsQueryTool(prometheusURL string) (tool.InvokableTool, error) {
-	t, err := utils.InferOptionableTool(
+func NewPrometheusAlertsQueryTool(prometheusURL string) (sdktools.Tool, error) {
+	t, err := newFunction(
 		"query_prometheus_alerts",
 		"Query active alerts from Prometheus alerting system. Retrieves all currently active/firing alerts including name, description, state, active_at, and duration. Same alert name only kept once.",
-		func(ctx context.Context, input *PrometheusAlertsInput, opts ...tool.Option) (string, error) {
+		sdktools.CategoryRead,
+		func(ctx context.Context, input *PrometheusAlertsInput) (string, error) {
 			logger.L().Info("querying prometheus active alerts")
 
-			result, err := queryPrometheusAlerts(prometheusURL)
+			result, err := queryPrometheusAlerts(ctx, prometheusURL)
 			if err != nil {
 				out := PrometheusAlertsOutput{
 					Success: false,
@@ -143,7 +150,6 @@ func NewPrometheusAlertsQueryTool(prometheusURL string) (tool.InvokableTool, err
 			logger.L().Info("prometheus alerts query completed", "count", len(simplified))
 			return string(b), nil
 		},
-		utils.WithUnmarshalArguments(TolerateEmptyArguments[*PrometheusAlertsInput]()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("infer query_prometheus_alerts tool: %w", err)

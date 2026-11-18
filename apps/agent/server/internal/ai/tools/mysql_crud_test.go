@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"context"
-	"slices"
 	"testing"
 )
 
@@ -11,24 +9,17 @@ func TestMysqlCrudToolSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMysqlCrudTool: %v", err)
 	}
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
-	}
-	js, err := info.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	if js.Properties == nil {
-		t.Fatal("schema has no properties")
-	}
-
-	prop := func(name string) (desc string, enum []any) {
-		s, ok := js.Properties.Get(name)
+	js := tool.Schema()["input_schema"].(map[string]any)
+	properties := js["properties"].(map[string]any)
+	prop := func(name string) (string, []any) {
+		t.Helper()
+		value, ok := properties[name].(map[string]any)
 		if !ok {
-			t.Fatalf("missing %s property", name)
+			t.Fatalf("missing %s", name)
 		}
-		return s.Description, s.Enum
+		desc, _ := value["description"].(string)
+		enum, _ := value["enum"].([]any)
+		return desc, enum
 	}
 
 	dsnDesc, _ := prop("dsn")
@@ -57,9 +48,14 @@ func TestMysqlCrudToolSchema(t *testing.T) {
 	}
 
 	for _, name := range []string{"dsn", "sql", "operate_type"} {
-		found := slices.Contains(js.Required, name)
+		found := false
+		for _, v := range js["required"].([]any) {
+			if v == name {
+				found = true
+			}
+		}
 		if !found {
-			t.Errorf("%s should be required (required=%v)", name, js.Required)
+			t.Errorf("%s should be required (required=%v)", name, js["required"])
 		}
 	}
 }
