@@ -110,6 +110,6 @@ require (
 )
 
 replace (
-	github.com/hangtiancheng/yukino-code/apps/yukino => /Users/user/github/yukino-code/apps/yukino
+	github.com/hangtiancheng/yukino-code/apps/yukino => ../../../../yukino-code/apps/yukino
 	github.com/hangtiancheng/yukino.go/libs/yukino_http => ../../../libs/yukino_http
 )
