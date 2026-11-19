@@ -64,22 +64,13 @@ func Test_nonBlockingLock(t *testing.T) {
 		_ = lock1.Unlock(ctx)
 		_ = lock2.Unlock(ctx)
 	}()
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		if err := lock1.Lock(ctx); err != nil {
-			t.Error(err)
-			return
-		}
-	})
+	if err := lock1.Lock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := lock2.Lock(ctx); !errors.Is(err, ErrLockAcquiredByOthers) {
+		t.Fatalf("expected contention, got %v", err)
+	}
 
-	wg.Go(func() {
-		if err := lock2.Lock(ctx); err == nil || !errors.Is(err, ErrLockAcquiredByOthers) {
-			t.Errorf("got err: %v, expect: %v", err, ErrLockAcquiredByOthers)
-			return
-		}
-	})
-
-	wg.Wait()
 	t.Log("success")
 }
 

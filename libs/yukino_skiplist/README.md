@@ -31,9 +31,10 @@ for key, value := range list.All() {
 replaces it and reports the previous value. Keys are ordered with
 `cmp.Ordered`, or with a comparator passed to `NewWithComparator`.
 
-`All`, `Range`, `RangeFrom`, `Keys`, and `Values` hold the shared lock for the
-whole iteration. The loop body must not call back into the same list. Take a
-`Snapshot` first when the body needs to mutate the list.
+`All`, `Range`, `RangeFrom`, `Keys`, and `Values` take a consistent shallow
+snapshot when iteration starts, then release the shared lock before yielding.
+The loop body may read or mutate the list. This costs O(k) memory for k captured
+entries; bounded ranges take O(log n + k) time. Comparators must not reenter.
 
 A nil or zero `SkipList` panics. Values are returned as stored; a slice or map
 value is not deep-copied.

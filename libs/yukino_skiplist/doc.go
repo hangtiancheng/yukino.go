@@ -21,7 +21,8 @@
 //	Insert / Set / Delete / Get / Has   O(log n) expected, O(n) worst case
 //	Len / Level / Min                   O(1)
 //	Max / Floor / Ceiling               O(log n) expected
-//	All / Range / RangeFrom             O(k) for k yielded elements
+//	All / RangeFrom                     O(n) / O(log n + k)
+//	Range                               O(log n + k)
 //	Snapshot / String / Dump            O(n)
 //
 // # Concurrency
@@ -31,11 +32,10 @@
 // each other. This is a deliberate correction of the original C++ design, in
 // which the search path ran without any synchronisation at all.
 //
-// The iterators returned by [SkipList.All], [SkipList.Range] and
-// [SkipList.RangeFrom] hold the shared lock for the whole range statement. The
-// range body must therefore not call back into the same list, or it will
-// deadlock. When the body needs to mutate the list, iterate over
-// [SkipList.Snapshot] instead.
+// Iterators take a consistent shallow snapshot when iteration begins, then
+// release the shared lock before yielding. The loop body may read or mutate
+// the same list. Snapshot memory is O(k) for k captured entries; keys and
+// values themselves are not deep-copied. Comparators must not reenter the list.
 //
 // # Persistence
 //

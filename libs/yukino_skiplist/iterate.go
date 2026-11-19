@@ -13,58 +13,51 @@ type Entry[K, V any] struct {
 	Value V
 }
 
-// All returns an iterator over every element in ascending key order.
-//
-// The list is held under its shared lock for the whole range statement, so the
-// range body must not call back into the same list or it will deadlock. Use
-// Snapshot when the body needs to mutate the list.
+// All returns a consistent shallow snapshot in ascending key order. The snapshot
+// is taken when iteration begins; callbacks may safely read or mutate the list.
 func (s *SkipList[K, V]) All() iter.Seq2[K, V] {
 	s.requireUsable()
 	return func(yield func(K, V) bool) {
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		for current := s.header.forward[0]; current != nil; current = current.forward[0] {
-			if !yield(current.key, current.value) {
+		for _, entry := range s.Snapshot() {
+			if !yield(entry.Key, entry.Value) {
 				return
 			}
 		}
 	}
 }
 
-// Range returns an iterator over the half-open key interval [from, to) in
-// ascending order. It is a no-op when from does not sort before to.
-//
-// The locking contract is the same as All.
+// Range returns a snapshot of the half-open interval [from, to).
 func (s *SkipList[K, V]) Range(from, to K) iter.Seq2[K, V] {
 	s.requireUsable()
 	return func(yield func(K, V) bool) {
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		current := s.descend(from, nil).forward[0]
-		for current != nil && s.compare(current.key, to) < 0 {
-			if !yield(current.key, current.value) {
+		for _, entry := range s.rangeSnapshot(from, &to) {
+			if !yield(entry.Key, entry.Value) {
 				return
 			}
-			current = current.forward[0]
 		}
 	}
 }
 
-// RangeFrom returns an iterator over every element whose key is greater than or
-// equal to from, in ascending order.
-//
-// The locking contract is the same as All.
+// RangeFrom returns a snapshot of keys sorting at or after from.
 func (s *SkipList[K, V]) RangeFrom(from K) iter.Seq2[K, V] {
 	s.requireUsable()
 	return func(yield func(K, V) bool) {
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		for current := s.descend(from, nil).forward[0]; current != nil; current = current.forward[0] {
-			if !yield(current.key, current.value) {
+		for _, entry := range s.rangeSnapshot(from, nil) {
+			if !yield(entry.Key, entry.Value) {
 				return
 			}
 		}
 	}
+}
+
+func (s *SkipList[K, V]) rangeSnapshot(from K, to *K) []Entry[K, V] {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entries := make([]Entry[K, V], 0)
+	for node := s.descend(from, nil).forward[0]; node != nil && (to == nil || s.compare(node.key, *to) < 0); node = node.forward[0] {
+		entries = append(entries, Entry[K, V]{Key: node.key, Value: node.value})
+	}
+	return entries
 }
 
 // Keys returns an iterator over the keys in ascending order. The locking
@@ -155,7 +148,7 @@ func (s *SkipList[K, V]) Ceiling(key K) (foundKey K, foundValue V, ok bool) {
 
 // Snapshot returns a detached copy of every element in ascending key order.
 // The result is safe to inspect or iterate while continuing to mutate the
-// list, at the cost of one allocation per element.
+// list, at the cost of O(n) additional memory.
 func (s *SkipList[K, V]) Snapshot() []Entry[K, V] {
 	s.requireUsable()
 	s.mu.RLock()

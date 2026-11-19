@@ -132,20 +132,20 @@ func (s *SkipList[K, V]) DumpFile(path string, format Format[K, V]) (err error) 
 	if err = os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("skiplist: replacing %s: %w", path, err)
 	}
-	syncDir(dir)
-	return nil
+	return syncDir(dir)
 }
 
-// syncDir flushes a directory entry so that a rename survives a crash. It is
-// best effort: platforms that do not support syncing a directory simply ignore
-// the failure.
-func syncDir(dir string) {
+// syncDir makes the renamed directory entry durable, reporting failures.
+func syncDir(dir string) error {
 	handle, err := os.Open(dir)
 	if err != nil {
-		return
+		return fmt.Errorf("skiplist: opening directory for sync: %w", err)
 	}
-	_ = handle.Sync()
-	_ = handle.Close()
+	defer handle.Close()
+	if err := handle.Sync(); err != nil {
+		return fmt.Errorf("skiplist: syncing directory: %w", err)
+	}
+	return nil
 }
 
 // Load reads records from r and returns a new skip list ordered by the

@@ -39,12 +39,18 @@ func NewClient(network, address, password string, opts ...ClientOption) *Client 
 	repairClient(&c.ClientOptions)
 
 	client := go_redis.NewClient(&go_redis.Options{
-		Network:         c.network,
-		Addr:            c.address,
-		Password:        c.password,
-		PoolSize:        c.maxActive,
-		MaxIdleConns:    c.maxIdle,
-		ConnMaxIdleTime: time.Duration(c.idleTimeoutSeconds) * time.Second,
+		Network:               c.network,
+		Addr:                  c.address,
+		Password:              c.password,
+		PoolSize:              c.maxActive,
+		MaxRetries:            -1,
+		ContextTimeoutEnabled: true,
+		DialTimeout:           commandTimeout,
+		ReadTimeout:           commandTimeout,
+		WriteTimeout:          commandTimeout,
+		PoolTimeout:           commandTimeout,
+		MaxIdleConns:          c.maxIdle,
+		ConnMaxIdleTime:       time.Duration(c.idleTimeoutSeconds) * time.Second,
 	})
 	return &Client{
 		ClientOptions: c.ClientOptions,
